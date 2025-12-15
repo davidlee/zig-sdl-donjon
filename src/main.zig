@@ -22,7 +22,7 @@ pub fn main() !void {
         _ = gpa.deinit();
     }
 
-    var world = try World.init();
+    var world = try World.init(alloc);
     defer {
         world.deinit(alloc);
     }
@@ -67,7 +67,14 @@ pub fn main() !void {
                 .quit => quit = true,
                 .terminating => quit = true,
                 .key_down => quit = ctl.keypress(event.key_down.key.?, &world),
-                else => {},
+                .mouse_motion => {
+                   const rect = sprite_sheet.toXY(event.mouse_motion.x, event.mouse_motion.y);
+                   log("\n rect: {}",.{rect});
+
+                },
+                else => {
+                    log("\nevent:{any}->\n",.{event});
+                },
             };
     }
 }

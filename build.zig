@@ -28,6 +28,14 @@ fn buildBin(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.built
         .optimize = optimize,
     });
 
+    const map_gen= b.createModule(.{
+        .root_source_file = b.path("src/map_gen.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    map_gen.addImport("model", model);
+    map_gen.addImport("util", util);
+
     const graphics= b.createModule(.{
         .root_source_file = b.path("src/graphics.zig"),
         .target = target,
@@ -53,12 +61,13 @@ fn buildBin(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.built
         .root_module = exe_mod,
 
     });
+
     exe.root_module.addImport("sdl3", sdl3.module("sdl3"));
     exe.root_module.addImport("util", util);
     exe.root_module.addImport("model", model);
     exe.root_module.addImport("graphics", graphics);
     exe.root_module.addImport("controls", controls);
-    
+
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);

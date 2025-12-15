@@ -11,5 +11,14 @@ pub const Cast = struct {
         return @intCast(i);
     }
 
+    pub fn ftoi32(i: anytype) i32 {
+        return @intFromFloat(i);
+    }
 };
+
+// pub const Translate = struct {
+//     pub fn toPixels(x:i32, y:i32) .{x:f32, y:f32} {
+//
+//     }
+// }
 
