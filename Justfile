@@ -1,6 +1,5 @@
 default: build run
 
-
 build:
   zig build
 

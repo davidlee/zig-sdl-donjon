@@ -7,10 +7,6 @@ fn buildBin(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.built
         .target = target,
         .optimize = optimize,
     });
-    const exe = b.addExecutable(.{
-        .name = "template",
-        .root_module = exe_mod,
-    });
 
     const sdl3 = b.dependency("sdl3", .{
         .target = target,
@@ -19,7 +15,50 @@ fn buildBin(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.built
         .ext_image = true,
         // .c_sdl_preferred_linkage = .static,
     });
+
+    const util = b.createModule(.{
+        .root_source_file = b.path("src/util.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const model= b.createModule(.{
+        .root_source_file = b.path("src/model.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const graphics= b.createModule(.{
+        .root_source_file = b.path("src/graphics.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    graphics.addImport("sdl3", sdl3.module("sdl3"));
+    graphics.addImport("util", util);
+    graphics.addImport("model", model);
+
+    const controls = b.createModule(.{
+        .root_source_file = b.path("src/controls.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    controls.addImport("sdl3", sdl3.module("sdl3"));
+    controls.addImport("util", util);
+    controls.addImport("model", model);
+
+
+    const exe = b.addExecutable(.{
+        .name = "template",
+        .root_module = exe_mod,
+
+    });
     exe.root_module.addImport("sdl3", sdl3.module("sdl3"));
+    exe.root_module.addImport("util", util);
+    exe.root_module.addImport("model", model);
+    exe.root_module.addImport("graphics", graphics);
+    exe.root_module.addImport("controls", controls);
+    
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);
@@ -29,7 +68,7 @@ fn buildBin(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.built
         run_cmd.addArgs(args);
     }
 
-    const run_step = b.step("run", "Run the app");
+const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
 }
 
