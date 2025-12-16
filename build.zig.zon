@@ -14,6 +14,14 @@
             .url = "git+https://github.com/zig-gamedev/zemscripten#00da03b188220374a57cb34cda6230b8d53737ea",
             .hash = "zemscripten-0.2.0-dev-sRlDqFJSAAB8hgnRt5DDMKP3zLlDtMnUDwYRJVCa5lGY",
         },
+        .polystate = .{
+            .url = "git+https://github.com/sdzx-1/polystate.git#47a1eb341bb65be41c2776fb0f9af6ed1c275513",
+            .hash = "polystate-0.0.0-8by0_PqOAQBh1y-sLFLKy51yZuL86NP80Is6x6Sk63Ai",
+        },
+        .zigfsm = .{
+            .url = "git+https://github.com/cryptocode/zigfsm#d4438aa9a28477bcb6f74f11e2875279aa928afd",
+            .hash = "zigfsm-0.2.0-9VW4uQY7AQBrx9lNrVJ3PNRPvAX56jJnLBFOL8-vUN25",
+        },
     },
     .paths = .{
         "build.zig",

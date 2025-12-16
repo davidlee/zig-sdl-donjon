@@ -2,18 +2,26 @@ const std = @import("std");
 const zemscripten = @import("zemscripten");
 
 fn buildBin(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) !void {
+    // core exectutable
+    //
     const exe_mod = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });
 
+    // external dependencies
+    //
     const sdl3 = b.dependency("sdl3", .{
         .target = target,
         .optimize = optimize,
         .callbacks = true,
         .ext_image = true,
-        // .c_sdl_preferred_linkage = .static,
+    });
+
+    const polystate = b.dependency("polystate", .{
+        .target = target,
+        .optimize = optimize,
     });
 
     const util = b.createModule(.{
@@ -22,13 +30,15 @@ fn buildBin(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.built
         .optimize = optimize,
     });
 
-    const model= b.createModule(.{
+    const model = b.createModule(.{
         .root_source_file = b.path("src/model.zig"),
         .target = target,
         .optimize = optimize,
     });
+    model.addImport("sdl3", sdl3.module("sdl3")); // rect
+    model.addImport("util", util);
 
-    const map_gen= b.createModule(.{
+    const map_gen = b.createModule(.{
         .root_source_file = b.path("src/map_gen.zig"),
         .target = target,
         .optimize = optimize,
@@ -36,7 +46,7 @@ fn buildBin(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.built
     map_gen.addImport("model", model);
     map_gen.addImport("util", util);
 
-    const graphics= b.createModule(.{
+    const graphics = b.createModule(.{
         .root_source_file = b.path("src/graphics.zig"),
         .target = target,
         .optimize = optimize,
@@ -55,18 +65,19 @@ fn buildBin(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.built
     controls.addImport("util", util);
     controls.addImport("model", model);
 
-
     const exe = b.addExecutable(.{
         .name = "template",
         .root_module = exe_mod,
-
     });
 
-    exe.root_module.addImport("sdl3", sdl3.module("sdl3"));
-    exe.root_module.addImport("util", util);
-    exe.root_module.addImport("model", model);
-    exe.root_module.addImport("graphics", graphics);
-    exe.root_module.addImport("controls", controls);
+    exe_mod.addImport("sdl3", sdl3.module("sdl3"));
+    exe_mod.addImport("util", util);
+    exe_mod.addImport("model", model);
+    exe_mod.addImport("graphics", graphics);
+    exe_mod.addImport("controls", controls);
+    exe_mod.addImport("polystate", polystate.module("root"));
+
+    exe_mod.addImport("zigfsm", b.dependency("zigfsm", .{}).module("zigfsm"));
 
     b.installArtifact(exe);
 
@@ -77,7 +88,7 @@ fn buildBin(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.built
         run_cmd.addArgs(args);
     }
 
-const run_step = b.step("run", "Run the app");
+    const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
 }
 
