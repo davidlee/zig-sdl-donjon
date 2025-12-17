@@ -75,26 +75,21 @@ pub fn main() !void {
                     quit = ctl.keypress(event.key_down.key.?, &world);
                 },
                 .mouse_motion => {
-                    // const playerLogicalPos = sprite_sheet.xyOf(world.player.x, world.player.y);
-                    // _ = playerLogicalPos;
-
-                    // log("\n player x,y: {},{} \n", .{ playerLogicalPos.x, playerLogicalPos.y });
-                    // log("\n mouse: {} \n world: {} \n player x,y: {},{} \n", .{ event, world, playerLogicalPos.x, playerLogicalPos.y });
-                    // const rect = sprite_sheet.toXY(event.mouse_motion.x, event.mouse_motion.y);
-                    // log("\n rect: {}",.{rect});
+                    world.ui.mouse = s.rect.FPoint{ .x = event.mouse_motion.x, .y = event.mouse_motion.y };
                 },
                 .mouse_wheel => {
-                    // log("\nscroll: -> {any}",.{event});
                     world.ui.zoom = std.math.clamp(world.ui.zoom + event.mouse_wheel.scroll_y, 1.0, 10.0);
-                    world.ui.scale_changed = true;
                 },
                 .window_resized => {
                     world.ui.screen.w = event.window_resized.width;
                     world.ui.screen.h = event.window_resized.height;
-                    world.ui.scale_changed = true;
+                },
+                .window_pixel_size_changed => {
+                    world.ui.screen.w = event.window_pixel_size_changed.width;
+                    world.ui.screen.h = event.window_pixel_size_changed.height;
                 },
                 else => {
-                    // log("\nevent:{any}->\n",.{event});
+                    log("\nevent:{any}->\n", .{event});
                 },
             };
     }

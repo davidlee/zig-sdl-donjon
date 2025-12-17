@@ -52,7 +52,7 @@ const UIState = struct {
 
     screen: rect.IRect,
     camera: rect.IRect,
-    scale_changed: bool,
+    mouse: rect.FPoint,
 };
 
 pub const World = struct {
@@ -89,7 +89,7 @@ pub const World = struct {
                 .tile_height = th,
                 .tile_padding = p,
             },
-            .ui = UIState{ .scale = 1.0, .zoom = 1.0, .scale_changed = true, .screen = rect.IRect{
+            .ui = UIState{ .scale = 1.0, .zoom = 1.0, .mouse = rect.FPoint{ .x = 0, .y = 0 }, .screen = rect.IRect{
                 .x = 0,
                 .y = 0,
                 .w = w,
