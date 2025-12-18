@@ -3,6 +3,7 @@ const Cast = @import("util").Cast;
 const gfx = @import("graphics");
 const ctl = @import("controls");
 const gen = @import("map_gen");
+const ev = @import("events");
 const World = @import("model").World;
 
 const log = std.debug.print;

@@ -68,6 +68,18 @@ fn buildBin(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.built
     controls.addImport("util", util);
     controls.addImport("model", model);
 
+    const events = b.createModule(.{
+        .root_source_file = b.path("src/events.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const slot_map = b.createModule(.{
+        .root_source_file = b.path("src/slot_map.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     const exe = b.addExecutable(.{
         .name = "template",
         .root_module = exe_mod,
@@ -80,6 +92,8 @@ fn buildBin(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.built
     exe_mod.addImport("controls", controls);
     exe_mod.addImport("map_gen", map_gen);
     exe_mod.addImport("polystate", polystate.module("root"));
+    exe_mod.addImport("events", events);
+    exe_mod.addImport("slot_map", slot_map);
 
     exe_mod.addImport("zigfsm", b.dependency("zigfsm", .{}).module("zigfsm"));
 
