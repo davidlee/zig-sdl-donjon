@@ -68,6 +68,8 @@ pub fn main() !void {
         try gfx.render(&world, &renderer, &sprite_sheet);
 
         // Event logic.
+        // TODO: experiment with user-defined events here vs src/events.zig
+        // for decoupling LogicWorld & RenderWorld
         while (s.events.poll()) |event|
             switch (event) {
                 .quit => quit = true,
