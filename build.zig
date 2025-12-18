@@ -40,15 +40,6 @@ fn buildBin(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.built
     model.addImport("sdl3", sdl3.module("sdl3")); // rect
     model.addImport("util", util);
 
-    const map_gen = b.createModule(.{
-        .root_source_file = b.path("src/map_gen.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    map_gen.addImport("model", model);
-    map_gen.addImport("util", util);
-    map_gen.addImport("znoise", znoise.module("root"));
-
     const graphics = b.createModule(.{
         .root_source_file = b.path("src/graphics.zig"),
         .target = target,
@@ -81,7 +72,7 @@ fn buildBin(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.built
     });
 
     const exe = b.addExecutable(.{
-        .name = "template",
+        .name = "cardigan",
         .root_module = exe_mod,
     });
 
@@ -90,7 +81,6 @@ fn buildBin(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.built
     exe_mod.addImport("model", model);
     exe_mod.addImport("graphics", graphics);
     exe_mod.addImport("controls", controls);
-    exe_mod.addImport("map_gen", map_gen);
     exe_mod.addImport("polystate", polystate.module("root"));
     exe_mod.addImport("events", events);
     exe_mod.addImport("slot_map", slot_map);

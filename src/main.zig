@@ -2,7 +2,6 @@ const std = @import("std");
 const Cast = @import("util").Cast;
 const gfx = @import("graphics");
 const ctl = @import("controls");
-const gen = @import("map_gen");
 const ev = @import("events");
 const World = @import("model").World;
 
@@ -31,8 +30,8 @@ pub fn main() !void {
 
     const window = try s.video.Window.init(
         "hello world",
-        world.config.screen_width,
-        world.config.screen_height,
+        world.config.width,
+        world.config.height,
         .{ .resizable = true, .vulkan = true },
     );
     defer window.deinit();
@@ -40,24 +39,8 @@ pub fn main() !void {
     var renderer = try s.render.Renderer.init(window, null);
     defer renderer.deinit();
 
-    // try renderer.setLogicalPresentation(world.config.screen_width, world.config.screen_height, s.render.LogicalPresentation.letter_box);
-
     // Useful for limiting the FPS and getting the delta time.
     var fps_capper = s.extras.FramerateCapper(f32){ .mode = .{ .limited = world.config.fps } };
-
-    var sprite_sheet = try gfx.SpriteSheet.init(alloc, "assets/urizen_onebit_tileset__v2d0.png", // 2679 x 651
-        12, 12, 24, 50, renderer);
-    defer sprite_sheet.deinit(alloc);
-
-    var camera = s.rect.IRect{
-        .x = 0,
-        .y = 0,
-        .w = Cast.itoi32(world.ui.screen.w),
-        .h = Cast.itoi32(world.ui.screen.h),
-    };
-    camera.x = 0;
-
-    try gen.generateTerrain(alloc, &world);
 
     var quit = false;
     while (!quit) {
@@ -65,7 +48,12 @@ pub fn main() !void {
         _ = fps_capper.delay();
 
         // Update logic.
-        try gfx.render(&world, &renderer, &sprite_sheet);
+
+        // Render it
+        try gfx.render(
+            &world,
+            &renderer,
+        );
 
         // Event logic.
         // TODO: experiment with user-defined events here vs src/events.zig
@@ -81,7 +69,7 @@ pub fn main() !void {
                     world.ui.mouse = s.rect.FPoint{ .x = event.mouse_motion.x, .y = event.mouse_motion.y };
                 },
                 .mouse_wheel => {
-                    world.ui.zoom = std.math.clamp(world.ui.zoom + event.mouse_wheel.scroll_y, 1.0, 10.0);
+                    // world.ui.zoom = std.math.clamp(world.ui.zoom + event.mouse_wheel.scroll_y, 1.0, 10.0);
                 },
                 .window_resized => {
                     world.ui.screen.w = event.window_resized.width;
@@ -92,7 +80,7 @@ pub fn main() !void {
                     world.ui.screen.h = event.window_pixel_size_changed.height;
                 },
                 else => {
-                    log("\nevent:{any}->\n", .{event});
+                    // log("\nevent:{any}->\n", .{event});
                 },
             };
     }

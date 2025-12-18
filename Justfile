@@ -4,4 +4,4 @@ build:
   zig build
 
 run:
-  ./zig-out/bin/template
+  ./zig-out/bin/cardigan
