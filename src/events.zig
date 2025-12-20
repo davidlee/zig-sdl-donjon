@@ -1,13 +1,39 @@
 const std = @import("std");
+const EntityID = @import("entity.zig").EntityID;
+const Slot = void; // TODO what's this look like?
+//
+pub const CardWithSlot = struct {
+    card: EntityID,
+    slot: Slot,
+};
+
+pub const CardWithEvent = struct {
+    card: EntityID,
+    event_index: usize, // in the EventSystem.current_events queue - must exist
+};
 
 // tagged union: events
 pub const Event = union(enum) {
-    EntityDied: u32, // Payload: just the ID
-    PlaySound: struct { // Payload: struct
+    entity_died: u32, // Payload: just the ID
+    mob_died: EntityID,
+
+    played_action: EntityID,
+    played_reaction: CardWithEvent,
+
+    equipped_item: CardWithSlot,
+    unequipped_item: CardWithSlot,
+
+    equipped_spell: CardWithSlot,
+    unequipped_spell: CardWithSlot,
+
+    equipped_passive: CardWithSlot,
+    unequipped_passive: CardWithSlot,
+
+    play_sound: struct { // Payload: struct
         id: u16,
         volume: f32,
     },
-    RestartLevel: void, // Payload: none
+    player_turn_ended: void, // Payload: none
 };
 
 pub const EventSystem = struct {

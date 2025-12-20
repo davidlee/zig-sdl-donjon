@@ -52,12 +52,13 @@ const CustomEffectId = struct {};
 const Predicate = struct {};
 const TagSet = struct {};
 
-const CardId = u16;
+const CardID = u16;
+
 pub const CardDef = struct {
-    id: CardId,
+    id: CardID,
     tags: TagSet,
     rules: []const Rule,
     // plus UI fields, costs, etc.
 };
 
-const CardInst = struct {};
+const CardInst = struct { id: EntityID };

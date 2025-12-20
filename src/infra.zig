@@ -5,8 +5,6 @@ pub const util = @import("util.zig");
 pub const config = @import("config.zig");
 pub const Config = config.Config;
 pub const Cast = @import("util.zig").Cast;
-pub const slot_map = @import("slot_map.zig");
-pub const events = @import("events.zig");
 pub const random = @import("random.zig");
 
 // 3rd party libs

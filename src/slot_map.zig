@@ -1,9 +1,5 @@
 const std = @import("std");
-
-pub const EntityId = struct {
-    index: u32,
-    generation: u32,
-};
+const EntityID = @import("entity.zig").EntityID;
 
 // generational index - dispenses valid entity IDs (in the absence of an ECS)
 // the generation is just a version number to guard against collisions / undefined
@@ -37,25 +33,25 @@ pub fn SlotMap(comptime T: type) type {
         }
 
         // Create a new item and return its stable ID
-        pub fn insert(self: *Self, item: T) !EntityId {
+        pub fn insert(self: *Self, item: T) !EntityID {
             if (self.free_indices.popOrNull()) |idx| {
                 // REUSE SLOT:
                 // Overwrite the data at the old index
                 self.items.items[idx] = item;
                 // Update generation is NOT needed here; we increment on *deletion*
                 // so the current generation is already "fresh" for this new user.
-                return EntityId{ .index = idx, .generation = self.generations.items[idx] };
+                return EntityID{ .index = idx, .generation = self.generations.items[idx] };
             } else {
                 // NEW SLOT:
                 const idx = @as(u32, @intCast(self.items.items.len));
                 try self.items.append(item);
                 try self.generations.append(1); // Generation starts at 1
-                return EntityId{ .index = idx, .generation = 1 };
+                return EntityID{ .index = idx, .generation = 1 };
             }
         }
 
         // Get pointer to item IF the ID is valid
-        pub fn get(self: *Self, id: EntityId) ?*T {
+        pub fn get(self: *Self, id: EntityID) ?*T {
             // 1. Bounds check
             if (id.index >= self.items.items.len) return null;
 
@@ -68,7 +64,7 @@ pub fn SlotMap(comptime T: type) type {
         }
 
         // Remove an item, invalidating all IDs pointing to it
-        pub fn remove(self: *Self, id: EntityId) void {
+        pub fn remove(self: *Self, id: EntityID) void {
             // Verify ID is valid before deleting
             if (id.index >= self.items.items.len) return;
             if (self.generations.items[id.index] != id.generation) return;
