@@ -1,12 +1,14 @@
 const std = @import("std");
-const lib = @import("shared");
+const lib = @import("infra");
 
 const Cast = lib.Cast;
 const log = lib.log;
-const gfx = lib.gfx;
-const World = lib.World;
 const s = lib.sdl;
-const ctrl = lib.ctrl;
+
+// const gfx = lib.gfx;
+const World = @import("model.zig").World;
+const ctrl = @import("controls.zig");
+const gfx = @import("graphics.zig");
 
 pub fn main() !void {
     defer s.shutdown();
@@ -22,6 +24,10 @@ pub fn main() !void {
         _ = gpa.deinit();
     }
 
+    const config = lib.config.Config.init();
+
+    var ui = gfx.UIState.init();
+
     var world = try World.init(alloc);
     defer {
         world.deinit(alloc);
@@ -29,8 +35,8 @@ pub fn main() !void {
 
     const window = try s.video.Window.init(
         "cardigan of the cardinal",
-        world.config.width,
-        world.config.height,
+        config.width,
+        config.height,
         .{ .resizable = true, .vulkan = true },
     );
     defer window.deinit();
@@ -39,7 +45,7 @@ pub fn main() !void {
     defer renderer.deinit();
 
     // Useful for limiting the FPS and getting the delta time.
-    var fps_capper = s.extras.FramerateCapper(f32){ .mode = .{ .limited = world.config.fps } };
+    var fps_capper = s.extras.FramerateCapper(f32){ .mode = .{ .limited = config.fps } };
 
     var quit = false;
     while (!quit) {
@@ -47,6 +53,7 @@ pub fn main() !void {
         _ = fps_capper.delay();
 
         // Update logic.
+        world.step();
 
         // Render it
         try gfx.render(
@@ -57,6 +64,7 @@ pub fn main() !void {
         // Event logic.
         // TODO: experiment with user-defined events here vs src/events.zig
         // for decoupling LogicWorld & RenderWorld
+
         while (s.events.poll()) |event|
             switch (event) {
                 .quit => quit = true,
@@ -65,18 +73,18 @@ pub fn main() !void {
                     quit = ctrl.keypress(event.key_down.key.?, &world);
                 },
                 .mouse_motion => {
-                    world.ui.mouse = s.rect.FPoint{ .x = event.mouse_motion.x, .y = event.mouse_motion.y };
+                    ui.mouse = s.rect.FPoint{ .x = event.mouse_motion.x, .y = event.mouse_motion.y };
                 },
                 .mouse_wheel => {
                     // world.ui.zoom = std.math.clamp(world.ui.zoom + event.mouse_wheel.scroll_y, 1.0, 10.0);
                 },
                 .window_resized => {
-                    world.ui.screen.w = event.window_resized.width;
-                    world.ui.screen.h = event.window_resized.height;
+                    ui.screen.w = event.window_resized.width;
+                    ui.screen.h = event.window_resized.height;
                 },
                 .window_pixel_size_changed => {
-                    world.ui.screen.w = event.window_pixel_size_changed.width;
-                    world.ui.screen.h = event.window_pixel_size_changed.height;
+                    ui.screen.w = event.window_pixel_size_changed.width;
+                    ui.screen.h = event.window_pixel_size_changed.height;
                 },
                 else => {
                     // log("\nevent:{any}->\n", .{event});

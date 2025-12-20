@@ -1,9 +1,9 @@
 const std = @import("std");
 
-const PartIndex = u16; // Up to 65k body parts is enough
-const NO_PARENT = std.math.maxInt(PartIndex);
+pub const PartIndex = u16; // Up to 65k body parts is enough
+pub const NO_PARENT = std.math.maxInt(PartIndex);
 
-const BodyPartTag = enum {
+pub const BodyPartTag = enum {
     // Human exterior bits
     Head,
     Eye,
@@ -47,9 +47,9 @@ const BodyPartTag = enum {
     Tibia,
 };
 
-const Side = enum(u8) { Left, Right, Center, None };
+pub const Side = enum(u8) { Left, Right, Center, None };
 
-const BodyPart = struct {
+pub const BodyPart = struct {
     name_hash: u32, // e.g. hash("left_index_finger") for lookups
     tag: BodyPartTag,
     parent: PartIndex, // Index of the body part this is attached to
@@ -90,7 +90,7 @@ pub const PartDef = struct {
     } = .{},
 };
 
-const Body = struct {
+pub const Body = struct {
     parts: std.ArrayList(BodyPart),
 
     // Helper to find things
@@ -100,7 +100,7 @@ const Body = struct {
     }
 };
 
-const Layer = enum(u8) {
+pub const Layer = enum(u8) {
     Skin = 0, // Tattoos, Piercings
     Underwear = 1, // Loincloth, singlet, socks
     CloseFit = 2, // Shirt, Rings (if under glove)
@@ -112,7 +112,7 @@ const Layer = enum(u8) {
     Strapped = 8, // Backpacks, sheathed weapons
 };
 
-const Coverage = struct {
+pub const Coverage = struct {
     // Which parts does this cover?
     // Using a bitmask or list of tags.
     // A Glove covers: [Hand, Finger1..5, Thumb]
@@ -135,7 +135,7 @@ const Coverage = struct {
     // is_nonexclusive: bool,
 };
 
-const ItemDef = struct {
+pub const ItemDef = struct {
     name: []const u8,
     // An item can have MULTIPLE wear configurations
     // Config 0: Goggles on Eyes. Config 1: Goggles on Neck.
@@ -158,9 +158,9 @@ const ItemDef = struct {
 //     return std.math.absFloat(body_part.circumference - item.circumference) < tolerance;
 // }
 
-const TissueLayer = enum { Bone, Artery, Muscle, Fat, Nerve, Skin };
+pub const TissueLayer = enum { Bone, Artery, Muscle, Fat, Nerve, Skin };
 
-const Wound = struct {
+pub const Wound = struct {
     tissue: TissueLayer,
     severity: f32, // 0.0 to 1.0 (Severed / Crushed)
     type: enum { Blunt, Cut, Pierce, Burn, Acid },
@@ -168,12 +168,12 @@ const Wound = struct {
 };
 
 // game state (not the static def):
-const BodyState = struct {
+pub const BodyState = struct {
     // Parallel array to the Body.parts list
     part_states: std.ArrayList(PartState),
 };
 
-const PartState = struct {
+pub const PartState = struct {
     wounds: std.ArrayList(Wound),
     is_severed: bool, // If true, all children are implicitly disconnected
 
@@ -203,7 +203,7 @@ const PartState = struct {
 };
 
 // An array of nodes defining the topology
-const HumanoidPlan = [_]PartDef{
+pub const HumanoidPlan = [_]PartDef{
     .{ .tag = .Torso, .parent = null },
     .{ .tag = .Head, .parent = 0 },
     .{ .tag = .LeftArmUpper, .parent = 0 },

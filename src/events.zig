@@ -14,19 +14,19 @@ pub const EventSystem = struct {
     // We use two buffers to avoid "modifying the list while iterating it"
     current_events: std.ArrayList(Event),
     next_events: std.ArrayList(Event),
-    allocator: std.mem.Allocator,
+    alloc: std.mem.Allocator,
 
-    pub fn init(allocator: std.mem.Allocator) EventSystem {
+    pub fn init(alloc: std.mem.Allocator) !EventSystem {
         return .{
-            .current_events = std.ArrayList(Event).init(allocator),
-            .next_events = std.ArrayList(Event).init(allocator),
-            .allocator = allocator,
+            .current_events = try std.ArrayList(Event).initCapacity(alloc, 1000),
+            .next_events = try std.ArrayList(Event).initCapacity(alloc, 1000),
+            .alloc = alloc,
         };
     }
 
     pub fn deinit(self: *EventSystem) void {
-        self.current_events.deinit();
-        self.next_events.deinit();
+        self.current_events.deinit(self.alloc);
+        self.next_events.deinit(self.alloc);
     }
 
     // Systems call this to queue something for NEXT frame

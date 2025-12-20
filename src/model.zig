@@ -1,37 +1,39 @@
 const std = @import("std");
-const ps = @import("polystate");
-const fsm = @import("zigfsm");
-const rect = @import("sdl3").rect;
+const lib = @import("infra");
+const config = lib.config;
+const rect = lib.sdl.rect;
+const fsm = lib.fsm;
 
-const Config = struct {
-    fps: usize,
-    width: usize,
-    height: usize,
+const body = @import("body.zig");
 
-    fn init() @This() {
-        return @This(){
-            .fps = 60,
-            .width = 1080,
-            .height = 860,
-        };
-    }
+const archetypes = .{
+    .soldier = StatBlock{
+        .power = 6,
+        .speed = 5,
+        .agility = 4,
+        .dexterity = 3,
+        .fortitude = 6,
+        .endurance = 5,
+        // mental
+        .acuity = 4,
+        .will = 4,
+        .intuition = 3,
+        .presence = 5,
+    },
+    .hunter = StatBlock{
+        .power = 5,
+        .speed = 6,
+        .agility = 7,
+        .dexterity = 3,
+        .fortitude = 5,
+        .endurance = 5,
+        // mental
+        .acuity = 6,
+        .will = 4,
+        .intuition = 4,
+        .presence = 4,
+    },
 };
-
-const UIState = struct {
-    zoom: f32,
-    screen: rect.IRect,
-    camera: rect.IRect,
-    mouse: rect.FPoint,
-    fn init() @This() {
-        return @This(){
-            .zoom = 1.0,
-            .screen = .{ .x = 0, .y = 0, .w = 0, .h = 0 },
-            .camera = .{ .x = 0, .y = 0, .w = 0, .h = 0 },
-            .mouse = .{ .x = 0, .y = 0 },
-        };
-    }
-};
-
 pub const StatBlock = packed struct {
     // physical
     power: f32,
@@ -45,30 +47,64 @@ pub const StatBlock = packed struct {
     will: f32,
     intuition: f32,
     presence: f32,
+
+    fn splat(num: f32) StatBlock {
+        return StatBlock{
+            .power = num,
+            .speed = num,
+            .agility = num,
+            .dexterity = num,
+            .fortitude = num,
+            .endurance = num,
+            // mental
+            .acuity = num,
+            .will = num,
+            .intuition = num,
+            .presence = num,
+        };
+    }
+
+    fn init(template: StatBlock) StatBlock {
+        const s = StatBlock{};
+        s.* = template;
+        return s;
+    }
 };
 
-// Dorsal Symmetry
-pub const Side = enum { Left, Right };
-pub const HumanoidBodyPart = enum { Head, Neck, Chest };
+pub const Player = struct {
+    stats: StatBlock,
+    wounds: struct {},
+    conditions: struct {},
 
-pub const Wound = struct {};
+    fn init() Player {
+        return Player{ .stats = StatBlock.splat(5), .wounds = {}, .conditions = {} };
+    }
+};
 
-pub const Player = struct {};
+pub const Encounter = struct {};
 
 pub const World = struct {
-    config: Config,
-    ui: UIState,
     alloc: std.mem.Allocator,
+    events: lib.events.EventSystem,
+    encounter: ?Encounter,
+    random: struct {}, // RNG streams
 
     pub fn init(alloc: std.mem.Allocator) !@This() {
         return @This(){
             .alloc = alloc,
-            .config = Config.init(),
-            .ui = UIState.init(),
+            .events = try lib.events.EventSystem.init(alloc),
+            .encounter = null,
+            .random = .{},
         };
     }
 
     pub fn deinit(self: *World, alloc: std.mem.Allocator) void {
         _ = .{ self, alloc };
+        self.events.deinit();
+    }
+
+    pub fn step(self: *World) void {
+        _ = .{self};
+        //
     }
 };

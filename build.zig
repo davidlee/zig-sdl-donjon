@@ -24,14 +24,14 @@ fn buildBin(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.built
     // Internal modules
     //
 
-    const shared_mod = b.addModule("shared", .{
-        .root_source_file = b.path("src/shared.zig"),
+    const infra_mod = b.addModule("infra", .{
+        .root_source_file = b.path("src/infra.zig"),
     });
 
-    shared_mod.addImport("sdl3", sdl3.module("sdl3"));
-    shared_mod.addImport("zigfsm", b.dependency("zigfsm", .{}).module("zigfsm"));
+    infra_mod.addImport("sdl3", sdl3.module("sdl3"));
+    infra_mod.addImport("zigfsm", b.dependency("zigfsm", .{}).module("zigfsm"));
 
-    exe_mod.addImport("shared", shared_mod);
+    exe_mod.addImport("infra", infra_mod);
 
     const exe = b.addExecutable(.{
         .name = "cardigan",
