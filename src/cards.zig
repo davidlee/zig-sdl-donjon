@@ -1,24 +1,26 @@
 const std = @import("std");
 const lib = @import("infra");
-const events = lib.events;
+const Event = @import("events.zig").Event;
+const EventTag = std.meta.Tag(Event); // std.meta.activeTag(event) for cmp
+const EntityID = @import("entity.zig").EntityID;
 
 const CardKind = enum {
     Action,
     Passive,
     Reaction,
     Encounter,
-    Environment,
     Mob,
-    Ally,
+    // Ally,
+    Environment,
     Resource,
     MetaProgression,
 };
 
-pub const TriggerKind = enum {
-    OnPlay,
-    OnDraw,
-    OnSecond,
-    OnEvent, // parameterized by EventKind
+pub const TriggerKind = union(enum) {
+    on_play,
+    on_draw,
+    on_tick,
+    on_event: EventTag,
 };
 
 pub const Effect = union(enum) {
@@ -29,7 +31,7 @@ pub const Effect = union(enum) {
 };
 
 pub const Rule = struct {
-    trigger: Trigger,
+    trigger: TriggerKind,
     predicate: ?Predicate,
     effects: []const Effect,
 };
@@ -45,7 +47,6 @@ const Op = union(enum) {
 };
 
 // stubs
-const Trigger = lib.events.Event;
 const IfEffect = struct {};
 const ForEachEffect = struct {};
 const CustomEffectId = struct {};

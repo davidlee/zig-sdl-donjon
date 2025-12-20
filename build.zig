@@ -30,7 +30,7 @@ fn buildBin(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.built
 
     infra_mod.addImport("sdl3", sdl3.module("sdl3"));
     infra_mod.addImport("zigfsm", b.dependency("zigfsm", .{}).module("zigfsm"));
-
+    exe_mod.addImport("zigfsm", b.dependency("zigfsm", .{}).module("zigfsm"));
     exe_mod.addImport("infra", infra_mod);
 
     const exe = b.addExecutable(.{

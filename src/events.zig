@@ -1,5 +1,6 @@
 const std = @import("std");
 const EntityID = @import("entity.zig").EntityID;
+const RandomStreamID = @import("world.zig").RandomStreamID;
 const Slot = void; // TODO what's this look like?
 //
 pub const CardWithSlot = struct {
@@ -28,6 +29,8 @@ pub const Event = union(enum) {
 
     equipped_passive: CardWithSlot,
     unequipped_passive: CardWithSlot,
+
+    draw_random: RandomStreamID,
 
     play_sound: struct { // Payload: struct
         id: u16,
@@ -69,5 +72,22 @@ pub const EventSystem = struct {
         // 'next' becomes 'current' (to be read).
         // 'current' becomes 'next' (empty, ready to be written to).
         std.mem.swap(std.ArrayList(Event), &self.current_events, &self.next_events);
+    }
+};
+
+pub const EventLog = struct {
+    alloc: std.mem.Allocator,
+    entries: *std.ArrayList([]const u8),
+
+    pub fn init(alloc: std.mem.Allocator) !@This() {
+        var entries = try std.ArrayList([]const u8).initCapacity(alloc, 1000);
+        return @This(){
+            .alloc = alloc,
+            .entries = &entries,
+        };
+    }
+
+    pub fn deinit(self: *EventLog) void {
+        self.entries.deinit();
     }
 };
