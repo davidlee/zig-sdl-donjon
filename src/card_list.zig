@@ -10,11 +10,15 @@ const cards = @import("cards.zig");
 const Rule = cards.Rule;
 const TagSet = cards.TagSet;
 const Cost = cards.Cost;
+const Trigger = cards.Trigger;
+const Effect = cards.Effect;
+const Expression= cards.Expression;
 
 var id: cards.ID = 0;
-const BeginnerDeck: []cards.Template = .{
+pub const BeginnerDeck: []cards.Template = .{
     cards.Template{
         .id = cards.nextCardID(&id),
+        .kind = .action,
         .name = "strike",
         .description = "hit them",
         .rarity = .common,
@@ -22,11 +26,23 @@ const BeginnerDeck: []cards.Template = .{
             .melee = true,
             .offensive = true,
         },
-        .rules = Rule{},
+        .rules = Rule{
+            .trigger = .on_play,
+            .valid = .always,
+            .expressions = .{
+              Expression{
+                  .effect = Effect{
+                      
+                  },
+              }  
+            },
+            
+        },
         .cost = Cost{ .stamina = 3.0, .time = 0.3 },
     },
     cards.Template{
         .id = cards.nextCardID(&id),
+        .kind = .action,
         .name = "block",
         .description = "defend",
         .rarity = .common,
