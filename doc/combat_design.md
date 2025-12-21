@@ -132,3 +132,50 @@ Out of scope for prototype:
 - Card effect composition (how do modifiers stack?)
 
 These will be answered by building and testing.
+
+
+---
+
+## other ideas
+
+- 'classes' are slight differences in starting stats & cards.
+- everyone starts with a passive that lets you react with a block or attack,
+  if you haven't played any cards but the opponent attacks, at a small stamina cost
+- a basic tactic is to bait your opponent with a Feint (stamina cost: 2) to get them ta
+  use a reaction (cost: 2) to play a block (cost: 3) and wear them down
+- Strike beats Feint
+- Chains are important: Feint vs Block sets up the next move for Strike (erodes Stance)
+- You can overcommit: play more than 1 sec worth of cards in a tick. If they get interrupted, 
+  you lose them, but the upside is a bonus to breaking Stance on each successive attack.
+- Basic bitch rock paper scissors is Block beats Strike beats Feint beats Block
+- Basic combos:
+  - Feint Strike Strike 
+  - Strike Block Block 
+  - Block Feint Feint 
+
+- blocking is a lot better with a shield
+- shields can be sundered through use
+- some weapons are better than others for busting shields (axe > mace > sword)
+- some weapons are better for parrying (sword > axe > mace)
+- weapons have durability too - swords get fucked up by a lot of blade on blade smashing
+
+- Manouver is a move - strong vs Feint 
+
+- weapons and opponents have range (which is abstract). Weapons might have a max & min.
+  - far < medium < near < 12ft ... 1ft < fist 
+  - melee weapons: weapon with most reach holds opponent at its striking distance until they get inside it
+  - 2h pole weapons can act as if - 3ft shorter (hand repositioning)
+  - if an opponent is inside your reach, you can Manouvre to get back to striking range
+
+
+- You can draw extra cards for a Stamina cost
+- We do still need to handle the 'no opposing card' situation
+  - assume weak active defence
+  - different to attacking a paralysed foe which is a "free hit"
+
+- unless there's a really good reason otherwise, all the "basic rules" like 
+  how many hands you get dealt, reaction draws, etc are 
+  represented as Passive or Meta cards in the starding hand
+- this allows for "class variations" as well as metaprogression
+
+

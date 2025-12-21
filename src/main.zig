@@ -9,6 +9,7 @@ const s = lib.sdl;
 const World = @import("world.zig").World;
 const ctrl = @import("controls.zig");
 const gfx = @import("graphics.zig");
+const cards = @import("cards.zig");
 
 pub fn main() !void {
     defer s.shutdown();
