@@ -18,7 +18,7 @@ const ID = cards.ID;
 var template_id: ID = 0;
 var technique_id: ID = 0;
 
-fn hashName(comptime name: []const u8) u64 {
+fn hashName(comptime name: []const u8) ID {
     return std.hash.Wyhash.hash(0, name);
 }
 

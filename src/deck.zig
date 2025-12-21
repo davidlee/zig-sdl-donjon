@@ -31,7 +31,9 @@ pub const Deck = struct {
             .hand = try std.ArrayList(*Instance).initCapacity(alloc, templates.len),
             .exhaust = try std.ArrayList(*Instance).initCapacity(alloc, templates.len),
         };
-        for (templates) |t| {
+        // NOTE: this *t is important because we need a stable reference to the static template - using t in the 
+        // for loop and then taking a pointer will yield a copy!
+        for (templates) |*t| {
             const instance = try self.createInstance(t);
             try self.deck.append(alloc, instance);
         }
@@ -49,12 +51,12 @@ pub const Deck = struct {
         self.exhaust.deinit(self.alloc);
     }
 
-    fn createInstance(self: *Deck, template: Template) !*Instance {
+    fn createInstance(self: *Deck, template: *const Template) !*Instance {
         var instance = try self.alloc.create(Instance);
-        instance.template = template.id;
+        std.debug.print("insert: {s}", .{template.name});
+        instance.template = template;
+        std.debug.print(" -- insert: {s}\n", .{instance.template.name});
         const id: EntityID = try self.entities.insert(instance);
-        // does this mutation update the inserted instance? don't think so.
-        // should this be a SlotMap(*Instance) instead?
         instance.id = id;
         return instance;
     }

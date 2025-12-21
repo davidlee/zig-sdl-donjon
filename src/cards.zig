@@ -169,6 +169,5 @@ pub const Template = struct {
 
 pub const Instance = struct {
     id: EntityID,
-    template: ID,
-    // TODO model card enhancements
+    template: *const Template,
 };

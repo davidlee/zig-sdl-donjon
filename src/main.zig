@@ -98,6 +98,11 @@ pub fn main() !void {
 }
 
 fn runTestCase(alloc: std.mem.Allocator, world: *World) !void {
-    _=.{world, alloc};
+    _=alloc;
+    //std.debug.print("deck: {any}\n",.{world.deck.deck});
+    for(world.deck.deck.items) |instance| {
+        std.debug.print("inst: {any}\n",.{instance.template.name});
+    }
+    
     
 }
