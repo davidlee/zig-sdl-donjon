@@ -49,6 +49,8 @@ pub fn main() !void {
     // Useful for limiting the FPS and getting the delta time.
     var fps_capper = s.extras.FramerateCapper(f32){ .mode = .{ .limited = config.fps } };
 
+    try runTestCase(alloc, &world);
+    
     var quit = false;
     while (!quit) {
         // Delay to limit the FPS, returned delta time not needed.
@@ -93,4 +95,9 @@ pub fn main() !void {
                 },
             };
     }
+}
+
+fn runTestCase(alloc: std.mem.Allocator, world: *World) !void {
+    _=.{world, alloc};
+    
 }

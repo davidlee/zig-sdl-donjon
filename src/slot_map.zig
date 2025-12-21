@@ -15,26 +15,26 @@ pub fn SlotMap(comptime T: type) type {
 
         // The "Freelist" - a stack of indices we can reuse
         free_indices: std.ArrayList(u32),
-        allocator: std.mem.Allocator,
+        alloc: std.mem.Allocator,
 
         pub fn init(alloc: std.mem.Allocator) !Self {
             return .{
                 .items = try std.ArrayList(T).initCapacity(alloc, 1000),
                 .generations = try std.ArrayList(u32).initCapacity(alloc, 1000),
                 .free_indices = try std.ArrayList(u32).initCapacity(alloc, 1000),
-                .allocator = alloc,
+                .alloc = alloc,
             };
         }
 
         pub fn deinit(self: *Self) void {
-            self.items.deinit();
-            self.generations.deinit();
-            self.free_indices.deinit();
+            self.items.deinit(self.alloc);
+            self.generations.deinit(self.alloc);
+            self.free_indices.deinit(self.alloc);
         }
 
         // Create a new item and return its stable ID
         pub fn insert(self: *Self, item: T) !EntityID {
-            if (self.free_indices.popOrNull()) |idx| {
+            if (self.free_indices.pop()) |idx| {
                 // REUSE SLOT:
                 // Overwrite the data at the old index
                 self.items.items[idx] = item;
@@ -44,8 +44,8 @@ pub fn SlotMap(comptime T: type) type {
             } else {
                 // NEW SLOT:
                 const idx = @as(u32, @intCast(self.items.items.len));
-                try self.items.append(item);
-                try self.generations.append(1); // Generation starts at 1
+                try self.items.append(self.alloc, item);
+                try self.generations.append(self.alloc, 1); // Generation starts at 1
                 return EntityID{ .index = idx, .generation = 1 };
             }
         }

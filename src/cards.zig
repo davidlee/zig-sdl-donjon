@@ -50,18 +50,18 @@ pub const Trigger = union(enum) {
 };
 
 pub const TagSet = packed struct {
-    melee: true,
-    ranged: true,
-    offensive: true,
-    defensive: true,
-    spell: true,
-    item: true,
-    buff: true,
-    debuff: true,
-    reaction: true,
-    power: true,
-    skill: true,
-    meta: true,
+    melee: bool = false,
+    ranged: bool = false,
+    offensive: bool = false,
+    defensive: bool = false,
+    spell: bool = false,
+    item: bool = false,
+    buff: bool = false,
+    debuff: bool = false,
+    reaction: bool = false,
+    power: bool = false,
+    skill: bool = false,
+    meta: bool = false,
 };
 
 pub const Comparator = enum {
@@ -104,14 +104,14 @@ pub const TargetQuery = union(enum) {
     event_source,
 };
 
-const Technique = struct {
-    id: ID,
+pub const Technique = struct {
+    id: u64,
     name: []const u8,
     damage: damage.Base,
-    difficulty: f32, 
-    
+    difficulty: f32,
+
     // region: null, // hit location weighting
-    
+
     // multiplier for defender's roll (0.0 - 2.0):
     deflect_mult: f32 = 1.0,
     parry_mult: f32 = 1.0,

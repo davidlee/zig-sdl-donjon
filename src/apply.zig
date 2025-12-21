@@ -1,3 +1,36 @@
+const std = @import("std");
+const lib = @import("infra");
+const Event = @import("events.zig").Event;
+const EventTag = std.meta.Tag(Event);
+
+const EntityID = @import("entity.zig").EntityID;
+const damage = @import("damage.zig");
+const stats = @import("stats.zig");
+const World = @import("world.zig").World;
+
+const cards = @import("cards.zig");
+
+const Rule = cards.Rule;
+const TagSet = cards.TagSet;
+const Cost = cards.Cost;
+const Trigger = cards.Trigger;
+const Effect = cards.Effect;
+const Expression = cards.Expression;
+const Technique = cards.Technique;
+
+pub const CommandHandler = struct {
+    world: *World,
+
+    pub fn init(world: *World) @This() {
+        return @This(){
+            .world = world,
+        };
+    }
+    pub fn playCard(self: *World, card: cards.Instance) !bool {
+        _ = .{self, card};
+    }
+};
+
 // event -> state mutation
 //
 // keep the core as:

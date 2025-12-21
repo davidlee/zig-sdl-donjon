@@ -10,6 +10,9 @@ const EventSystem = events.EventSystem;
 const Event = events.Event;
 const SlotMap = @import("slot_map.zig").SlotMap;
 const cards = @import("cards.zig");
+const Mob = @import("mob.zig");
+const Deck = @import("deck.zig").Deck;
+const BeginnerDeck= @import("card_list.zig").BeginnerDeck;
 
 const GameEvent = enum {
     start_game,
@@ -25,7 +28,11 @@ const GameState = enum {
     animating,
 };
 
-pub const Encounter = struct {};
+pub const Encounter = struct {
+    mobs: []Mob,
+    // environment
+    // loot
+};
 
 pub const World = struct {
     alloc: std.mem.Allocator,
@@ -34,7 +41,7 @@ pub const World = struct {
     random: random.RandomStreamDict,
     player: Player,
     fsm: zigfsm.StateMachine(GameState, GameEvent, .wait_for_player),
-    cards: SlotMap(cards.Instance), 
+    deck: Deck,
 
     pub fn init(alloc: std.mem.Allocator) !@This() {
         var fsm = zigfsm.StateMachine(GameState, GameEvent, .wait_for_player).init();
@@ -51,12 +58,13 @@ pub const World = struct {
             .random = random.RandomStreamDict.init(),
             .player = Player.init(),
             .fsm = fsm,
-            .cards = try SlotMap(cards.Instance).init(alloc),
+            .deck = try Deck.init(alloc, &BeginnerDeck),
         };
     }
 
     pub fn deinit(self: *World) void {
         self.events.deinit();
+        self.deck.deinit();
     }
 
     pub fn step(self: *World) void {

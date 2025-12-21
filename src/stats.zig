@@ -1,7 +1,12 @@
 
 pub const Scaling = struct {
-    stats: .{ Accessor, ?Accessor },
+    stats: CheckSignature,
     ratio: f32 = 1.0,
+};
+
+pub const CheckSignature = union(enum) {
+    stat: Accessor,
+    average: [2]Accessor,
 };
 
 pub const Accessor = enum {
