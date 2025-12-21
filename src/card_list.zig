@@ -28,6 +28,21 @@ fn hashName(comptime name: []const u8) u64 {
     return std.hash.Wyhash.hash(0, name);
 }
 
+const techniqueData = struct { name: []const u8, damage: damage.Base, difficulty: f32, deflect_mult: f32, dodge_mult: f32, counter_mult: f32, parry_mult: f32 };
+
+fn defineTechnique(data: techniqueData) Technique {
+    return Technique{
+        .id = hashName(data.name),
+        .name = data.name,
+        .damage = data.damage,
+        .difficulty = data.difficulty,
+        .deflect_mult = data.deflect_mult,
+        .dodge_mult = data.dodge_mult,
+        .counter_mult = data.counter_mult,
+        .parry_mult = data.parry_mult,
+    };
+}
+
 const TechniqueRepository = struct {
     entries: []Technique,
 
@@ -40,27 +55,8 @@ const TechniqueRepository = struct {
     }
 };
 
-// const t: Technique = .{
-//     .id = hashName("thrust"),
-//     .name = "thrust",
-//     .damage = &.{
-//         .instances = &.{
-//             .{ .amount = 1.0, .types = &.{.pierce} },
-//         },
-//         .scaling = &.{
-//             .ratio = 0.5,
-//             .stats = .{ .average = &.{ .speed, .power }},
-//         },
-//     },
-//     .difficulty = 0.7,
-//     .deflect_mult = 1.3,
-//     .dodge_mult = 0.5,
-//     .counter_mult = 1.1,
-//     .parry_mult = 1.2
-// };
-
-const TechniqueEntries: [5]Technique = .{
-    .{ .id = hashName("thrust"), .name = "thrust", .damage = .{
+const TechniqueEntries = [_]Technique{
+    defineTechnique(.{ .name = "thrust", .damage = .{
         .instances = &.{
             .{ .amount = 1.0, .types = &.{.pierce} },
         },
@@ -68,10 +64,9 @@ const TechniqueEntries: [5]Technique = .{
             .ratio = 0.5,
             .stats = .{ .average = .{ .speed, .power } },
         },
-    }, .difficulty = 0.7, .deflect_mult = 1.3, .dodge_mult = 0.5, .counter_mult = 1.1, .parry_mult = 1.2 },
+    }, .difficulty = 0.7, .deflect_mult = 1.3, .dodge_mult = 0.5, .counter_mult = 1.1, .parry_mult = 1.2 }),
 
-    .{
-        .id = hashName("swing"),
+    defineTechnique(.{
         .name = "swing",
         .damage = .{
             .instances = &.{
@@ -87,10 +82,10 @@ const TechniqueEntries: [5]Technique = .{
         .dodge_mult = 1.2,
         .counter_mult = 1.3,
         .parry_mult = 1.2,
-    },
-    // // TODO: maybe - separate defensive tactics out
-    .{
-        .id = hashName("deflect"),
+    }),
+    
+    // TODO: maybe - separate defensive tactics out
+    defineTechnique(.{
         .name = "deflect",
         .damage = .{
             .instances = &.{.{ .amount = 0.0, .types = &.{} }},
@@ -104,9 +99,8 @@ const TechniqueEntries: [5]Technique = .{
         .dodge_mult = 1.0,
         .counter_mult = 1.0,
         .parry_mult = 1.0,
-    },
-    .{
-        .id = hashName("parry"),
+    }),
+    defineTechnique(.{
         .name = "parry",
         .damage = .{
             .instances = &.{.{ .amount = 0.0, .types = &.{} }},
@@ -120,9 +114,8 @@ const TechniqueEntries: [5]Technique = .{
         .dodge_mult = 1.0,
         .counter_mult = 1.0,
         .parry_mult = 1.0,
-    },
-    .{
-        .id = hashName("block"),
+    }),
+    defineTechnique(.{
         .name = "block",
         .damage = .{
             .instances = &.{.{ .amount = 0.0, .types = &.{} }},
@@ -136,14 +129,14 @@ const TechniqueEntries: [5]Technique = .{
         .dodge_mult = 1.0,
         .counter_mult = 1.0,
         .parry_mult = 1.0,
-    },
+    }),
 };
 
 pub const Techniques: TechniqueRepository = &.{
     .entries = TechniqueEntries,
 };
 
-pub const BeginnerDeck: [3]cards.Template = .{
+pub const BeginnerDeck = [_]cards.Template{
     .{
         .id = 0,
         .kind = .action,
