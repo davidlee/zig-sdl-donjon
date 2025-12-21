@@ -1,10 +1,5 @@
 const std = @import("std");
-// const assert = std.testing.expectEqual
 const lib = @import("infra");
-const stats = @import("stats.zig");
-// const Event = @import("events.zig").Event;
-// const EventTag = std.meta.Tag(Event); // std.meta.activeTag(event) for cmp
-// const EntityID = @import("entity.zig").EntityID;
 pub const BodyPartTag = @import("body.zig").BodyPartTag;
 
 // DoT are separate 
@@ -115,11 +110,6 @@ pub const Category = enum {
     energy,
     biogogical,
     magical,
-};
-
-pub const ScalingSpec = struct {
-    stat: stats.Accessor = .power,
-    ratio: f32 = 1.0,
 };
 
 test "Kind" {}

@@ -155,8 +155,67 @@ fn definePart(
 }
 
 pub const HumanoidPlan = [_]PartDef{
-    definePart("torso", .torso, .Center, null),
-    definePart("head", .head, .center, "torso"),
+    // Core
+    definePart("torso", .torso, .center, null),
     definePart("neck", .neck, .center, "torso"),
-    // ...
+    definePart("head", .head, .center, "neck"),
+    definePart("abdomen", .abdomen, .center, "torso"),
+    definePart("groin", .groin, .center, "abdomen"),
+
+    // Head details
+    definePart("left_eye", .eye, .left, "head"),
+    definePart("right_eye", .eye, .right, "head"),
+    definePart("nose", .nose, .center, "head"),
+    definePart("left_ear", .ear, .left, "head"),
+    definePart("right_ear", .ear, .right, "head"),
+
+    // Left arm chain
+    definePart("left_shoulder", .shoulder, .left, "torso"),
+    definePart("left_arm", .arm, .left, "left_shoulder"),
+    definePart("left_elbow", .elbow, .left, "left_arm"),
+    definePart("left_forearm", .forearm, .left, "left_elbow"),
+    definePart("left_wrist", .wrist, .left, "left_forearm"),
+    definePart("left_hand", .hand, .left, "left_wrist"),
+    definePart("left_thumb", .thumb, .left, "left_hand"),
+    definePart("left_index_finger", .finger, .left, "left_hand"),
+    definePart("left_middle_finger", .finger, .left, "left_hand"),
+    definePart("left_ring_finger", .finger, .left, "left_hand"),
+    definePart("left_pinky_finger", .finger, .left, "left_hand"),
+
+    // Right arm chain
+    definePart("right_shoulder", .shoulder, .right, "torso"),
+    definePart("right_arm", .arm, .right, "right_shoulder"),
+    definePart("right_elbow", .elbow, .right, "right_arm"),
+    definePart("right_forearm", .forearm, .right, "right_elbow"),
+    definePart("right_wrist", .wrist, .right, "right_forearm"),
+    definePart("right_hand", .hand, .right, "right_wrist"),
+    definePart("right_thumb", .thumb, .right, "right_hand"),
+    definePart("right_index_finger", .finger, .right, "right_hand"),
+    definePart("right_middle_finger", .finger, .right, "right_hand"),
+    definePart("right_ring_finger", .finger, .right, "right_hand"),
+    definePart("right_pinky_finger", .finger, .right, "right_hand"),
+
+    // Left leg chain
+    definePart("left_thigh", .thigh, .left, "groin"),
+    definePart("left_knee", .knee, .left, "left_thigh"),
+    definePart("left_shin", .shin, .left, "left_knee"),
+    definePart("left_ankle", .ankle, .left, "left_shin"),
+    definePart("left_foot", .foot, .left, "left_ankle"),
+    definePart("left_big_toe", .toe, .left, "left_foot"),
+    definePart("left_second_toe", .toe, .left, "left_foot"),
+    definePart("left_third_toe", .toe, .left, "left_foot"),
+    definePart("left_fourth_toe", .toe, .left, "left_foot"),
+    definePart("left_pinky_toe", .toe, .left, "left_foot"),
+
+    // Right leg chain
+    definePart("right_thigh", .thigh, .right, "groin"),
+    definePart("right_knee", .knee, .right, "right_thigh"),
+    definePart("right_shin", .shin, .right, "right_knee"),
+    definePart("right_ankle", .ankle, .right, "right_shin"),
+    definePart("right_foot", .foot, .right, "right_ankle"),
+    definePart("right_big_toe", .toe, .right, "right_foot"),
+    definePart("right_second_toe", .toe, .right, "right_foot"),
+    definePart("right_third_toe", .toe, .right, "right_foot"),
+    definePart("right_fourth_toe", .toe, .right, "right_foot"),
+    definePart("right_pinky_toe", .toe, .right, "right_foot"),
 };
