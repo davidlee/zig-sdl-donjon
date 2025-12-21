@@ -8,6 +8,8 @@ const Player = player.Player;
 const events = @import("events.zig");
 const EventSystem = events.EventSystem;
 const Event = events.Event;
+const SlotMap = @import("slot_map.zig").SlotMap;
+const cards = @import("cards.zig");
 
 const GameEvent = enum {
     start_game,
@@ -32,6 +34,7 @@ pub const World = struct {
     random: random.RandomStreamDict,
     player: Player,
     fsm: zigfsm.StateMachine(GameState, GameEvent, .wait_for_player),
+    cards: SlotMap(cards.Instance), 
 
     pub fn init(alloc: std.mem.Allocator) !@This() {
         var fsm = zigfsm.StateMachine(GameState, GameEvent, .wait_for_player).init();
@@ -48,6 +51,7 @@ pub const World = struct {
             .random = random.RandomStreamDict.init(),
             .player = Player.init(),
             .fsm = fsm,
+            .cards = try SlotMap(cards.Instance).init(alloc),
         };
     }
 

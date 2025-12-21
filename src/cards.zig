@@ -6,21 +6,21 @@ const EventTag = std.meta.Tag(Event); // std.meta.activeTag(event) for cmp
 const EntityID = @import("entity.zig").EntityID;
 const damage = @import("damage.zig");
 const stats = @import("stats.zig");
-pub const AnatomyTag = @import("body.zig").AnatomyTag;
+const body = @import("body.zig");
 
-const CardKind = enum {
-    Action,
-    Passive,
-    Reaction,
-    Encounter,
-    Mob,
+pub const Kind = enum {
+    action,
+    passive,
+    reaction,
+    encounter,
+    mob,
     // Ally,
-    Environment,
-    Resource,
-    MetaProgression,
+    environment,
+    resource,
+    meta_progression,
 };
 
-pub const TriggerKind = union(enum) {
+pub const Trigger = union(enum) {
     on_play,
     on_draw,
     on_tick,
@@ -31,47 +31,58 @@ pub const Effect = struct {
     op: OpSpec, // tagged union with payload (damage, draw, etc.)
     predicate: ?Predicate, // optional guard
     target: TargetQuery, // query returning one or many entities/parts
-    mods: ModifierHooks, // optional extra data (e.g., use stamina pipeline)
-};
-pub const ModifierHooks = struct {
-    use_stamina_pipeline: bool = false,
-    use_time_pipeline: bool = false,
+    // mods: ModifierHooks, // optional extra data (e.g., use stamina pipeline)
 };
 
+// placeholder for “effect-level instructions to the modifier pipeline,”
+// pub const ModifierHooks = struct {
+//     use_stamina_pipeline: bool = false,
+//     use_time_pipeline: bool = false,
+// };
+
 pub const ActionRef = ?u32;
+
 pub const ActionSpec = struct {
     duration: f32 = 1.0,
-    cost: CardCost,
+    cost: Cost,
 };
+
 pub const Zone = enum {
     draw,
     hand,
     discard,
-    exhaust,
     in_play,
+    equipped,
+    inventory,
+    active_passives,
+    active_meta,
+    active_reactions,
 };
+
 pub const ModifierSpec = struct {};
 pub const OpSpec = union(enum) {
-    ApplyDamage: struct {
+    apply_damage: struct {
         base: damage.Packet, // numbers derived from card definition
         scaling: damage.ScalingSpec, // e.g. { stat = .power, ratio = 0.6 }
         damage_kind: damage.Kind,
         action_ref: ActionRef, // optional, for logging/interrupt
     },
-    StartAction: ActionSpec,
-    ModifyStamina: struct { amount: i32 },
-    MoveCard: struct { from: Zone, to: Zone },
-    AddModifier: ModifierSpec,
-    EmitEvent: Event,
+    start_action: ActionSpec,
+    modify_stamina: struct { amount: i32 },
+    move_card: struct { from: Zone, to: Zone },
+    add_modifier: ModifierSpec,
+    emit_event: Event,
 };
+
 pub const Predicate = union(enum) {
-    AlwaysTrue,
-    CompareStat: struct { lhs: stats.Accessor, op: CmpOp, rhs: Value },
-    HasTag: Tag,
-    Not: *Predicate,
-    And: []const Predicate,
-    Or: []const Predicate,
+    always_true,
+    compare_stat: struct { lhs: stats.Accessor, op: CmpOp, rhs: Value },
+    has_tag: Tag,
+    not: *Predicate,
+    this_and: []const Predicate,
+    this_or: []const Predicate,
 };
+
 pub const Tag = enum {
     none,
 };
@@ -91,42 +102,49 @@ pub const TargetQuery = union(enum) {
     single: Selector, // e.g. explicit target chosen during play
     all_enemies,
     self,
-    body_part: AnatomyTag,
+    body_part: body.Tag,
     event_source,
 };
+
 pub const Selector = struct {
     id: EntityID,
 };
+
 pub const Rule = struct {
-    trigger: TriggerKind,
+    trigger: Trigger,
     predicate: ?Predicate,
     effects: []const Effect,
 };
 
-const Op = union(enum) {
-    ApplyDamage,
-    InflictWound,
-    AddCondition, // Condition
-    RemoveCondition, // Condition
-    ExhaustCard, // zone (constraint)
-    ReturnExhaustedCard,
-    InterruptAction,
+pub const Op = union(enum) {
+    apply_damage,
+    inflict_wound,
+    add_condition: damage.Condition,
+    remove_condition: damage.Condition,
+    exhaust_card: EntityID,
+    return_exhausted_card: EntityID,
+    interrupt_action,
 };
 
-const TagSet = struct {};
+pub const TagSet = struct {};
 
-const CardID = u16;
+pub const ID = u16;
 
-pub const CardDef = struct {
-    id: CardID,
+pub const Template = struct {
+    id: ID,
+    name: []const u8,
+    description: []const u8,
     tags: TagSet,
     rules: []const Rule,
-    // plus UI fields, costs, etc.
+    cost: Cost, 
 };
 
-const CardInst = struct { id: EntityID };
+pub const Instance = struct { id: EntityID,
+    template: ID,
+    // TODO model card enhancements 
+};
 
-const CardCost = struct {
+pub const Cost = struct {
     stamina: f32,
     time: f32,
     exhausts: bool,

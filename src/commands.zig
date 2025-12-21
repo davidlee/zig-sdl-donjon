@@ -2,7 +2,7 @@
 // const events= @import("events.zig");
 // const Event = events.Event;
 // const CardWithSlot= events.CardWithSlot;
-// const CardWithEvent= events.CardWithEvent; 
+// const CardWithEvent= events.CardWithEvent;
 // const EntityID = @import("entity.zig").EntityID;
 // const World = @import("world.zig").World;
 //

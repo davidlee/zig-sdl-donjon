@@ -7,6 +7,38 @@ const stats = @import("stats.zig");
 // const EntityID = @import("entity.zig").EntityID;
 pub const BodyPartTag = @import("body.zig").BodyPartTag;
 
+// DoT are separate 
+// 
+pub const Condition = enum {
+    blinded,
+    deafened,
+    silenced,
+    stunned,
+    paralysed,
+    confused,
+    prone,
+    winded,
+    shaken,
+    fearful,
+    nauseous,
+    surprised,
+    unconscious,
+    comatose,
+    asphyxiating, // Open question: not DoT because the intensity is creature specific, not part of the effect 
+    starving,
+    dehydrating,
+    exhausted,
+};
+
+pub const DoTEffect = union(enum) {
+    bleeding: f32,
+    burning: f32,
+    freezing: f32,
+    corroding: f32,
+    diseased: f32, // probably needs modelling
+    poisoned: f32, // probably needs modelling
+};
+
 pub const Kind = enum {
     // physical
     bludgeon,

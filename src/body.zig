@@ -3,7 +3,7 @@ const std = @import("std");
 pub const PartIndex = u16; // Up to 65k body parts is enough
 pub const NO_PARENT = std.math.maxInt(PartIndex);
 
-pub const AnatomyTag = enum {
+pub const Tag = enum {
     // Human exterior bits
     Head,
     Eye,
@@ -54,10 +54,10 @@ pub const Side = enum(u8) { Left, Right, Center, None };
 
 pub const TissueLayer = enum { Bone, Artery, Muscle, Fat, Nerve, Skin };
 
-pub const BodyPart = struct {
+pub const Part = struct {
     name_hash: u32, // e.g. hash("left_index_finger") for lookups
     def_id: u16,
-    tag: AnatomyTag,
+    tag: Tag,
     parent: ?PartIndex, // Index of the body part this is attached to
 
     integrity: f32, // destroyed at 0.0
@@ -66,23 +66,23 @@ pub const BodyPart = struct {
 
     // FIXME: performantly look up PartDef flags before checking condition
     // must we also check parent isn't severed?
-    fn can_grasp(self: *BodyPart) bool {
+    fn can_grasp(self: *Part) bool {
         self.integrity > 0.6;
     }
 
-    fn can_support_weight(self: *BodyPart) bool {
+    fn can_support_weight(self: *Part) bool {
         self.integrity > 0.3;
     }
 
-    fn can_walk(self: *BodyPart) bool {
+    fn can_walk(self: *Part) bool {
         self.integrity > 0.4;
     }
 
-    fn can_run(self: *BodyPart) bool {
+    fn can_run(self: *Part) bool {
         self.integrity > 0.8;
     }
 
-    fn can_write(self: *BodyPart) bool {
+    fn can_write(self: *Part) bool {
         self.integrity > 0.8;
     }
 
@@ -90,34 +90,34 @@ pub const BodyPart = struct {
     // armour: precompute protective layers
 };
 
+pub const PartId = struct {
+    hash: u64,
+    pub fn init(comptime name: []const u8) PartId {
+        return .{ .hash = std.hash.Wyhash.hash(0, name) };
+    }
+};
+
 pub const PartDef = struct {
-    // 1. TOPOLOGY
-    // Index in the blueprint array. 'null' means this is the Root (Torso).
-    // We use ?u16 because u16 allows 65,535 parts (plenty).
-    parent_id: ?u16,
-
-    // 2. SEMANTICS
-    tag: AnatomyTag, // The generic type (.Finger, .Arm, .Eye)
-    side: Side, // .Left, .Right, .Center, .None
-    name: []const u8, // "Left Index Finger" (Useful for combat logs)
-
+    id: PartId,
+    parent: ?PartId,
+    tag: Tag,
+    side: Side,
+    name: []const u8,
     base_hit_chance: f32,
-    base_durability: f32, // universal for all creatures with this topology
-    trauma_mult: f32, // eyes, testicles ..
-
-    // 4. FLAGS (Bitfield)
+    base_durability: f32,
+    trauma_mult: f32,
     flags: packed struct {
-        is_vital: bool = false, // Brain/Heart: Destroy = Instant Death
-        is_internal: bool = false, // Must penetrate parent layer to hit
-        can_grasp: bool = false, // Hand/Tentacle
-        can_stand: bool = false, // Leg/Foot: Break = Fall over
-        can_see: bool = false, // no eye, no see
+        is_vital: bool = false,
+        is_internal: bool = false,
+        can_grasp: bool = false,
+        can_stand: bool = false,
+        can_see: bool = false,
         can_hear: bool = false,
     } = .{},
 };
 
 pub const Body = struct {
-    parts: std.ArrayList(BodyPart),
+    parts: std.ArrayList(Part),
 
     // Helper to find things
     pub fn get_children(self: Body, parent: PartIndex) std.Iterator {
@@ -135,9 +135,27 @@ pub const Wound = struct {
 };
 
 // An array of nodes defining the topology
+fn definePart(
+    comptime name: []const u8,
+    tag: Tag,
+    side: Side,
+    comptime parent_name: ?[]const u8,
+) PartDef {
+    return .{
+        .id = PartId.init(name),
+        .parent = if (parent_name) |p| PartId.init(p) else null,
+        .tag = tag,
+        .side = side,
+        .name = name,
+        .base_hit_chance = 1.0,
+        .base_durability = 1.0,
+        .trauma_mult = 1.0,
+    };
+}
+
 pub const HumanoidPlan = [_]PartDef{
-    .{ .tag = .Torso, .parent = null },
-    .{ .tag = .Head, .parent_id = 0 },
-    .{ .tag = .Neck, .parent_id = 1 },
+    definePart("torso", .Torso, .Center, null),
+    definePart("head", .Head, .Center, "torso"),
+    definePart("neck", .Neck, .Center, "torso"),
     // ...
 };

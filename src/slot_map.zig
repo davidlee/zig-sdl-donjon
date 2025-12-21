@@ -17,12 +17,12 @@ pub fn SlotMap(comptime T: type) type {
         free_indices: std.ArrayList(u32),
         allocator: std.mem.Allocator,
 
-        pub fn init(allocator: std.mem.Allocator) Self {
+        pub fn init(alloc: std.mem.Allocator) !Self {
             return .{
-                .items = std.ArrayList(T).init(allocator),
-                .generations = std.ArrayList(u32).init(allocator),
-                .free_indices = std.ArrayList(u32).init(allocator),
-                .allocator = allocator,
+                .items = try std.ArrayList(T).initCapacity(alloc, 1000),
+                .generations = try std.ArrayList(u32).initCapacity(alloc, 1000),
+                .free_indices = try std.ArrayList(u32).initCapacity(alloc, 1000),
+                .allocator = alloc,
             };
         }
 
