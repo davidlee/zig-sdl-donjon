@@ -1,4 +1,3 @@
-
 pub const Scaling = struct {
     stats: CheckSignature,
     ratio: f32 = 1.0,
@@ -58,5 +57,20 @@ pub const Block = packed struct {
         const s = Block{};
         s.* = template;
         return s;
+    }
+
+    pub fn get(self: *Block, a: Accessor) f32 {
+        return switch (a) {
+            .power => self.power,
+            .speed => self.speed,
+            .agility => self.agility,
+            .dexterity => self.dexterity,
+            .fortitude => self.fortitude,
+            .endurance => self.endurance,
+            .acuity => self.acuity,
+            .will => self.will,
+            .intuition => self.intuition,
+            .presence => self.presence,
+        };
     }
 };

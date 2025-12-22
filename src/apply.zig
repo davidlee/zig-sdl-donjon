@@ -32,25 +32,48 @@ pub const CommandError = error{
 const EffectContext = struct {
     card: *cards.Instance,
     effect: *const cards.Effect,
-    target: *const cards.TargetQuery,
+    target: *std.ArrayList(*Mob), // TODO: will need to be polymorphic (player, body part)
     actor: *Player,
     technique: ?TechniqueContext = null,
+
+    fn applyModifiers(self: *EffectContext, alloc: std.mem.Allocator) void {
+        if (self.technique) |tc| {
+            var instances = try std.ArrayList(damage.Instances).initCapacity(alloc, tc.base_damage.instances.len);
+            defer instances.deinit(alloc);
+
+            // const t = tc.technique;
+            // const bd = tc.base_damage;
+            const eff = blk: switch (tc.base_damage.scaling.stats) {
+                .stat => |accessor| self.actor.stats.get(accessor),
+                .average => |arr| {
+                    const a = self.actor.stats.get(arr[0]);
+                    const b = self.actor.stats.get(arr[1]);
+                    break :blk (a + b) / 2.0;
+                },
+            } * tc.base_damage.scaling.ratio;
+            for (tc.base_damage.instances) |inst| {
+                const adjusted = damage.Instance{
+                    .amount = eff * inst.amount,
+                    .types = inst.types, // same slice
+                };
+                try instances.append(alloc, adjusted);
+            }
+            tc.calc_damage = try instances.toOwnedSlice(alloc);
+        }
+    }
 };
 
 const TechniqueContext = struct {
-    // damage_blueprint: []const damage.Instance,
-    // types: []const damage.Kind,
-    // actor_stats: stats.Block,
-    // equipment: std.ArrayList(*const cards.Instance),
     technique: *const cards.Technique,
-    damage: damage.Base,
-    actor: *Player, // TODO duck typing
-    targets: std.ArrayList(*Mob), // TODO: will need to be polymorpic (player, body part)
-
-    fn init(dmg: damage.Base, actor: *Player, targets: *std.ArrayList(*Mob)) !TechniqueContext {
-        return TechniqueContext{ .damage = dmg, .actor = actor, .targets = targets };
-    }
+    base_damage: *const damage.Base,
+    calc_damage: ?[]damage.Instance = null,
+    calc_difficulty: ?f32 = null,
 };
+
+// const TechniqueWithModifiers = struct {
+//     technique: *const cards.Technique,
+//     scaled_damage: []damage.Instance,
+// };
 
 pub const CommandHandler = struct {
     world: *World,
@@ -67,6 +90,9 @@ pub const CommandHandler = struct {
         const player = &self.world.player;
         const game_state = self.world.fsm.currentState();
         const techniques = self.world.deck.techniques;
+        const events = self.world.events;
+
+        var ecs = try std.ArrayList(EffectContext).initCapacity(alloc, 5);
 
         // check if it's valid to play
         // first, template-level requirements
@@ -87,6 +113,7 @@ pub const CommandHandler = struct {
                 else => return error.CommandInvalid,
             }
         }
+
         for (card.template.rules) |rule| {
 
             // if all rules have valid predicates, the card is valid to play;
@@ -134,30 +161,32 @@ pub const CommandHandler = struct {
                     .card = card,
                     .effect = &expr.effect,
                     .actor = player,
-                    .target = &expr.target,
+                    .target = &target_list,
                 };
 
-                switch (ctx.effect.*) {
+                switch (expr.effect) {
                     .combat_technique => |value| {
-                        const tn = techniques.get(value.name);
-                        if (tn) |technique| {
-                            ctx.technique = TechniqueContext{
-                                .technique = technique,
-                                .damage = technique.damage,
-                                .actor = player,
-                                .targets = target_list,
-                            };
-                        }
+                        const tn = techniques.get(value.name).?;
+                        ctx.technique = .{
+                            .technique = tn,
+                            .base_damage = &tn.damage,
+                        };
                     },
                     else => return CommandError.NotImplemented,
                 }
+                try ecs.append(alloc, ctx);
             }
-            // TODO: run the modifier pipeline for each effect to be applied
-            // TODO: sink an event for the card
-            // TODO: sink an event for each effect
-            // TODO: apply costs / sink more events
+
+            // : sink an event for the card
+            try events.push(Event{
+                .played_card = .{ .instance = card.id, .template = card.template.id },
+            });
+            for (ecs.items) |ec| {}
+
+            // : sink an event for each effect
+            // : apply costs / sink more events
         }
-        return true;
+        //return ecs.toOwnedSlice(alloc);
     }
 };
 

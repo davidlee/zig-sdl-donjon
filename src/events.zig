@@ -23,6 +23,10 @@ pub const Event = union(enum) {
     entity_died: u32, // Payload: just the ID
     mob_died: EntityID,
 
+    played_card: struct { 
+        instance: EntityID,
+        template: u64,
+    },
     played_action: EntityID,
     played_reaction: CardWithEvent,
 
@@ -68,7 +72,7 @@ pub const EventSystem = struct {
 
     // Systems call this to queue something for NEXT frame
     pub fn push(self: *EventSystem, event: Event) !void {
-        try self.next_events.append(event);
+        try self.next_events.append(self.alloc, event);
     }
 
     // Call this at the start of your frame (or end)
