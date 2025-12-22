@@ -42,6 +42,8 @@ pub const Player = struct {
     conditions: std.ArrayList(damage.Condition),
     equipment: std.ArrayList(*const cards.Instance),
     stamina: f32,
+    stamina_available: f32,
+    time_available: f32 = 1.0,
 
     pub fn init(alloc: std.mem.Allocator) !Player {
         //return Player{ .stats = stats.Block.splat(5), .wounds = {}, .equipment = &.{}, .conditions = {} };
@@ -56,6 +58,7 @@ pub const Player = struct {
             .conditions = try std.ArrayList(damage.Condition).initCapacity(alloc, 5),
             .equipment = try std.ArrayList(*const cards.Instance).initCapacity(alloc, 5),
             .stamina = 5,
+            .stamina_available = 5,
         };
     }
 

@@ -11,60 +11,43 @@ const TagSet = cards.TagSet;
 const Cost = cards.Cost;
 const Trigger = cards.Trigger;
 const Effect = cards.Effect;
+const Template = cards.Template;
 const Expression = cards.Expression;
 const Technique = cards.Technique;
-const ID = cards.ID;
+const TechniqueID = cards.TechniqueID;
 
-var template_id: ID = 0;
-var technique_id: ID = 0;
+const ID = cards.ID;
 
 fn hashName(comptime name: []const u8) ID {
     return std.hash.Wyhash.hash(0, name);
 }
 
-const TechniqueData = struct { name: []const u8, damage: damage.Base, difficulty: f32, deflect_mult: f32, dodge_mult: f32, counter_mult: f32, parry_mult: f32 };
-
-fn defineTechnique(data: TechniqueData) Technique {
-    return Technique{
-        .id = hashName(data.name),
-        .name = data.name,
-        .damage = data.damage,
-        .difficulty = data.difficulty,
-        .deflect_mult = data.deflect_mult,
-        .dodge_mult = data.dodge_mult,
-        .counter_mult = data.counter_mult,
-        .parry_mult = data.parry_mult,
-    };
-}
-
 const TechniqueRepository = struct {
     entries: []Technique,
-
-    fn byName(comptime name: []const u8) Technique {
-        const target = hashName(name);
-        inline for (TechniqueEntries) |tech| {
-            if (tech.id == target) return tech;
-        }
-        @compileError("unknown technique: " ++ name);
-    }
 };
 
-pub const Techniques: TechniqueRepository = &.{
-    .entries = TechniqueEntries,
-};
-
-const TechniqueEntries = [_]Technique{
-    defineTechnique(.{ .name = "thrust", .damage = .{
-        .instances = &.{
-            .{ .amount = 1.0, .types = &.{.pierce} },
+pub const TechniqueEntries = [_]Technique{
+    .{
+        .id = .thrust,
+        .name = "thrust",
+        .damage = .{
+            .instances = &.{
+                .{ .amount = 1.0, .types = &.{.pierce} },
+            },
+            .scaling = .{
+                .ratio = 0.5,
+                .stats = .{ .average = .{ .speed, .power } },
+            },
         },
-        .scaling = .{
-            .ratio = 0.5,
-            .stats = .{ .average = .{ .speed, .power } },
-        },
-    }, .difficulty = 0.7, .deflect_mult = 1.3, .dodge_mult = 0.5, .counter_mult = 1.1, .parry_mult = 1.2 }),
+        .difficulty = 0.7,
+        .deflect_mult = 1.3,
+        .dodge_mult = 0.5,
+        .counter_mult = 1.1,
+        .parry_mult = 1.2,
+    },
 
-    defineTechnique(.{
+    .{
+        .id = .swing,
         .name = "swing",
         .damage = .{
             .instances = &.{
@@ -80,10 +63,11 @@ const TechniqueEntries = [_]Technique{
         .dodge_mult = 1.2,
         .counter_mult = 1.3,
         .parry_mult = 1.2,
-    }),
+    },
 
-    // TODO: maybe - separate defensive tactics out
-    defineTechnique(.{
+    // TODO:  separate defensive tactics out
+    .{
+        .id = .swing,
         .name = "deflect",
         .damage = .{
             .instances = &.{.{ .amount = 0.0, .types = &.{} }},
@@ -97,9 +81,10 @@ const TechniqueEntries = [_]Technique{
         .dodge_mult = 1.0,
         .counter_mult = 1.0,
         .parry_mult = 1.0,
-    }),
+    },
 
-    defineTechnique(.{
+    .{
+        .id = .parry,
         .name = "parry",
         .damage = .{
             .instances = &.{.{ .amount = 0.0, .types = &.{} }},
@@ -113,9 +98,10 @@ const TechniqueEntries = [_]Technique{
         .dodge_mult = 1.0,
         .counter_mult = 1.0,
         .parry_mult = 1.0,
-    }),
-    
-    defineTechnique(.{
+    },
+
+    .{
+        .id = .block,
         .name = "block",
         .damage = .{
             .instances = &.{.{ .amount = 0.0, .types = &.{} }},
@@ -129,76 +115,105 @@ const TechniqueEntries = [_]Technique{
         .dodge_mult = 1.0,
         .counter_mult = 1.0,
         .parry_mult = 1.0,
-    }),
+    },
 };
 
 // -----------------------------------------------------------------------------
 // Template helpers
 // -----------------------------------------------------------------------------
 
-const ActionData = struct {
-    name: []const u8,
-    description: []const u8,
-    technique: []const u8,
-    tags: TagSet = .{},
-    cost: Cost,
-    rarity: cards.Rarity,
-    target: cards.TargetQuery,
-};
-
-fn defineTemplate(comptime data: ActionData) cards.Template {
-    return .{
-        .id = hashName(data.name),
-        .kind = .action,
-        .name = data.name,
-        .description = data.description,
-        .rarity = data.rarity,
-        .tags = data.tags,
-        .rules = &.{
-            .{
-                .trigger = .on_play,
-                .valid = .always,
-                .expressions = &.{.{
-                    .effect = .{ .combat_technique = TechniqueRepository.byName(data.technique) },
-                    .filter = null,
-                    .target = data.target,
-                }},
-            },
-        },
-        .cost = data.cost,
-    };
-}
-
 // -----------------------------------------------------------------------------
 // Starter deck
 // -----------------------------------------------------------------------------
+const templates = [_]Template{
+    t_thrust,
+    t_slash,
+    t_shield_block,
+};
 
-pub const BeginnerDeck = [_]cards.Template{
-    defineTemplate(.{
-        .name = "thrust",
-        .description = "hit them with the pokey bit",
-        .technique = "thrust",
-        .tags = .{ .melee = true, .offensive = true },
-        .cost = .{ .stamina = 2.5, .time = 0.3 },
-        .rarity = .common,
-        .target = .all_enemies,
-    }),
-    defineTemplate(.{
-        .name = "slash",
-        .description = "slash them like a pirate",
-        .technique = "swing",
-        .tags = .{ .melee = true, .offensive = true },
-        .cost = .{ .stamina = 3.0, .time = 0.3 },
-        .rarity = .common,
-        .target = .all_enemies,
-    }),
-    defineTemplate(.{
-        .name = "shield block",
-        .description = "defend with your shield",
-        .technique = "block",
-        .tags = .{ .melee = true, .defensive = true },
-        .cost = .{ .stamina = 2.0, .time = 0.3 },
-        .rarity = .common,
-        .target = .self,
-    }),
+pub const BeginnerDeck = blk: {
+    var output: [templates.len]Template = undefined;
+    for (templates, 0..) |data, idx| {
+        const template: Template = .{
+            .id = idx,
+            .name = data.name,
+            .kind = data.kind,
+            .description = data.description,
+            .rarity = data.rarity,
+            .cost = data.cost,
+            .tags = data.tags,
+            .rules = data.rules,
+        };
+        output[idx] = template;
+    }
+    break :blk output;
+};
+
+const t_thrust = Template{
+    .id = 0,
+    .kind = .action,
+    .name = "thrust",
+    .description = "hit them with the pokey bit",
+    .rarity = .common,
+    .cost = .{ .stamina = 3.0, .time = 0.2 },
+    .tags = .{ .melee = true, .offensive = true },
+    .rules = &.{
+        .{
+            .trigger = .on_play,
+            .valid = .always,
+            .expressions = &.{.{
+                .effect = .{
+                    .combat_technique = Technique.byID(.thrust),
+                },
+                .filter = null,
+                .target = .all_enemies,
+            }},
+        },
+    },
+};
+
+const t_slash = Template{
+    .id = 0,
+    .kind = .action,
+    .name = "slash",
+    .description = "slash them like a pirate",
+    .rarity = .common,
+    .cost = .{ .stamina = 3.0, .time = 0.3 },
+    .tags = .{ .melee = true, .offensive = true },
+    .rules = &.{
+        .{
+            .trigger = .on_play,
+            .valid = .always,
+            .expressions = &.{.{
+                .effect = .{
+                    .combat_technique = Technique.byID(.swing),
+                },
+                .filter = null,
+                .target = .all_enemies,
+            }},
+        },
+    },
+};
+
+const t_shield_block = Template{
+    .id = 0,
+    .kind = .action,
+    .name = "shield block",
+    .description = "shields were made to be splintered",
+    .rarity = .common,
+    .cost = .{ .stamina = 2.0, .time = 0.3 },
+    .tags = .{ .melee = true, .defensive = true },
+    .rules = &.{
+        .{
+            .trigger = .on_play,
+            .valid = .always,
+            .expressions = &.{.{
+                .effect = .{
+                    .combat_technique = Technique.byID(.block),
+                },
+                .filter = null,
+                .target = .self,
+            }},
+        },
+    },
 };

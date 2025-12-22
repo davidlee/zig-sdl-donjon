@@ -27,9 +27,9 @@ const Technique = cards.Technique;
 pub const CommandError = error{
     CommandInvalid,
     InsufficientStamina,
+    InsufficientTime,
     InvalidGameState,
     CardNotInHand,
-    // InsufficientTime,
     NotImplemented,
 };
 
@@ -83,9 +83,6 @@ pub const EventProcessor = struct {
     }
 
     pub fn dispatchEvent(self: *EventProcessor, event_system: *EventSystem) !bool {
-        const e = Event{ .game_state_transitioned_to = .animating };
-        _ = e;
-
         const result = event_system.pop();
         if (result) |event| {
             std.debug.print("--> dispatchEvent: {}\n", .{event});
@@ -112,6 +109,7 @@ pub const CommandHandler = struct {
 
     pub fn gameStateTransition(self: *CommandHandler, target_state: world.GameState) !void {
         if (self.world.fsm.canTransitionTo(target_state)) {
+            try self.world.fsm.transitionTo(target_state);
             try self.world.events.push(Event{ .game_state_transitioned_to = target_state });
         } else {
             return CommandError.InvalidGameState;
@@ -128,8 +126,11 @@ pub const CommandHandler = struct {
         if (game_state != .player_card_selection)
             return CommandError.InvalidGameState;
 
-        if (player.stamina < card.template.cost.stamina)
+        if (player.stamina_available < card.template.cost.stamina)
             return CommandError.InsufficientStamina;
+
+        if (player.time_available < card.template.cost.time)
+            return CommandError.InsufficientTime;
 
         if (!self.world.deck.instanceInZone(card.id, .hand)) return CommandError.CardNotInHand;
 
@@ -147,13 +148,35 @@ pub const CommandHandler = struct {
             }
         }
 
-        // sink an event for the card
-        try event_system.push(Event{
-            .played_action_card = .{
-                .instance = card.id,
-                .template = card.template.id,
+        // lock it in: move the card
+        try self.world.deck.move(card.id, .hand, .in_play);
+        try event_system.push(
+            Event{
+                .card_moved = .{ .instance = card.id, .from = .hand, .to = .in_play },
             },
-        });
+        );
+
+        // sink an event for the card being played
+        try event_system.push(
+            Event{
+                .played_action_card = .{
+                    .instance = card.id,
+                    .template = card.template.id,
+                },
+            },
+        );
+
+        // put a hold on the time & stamina costs for the UI to display / player state
+        player.stamina_available -= card.template.cost.stamina;
+        player.time_available -= card.template.cost.time;
+        try event_system.push(
+            Event{
+                .card_cost_reserved = .{
+                    .stamina = 0,
+                    .time = 0,
+                },
+            },
+        );
     }
 
     pub fn playCardFull(self: *CommandHandler, card: *cards.Instance) !bool {

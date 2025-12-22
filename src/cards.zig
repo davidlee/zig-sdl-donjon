@@ -7,6 +7,7 @@ const EntityID = @import("entity.zig").EntityID;
 const damage = @import("damage.zig");
 const stats = @import("stats.zig");
 const body = @import("body.zig");
+const TechniqueEntries = @import("card_list.zig").TechniqueEntries;
 
 pub const ID = u64;
 
@@ -121,8 +122,17 @@ pub const TargetQuery = union(enum) {
     event_source,
 };
 
+pub const TechniqueID = enum {
+    thrust,
+    swing,
+    feint,
+    deflect,
+    parry,
+    block,
+};
+
 pub const Technique = struct {
-    id: u64,
+    id: TechniqueID,
     name: []const u8,
     damage: damage.Base,
     difficulty: f32,
@@ -134,6 +144,13 @@ pub const Technique = struct {
     parry_mult: f32 = 1.0,
     dodge_mult: f32 = 1.0,
     counter_mult: f32 = 1.0,
+
+    pub fn byID(comptime id: TechniqueID) Technique {
+        for (TechniqueEntries) |tn| {
+            if (tn.id == id) return tn;
+        }
+        @compileError("unknown technique: " ++ id);
+    }
 };
 
 pub const Effect = union(enum) {

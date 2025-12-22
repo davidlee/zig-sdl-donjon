@@ -102,10 +102,8 @@ pub fn main() !void {
 }
 
 fn runTestCase(world: *World) !void {
-    for (world.deck.allInstances()) |c|
-        std.debug.print("deck: {any}\n", .{c});
-
-
+    // for (world.deck.allInstances()) |c|
+    //     std.debug.print("deck: {any}\n", .{c});
 
     const card = world.deck.hand.items[0];
     try world.commandHandler.playActionCard(card);
