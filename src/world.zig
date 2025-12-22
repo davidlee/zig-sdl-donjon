@@ -10,9 +10,9 @@ const EventSystem = events.EventSystem;
 const Event = events.Event;
 const SlotMap = @import("slot_map.zig").SlotMap;
 const cards = @import("cards.zig");
-const Mob = @import("mob.zig");
+const Mob = @import("mob.zig").Mob;
 const Deck = @import("deck.zig").Deck;
-const BeginnerDeck= @import("card_list.zig").BeginnerDeck;
+const BeginnerDeck = @import("card_list.zig").BeginnerDeck;
 
 const GameEvent = enum {
     start_game,
@@ -29,18 +29,25 @@ const GameState = enum {
 };
 
 pub const Encounter = struct {
-    enemies: std.ArrayList(Mob),
-    //  
-    // environment ... 
+    enemies: std.ArrayList(*Mob),
+    //
+    // environment ...
     // loot ...
-    // 
+    //
     fn init(alloc: std.mem.Allocator) !Encounter {
-        return Encounter {
-            .enemies = try std.ArrayList(Mob).initCapacity(alloc, 5),
+        var e = Encounter{
+            .enemies = try std.ArrayList(*Mob).initCapacity(alloc, 5),
         };
+        var mob = try alloc.create(Mob);
+        mob.wounds = 0.0;
+
+        try e.enemies.append(alloc, mob);
+        return e;
     }
+
     fn deinit(self: *Encounter, alloc: std.mem.Allocator) void {
-        self.enemies.deinit(alloc); 
+        for(self.enemies.items) |nme| alloc.destroy(nme);
+        self.enemies.deinit(alloc);
     }
 };
 
@@ -64,7 +71,7 @@ pub const World = struct {
         return @This(){
             .alloc = alloc,
             .events = try EventSystem.init(alloc),
-            .encounter = null,
+            .encounter = try Encounter.init(alloc),
             .random = random.RandomStreamDict.init(),
             .player = try Player.init(alloc),
             .fsm = fsm,
@@ -76,7 +83,9 @@ pub const World = struct {
         self.events.deinit();
         self.deck.deinit();
         self.player.deinit();
-        if(self.encounter) |*encounter| encounter.deinit(self.alloc);
+        if (self.encounter) |*encounter| {
+            encounter.deinit(self.alloc);
+        }
     }
 
     pub fn step(self: *World) void {

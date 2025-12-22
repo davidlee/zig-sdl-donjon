@@ -62,6 +62,18 @@ pub const TagSet = packed struct {
     power: bool = false,
     skill: bool = false,
     meta: bool = false,
+
+    pub fn hasTag(self: *const TagSet, required: TagSet) bool {
+        const me: u12 = @bitCast(self.*);
+        const req: u12 = @bitCast(required);
+        return (me & req) == req; // all required bits present
+    }
+
+    pub fn hasAnyTag(self: *const TagSet, mask: TagSet) bool {
+        const me: u12 = @bitCast(self.*);
+        const bm: u12 = @bitCast(mask);
+        return (me & bm) != 0; // at least one bit matches
+    }
 };
 
 pub const Comparator = enum {
@@ -85,8 +97,12 @@ pub const Value = union(enum) {
 
 pub const Predicate = union(enum) {
     always,
-    compare_stat: struct { lhs: stats.Accessor, op: Comparator, rhs: Value },
-    has_tag: ?TagSet, // bitmask with one bit set
+    // compare_stat: struct { lhs: stats.Accessor, op: Comparator, rhs: Value },
+    // compare_stamina
+    // compare_stance
+    // wounds ...
+    // weapon ...
+    has_tag: TagSet, // bitmask with one bit set
     not: *Predicate,
     all: []const Predicate,
     any: []const Predicate,

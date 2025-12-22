@@ -41,22 +41,24 @@ pub const Player = struct {
     wounds: std.ArrayList(body.Wound),
     conditions: std.ArrayList(damage.Condition),
     equipment: std.ArrayList(*const cards.Instance),
+    stamina: f32,
 
     pub fn init(alloc: std.mem.Allocator) !Player {
         //return Player{ .stats = stats.Block.splat(5), .wounds = {}, .equipment = &.{}, .conditions = {} };
         return Player.initEmptyWithStats(alloc, stats.Block.splat(5));
     }
-    
+
     fn initEmptyWithStats(alloc: std.mem.Allocator, statBlock: stats.Block) !Player {
         return Player{
             .alloc = alloc,
             .stats = statBlock,
             .wounds = try std.ArrayList(body.Wound).initCapacity(alloc, 5),
-            .conditions= try std.ArrayList(damage.Condition).initCapacity(alloc, 5),
+            .conditions = try std.ArrayList(damage.Condition).initCapacity(alloc, 5),
             .equipment = try std.ArrayList(*const cards.Instance).initCapacity(alloc, 5),
-        }; 
+            .stamina = 5,
+        };
     }
-    
+
     pub fn deinit(self: *Player) void {
         self.wounds.deinit(self.alloc);
         self.conditions.deinit(self.alloc);
