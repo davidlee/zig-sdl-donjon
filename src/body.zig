@@ -188,6 +188,22 @@ pub const Body = struct {
         return EnclosedIterator{ .body = self, .enclosing = enclosing, .index = 0 };
     }
 
+    /// Get the index of a part (from hash lookup)
+    pub fn indexOf(self: *const Body, comptime name: []const u8) ?PartIndex {
+        return self.index_by_hash.get(PartId.init(name).hash);
+    }
+
+    /// Check if a part is severed (directly or via severed ancestor)
+    pub fn isEffectivelySevered(self: *const Body, index: PartIndex) bool {
+        var current: ?PartIndex = index;
+        while (current) |idx| {
+            const p = &self.parts.items[idx];
+            if (p.is_severed) return true;
+            current = p.parent;
+        }
+        return false;
+    }
+
     const ChildIterator = struct {
         body: *const Body,
         parent: PartIndex,
@@ -475,3 +491,86 @@ pub const HumanoidPlan = [_]PartDef{
     ext("right_fourth_toe", .toe, .right, "right_foot"),
     ext("right_pinky_toe", .toe, .right, "right_foot"),
 };
+
+// === Tests ===
+
+test "body fromPlan creates correct part count" {
+    const alloc = std.testing.allocator;
+    var body = try Body.fromPlan(alloc, &HumanoidPlan);
+    defer body.deinit();
+
+    try std.testing.expectEqual(HumanoidPlan.len, body.parts.items.len);
+}
+
+test "body part lookup by name" {
+    const alloc = std.testing.allocator;
+    var body = try Body.fromPlan(alloc, &HumanoidPlan);
+    defer body.deinit();
+
+    const hand = body.get("left_hand");
+    try std.testing.expect(hand != null);
+    try std.testing.expectEqual(PartTag.hand, hand.?.tag);
+    try std.testing.expectEqual(Side.left, hand.?.side);
+}
+
+test "severing arm propagates to children" {
+    const alloc = std.testing.allocator;
+    var body = try Body.fromPlan(alloc, &HumanoidPlan);
+    defer body.deinit();
+
+    // Get indices for arm chain
+    const arm_idx = body.indexOf("left_arm").?;
+    const hand_idx = body.indexOf("left_hand").?;
+    const finger_idx = body.indexOf("left_index_finger").?;
+    const torso_idx = body.indexOf("torso").?;
+
+    // Nothing severed initially
+    try std.testing.expect(!body.isEffectivelySevered(arm_idx));
+    try std.testing.expect(!body.isEffectivelySevered(hand_idx));
+    try std.testing.expect(!body.isEffectivelySevered(finger_idx));
+
+    // Sever the arm
+    body.parts.items[arm_idx].is_severed = true;
+
+    // Arm and all descendants are now effectively severed
+    try std.testing.expect(body.isEffectivelySevered(arm_idx));
+    try std.testing.expect(body.isEffectivelySevered(hand_idx));
+    try std.testing.expect(body.isEffectivelySevered(finger_idx));
+
+    // Torso is NOT severed
+    try std.testing.expect(!body.isEffectivelySevered(torso_idx));
+}
+
+test "child iterator finds direct children" {
+    const alloc = std.testing.allocator;
+    var body = try Body.fromPlan(alloc, &HumanoidPlan);
+    defer body.deinit();
+
+    const hand_idx = body.indexOf("left_hand").?;
+
+    // Count children of left_hand (should be 5: thumb + 4 fingers)
+    var iter = body.getChildren(hand_idx);
+    var count: usize = 0;
+    while (iter.next()) |child| {
+        try std.testing.expect(child.tag == .finger or child.tag == .thumb);
+        count += 1;
+    }
+    try std.testing.expectEqual(@as(usize, 5), count);
+}
+
+test "enclosed iterator finds organs" {
+    const alloc = std.testing.allocator;
+    var body = try Body.fromPlan(alloc, &HumanoidPlan);
+    defer body.deinit();
+
+    const torso_idx = body.indexOf("torso").?;
+
+    // Count organs enclosed by torso (heart, left_lung, right_lung)
+    var iter = body.getEnclosed(torso_idx);
+    var count: usize = 0;
+    while (iter.next()) |enclosed| {
+        try std.testing.expect(enclosed.tag == .heart or enclosed.tag == .lung);
+        count += 1;
+    }
+    try std.testing.expectEqual(@as(usize, 3), count);
+}
