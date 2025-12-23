@@ -8,7 +8,7 @@ const damage = @import("damage.zig");
 const stats = @import("stats.zig");
 const body = @import("body.zig");
 const weapon = @import("weapon.zig");
-const combatant = @import("combatant.zig");
+const combat = @import("combat.zig");
 const TechniqueEntries = @import("card_list.zig").TechniqueEntries;
 
 pub const ID = u64;
@@ -108,9 +108,9 @@ pub const Predicate = union(enum) {
     // weapon ...
     has_tag: TagSet, // bitmask with one bit set
     weapon_category: weapon.Category,
-    weapon_reach: struct { op: Comparator, value: combatant.Reach },
-    range: struct { op: Comparator, value: combatant.Reach },
-    advantage_threshold: struct { axis: combatant.AdvantageAxis, op: Comparator, value: f32 },
+    weapon_reach: struct { op: Comparator, value: combat.Reach },
+    range: struct { op: Comparator, value: combat.Reach },
+    advantage_threshold: struct { axis: combat.AdvantageAxis, op: Comparator, value: f32 },
     not: *const Predicate,
     all: []const Predicate,
     any: []const Predicate,

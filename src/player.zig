@@ -5,7 +5,7 @@ const cards = @import("cards.zig");
 
 const body = @import("body.zig");
 const damage = @import("damage.zig");
-const combatant = @import("combatant.zig");
+const combat = @import("combat.zig");
 
 pub const Archetype = .{
     .soldier = stats.Template{
@@ -24,7 +24,7 @@ pub const Archetype = .{
     .hunter = stats.Template{
         .power = 5,
         .speed = 6,
-        .agility = 7, 
+        .agility = 7,
         .dexterity = 3,
         .fortitude = 5,
         .endurance = 5,
@@ -45,7 +45,7 @@ pub const Player = struct {
     stamina: f32,
     stamina_available: f32,
     time_available: f32 = 1.0,
-    state: combatant.State,
+    state: combat.State,
 
     pub fn init(alloc: std.mem.Allocator) !Player {
         //return Player{ .stats = stats.Block.splat(5), .wounds = {}, .equipment = &.{}, .conditions = {} };
@@ -61,7 +61,7 @@ pub const Player = struct {
             .equipment = try std.ArrayList(*const cards.Instance).initCapacity(alloc, 5),
             .stamina = 10,
             .stamina_available = 10,
-            .state = combatant.State{.balance = 1.0 },
+            .state = combat.State{ .balance = 1.0 },
         };
     }
 

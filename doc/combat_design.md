@@ -11,7 +11,7 @@ Combat uses **simultaneous commitment** with 1-second ticks:
 3. **Apply**: damage, stamina costs, state changes
 4. **Advance**: ongoing effects progress, draw new hand
 
-Historical duels often ended with both combatants dead. This model preserves that tension.
+Historical duels often ended with both combats dead. This model preserves that tension.
 
 ## Stamina Economy
 

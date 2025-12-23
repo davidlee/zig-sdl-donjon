@@ -1,4 +1,4 @@
-const combatant = @import("combatant.zig");
+const combat = @import("combat.zig");
 const damage = @import("damage.zig");
 const entity = @import("entity.zig");
 
@@ -31,7 +31,7 @@ pub const Ammunition = struct {
 
 pub const Thrown = struct {
     throw: Offensive,
-    range: combatant.Reach,
+    range: combat.Reach,
 };
 
 pub const Ranged = union {
@@ -43,7 +43,7 @@ pub const Projectile = struct {
     // kind: RangedWeaponType,
     ammunition: ProjectileType,
 
-    range: combatant.Reach,
+    range: combat.Reach,
 
     //multipliers
     accuracy: f32,
@@ -54,7 +54,7 @@ pub const Projectile = struct {
 
 pub const Offensive = struct {
     name: []const u8,
-    reach: combatant.Reach,
+    reach: combat.Reach,
     damage_types: []damage.Kind,
     // TODO hit location weights
     // TODO consider balance, pressure, control, position
@@ -77,7 +77,7 @@ pub const Offensive = struct {
 
 pub const Defensive = struct {
     name: []const u8,
-    reach: combatant.Reach,
+    reach: combat.Reach,
     // TODO vs specific damage types
     // TODO defender hit location weights
 

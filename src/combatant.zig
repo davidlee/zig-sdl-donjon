@@ -1,12 +1,160 @@
 const std = @import("std");
-const body = @import("body.zig");
-const stats = @import("stats.zig");
-const cards = @import("cards.zig");
 const entity = @import("entity.zig");
+const armour = @import("armour.zig");
+const weapon = @import("weapon.zig");
+const combat = @import("combat.zig");
+const damage = @import("damage.zig");
+const stats = @import("stats.zig");
+const body = @import("body.zig");
+const deck = @import("deck.zig");
+const cards = @import("cards.zig");
 
 const SlotMap = @import("slot_map.zig").SlotMap;
 const Instance = cards.Instance;
 const Template = cards.Template;
+
+const Director = enum {
+    player,
+    ai,
+};
+
+// Per-entity (player or mob)
+pub const State = struct {
+
+    // Could also include:
+    // focus: f32,          // Attention split across engagements
+    // fatigue: f32,        // Accumulates across engagements
+    pub fn init(alloc: std.mem.Allocator, stamina: f32) !State {
+        return State{
+            .conditions = std.ArrayList(damage.Condition).initCapacity(alloc, 5),
+            .stamina = stamina,
+            .stamina_available = stamina,
+        };
+    }
+
+    pub fn deinit(self: State, alloc: std.mem.Allocator) void {
+        self.conditions.deinit(alloc);
+    }
+};
+
+pub const Reach = enum {
+    far,
+    medium,
+    near,
+    spear,
+    longsword,
+    sabre,
+    dagger,
+    clinch,
+};
+
+pub const AdvantageAxis = enum {
+    balance,
+    pressure,
+    control,
+    position,
+};
+
+const Armament = union(enum) {
+    single: weapon.Instance,
+    dual: struct {
+        primary: weapon.Instance,
+        secondary: weapon.Instance,
+    },
+    compound: [][]weapon.Instance,
+};
+
+const Strat = union(enum) {
+    deck: deck.Deck,
+    // script: BehaviourScript,
+    pool: TechniquePool,
+};
+
+// Humanoid AI: simplified pool
+const TechniquePool = struct {
+    available: []const *cards.Template, // what they know
+    in_play: std.ArrayList(*cards.Instance), // committed this tick
+    cooldowns: std.AutoHashMap(cards.ID, u8), // technique -> ticks remaining
+
+    // No hand/draw - AI picks from available based on behavior pattern
+    pub fn canUse(self: *const TechniquePool, t: *const cards.Template) bool {
+        return (self.cooldowns.get(t.id) orelse 0) == 0;
+    }
+};
+
+// const ScriptedAction = struct {};
+//
+// // Creature: pure behavior script, no "cards" at all
+// const BehaviourScript = struct {
+//     pattern: []const ScriptedAction,
+//     index: usize,
+//
+//     pub fn next(self: *BehaviourScript) ScriptedAction {
+//         const action = self.pattern[self.index];
+//         self.index = (self.index + 1) % self.pattern.len;
+//         return action;
+//     }
+// };
+
+const Agent = struct {
+    alloc: std.mem.Allocator,
+    director: Director,
+    cards: Strat,
+    stats: stats.Block,
+    engagement: ?combat.Engagement, // npc
+    // may be humanoid, or not
+    body: body.Body,
+    // sourced from cards.equipped
+    armour: armour.Stack,
+    weapons: Armament,
+
+    // state
+    balance: f32 = 1.0, // 0-1, intrinsic stability
+    stamina: f32 = 0.0,
+    stamina_available: f32 = 0.0,
+    time_available: f32 = 1.0,
+    //
+    conditions: std.ArrayList(damage.Condition),
+    immunities: std.ArrayList(damage.Immunity),
+    resistances: std.ArrayList(damage.Resistance),
+    vulnerabilities: std.ArrayList(damage.Vulnerability),
+    pub fn init(
+        alloc: std.mem.Allocator,
+        dr: Director,
+        cs: Strat,
+        sb: stats.Block,
+        bd: body.Body,
+        stamina: f32,
+    ) !Agent {
+        return Agent{
+            .alloc = alloc,
+            .director = dr,
+            .cards = cs,
+            .stats = sb,
+            .state = State.init(alloc, stamina),
+            .body = bd,
+            .armour = armour.Stack{},
+            .weapons = undefined,
+            .engagement = (if (dr == .ai) Engagement{} else null),
+
+            .conditions = try std.ArrayList(damage.Condition).initCapacity(alloc, 5),
+            .resistances = try std.ArrayList(damage.Resistance).initCapacity(alloc, 5),
+            .immunities = try std.ArrayList(damage.Immunity).initCapacity(alloc, 5),
+            .vulnerabilities = try std.ArrayList(damage.Vulnerability).initCapacity(alloc, 5),
+        };
+    }
+
+    pub fn deinit(self: Agent) void {
+        const alloc = self.alloc;
+
+        self.cards.deinit(alloc);
+
+        self.conditions.deinit(alloc);
+        self.immunities.deinit(alloc);
+        self.resistances.deinit(alloc);
+        self.vulnerabilities.deinit(alloc);
+    }
+};
 
 pub const Mob = struct {
     wounds: f32 = 0,
@@ -58,44 +206,14 @@ pub const Mob = struct {
     }
 };
 
-pub const Enemy = struct {};
-
-// Per-entity (player or mob)
-pub const State = struct {
-    balance: f32, // 0-1, intrinsic stability
-
-    // Could also include:
-    // focus: f32,          // Attention split across engagements
-    // fatigue: f32,        // Accumulates across engagements
-};
-
-pub const Reach = enum {
-    far,
-    medium,
-    near,
-    spear,
-    longsword,
-    sabre,
-    dagger,
-    clinch,
-};
-
-pub const AdvantageAxis = enum {
-    balance,
-    pressure,
-    control,
-    position,
-};
-
 // Per-engagement (one per mob, attached to mob)
 pub const Engagement = struct {
     // All 0-1, where 0.5 = neutral
     // >0.5 = player advantage, <0.5 = mob advantage
-    pressure: f32,
-    control: f32,
-    position: f32,
-
-    range: Reach, // Current distance
+    pressure: f32 = 0.5,
+    control: f32 = 0.5,
+    position: f32 = 0.5,
+    range: Reach = .far, // Current distance
 
     // Helpers
     pub fn playerAdvantage(self: Engagement) f32 {

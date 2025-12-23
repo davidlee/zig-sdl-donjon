@@ -26,7 +26,7 @@
       off_hand: ?*const weapon.Template,  // shield, second weapon
       armor: ArmorStack,
 
-      pub fn weaponReach(self: *const EquipmentSet) ?combatant.Reach {
+      pub fn weaponReach(self: *const EquipmentSet) ?combat.Reach {
           return if (self.weapon) |w| w.reach else null;
       }
   };
