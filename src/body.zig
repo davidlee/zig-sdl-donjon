@@ -248,17 +248,48 @@ pub const Wound = struct {
     // infection
 };
 
-// An array of nodes defining the topology
-fn definePart(
-    comptime name: []const u8,
-    tag: PartTag,
-    side: Side,
-    comptime parent_name: ?[]const u8,
-) PartDef {
-    return definePartFull(name, tag, side, parent_name, null, .{});
-}
+// === Part definition helpers ===
 
 const PartFlags = @TypeOf(@as(PartDef, undefined).flags);
+
+const PartStats = struct {
+    hit_chance: f32,
+    durability: f32,
+    trauma_mult: f32,
+};
+
+fn defaultStats(tag: PartTag) PartStats {
+    return switch (tag) {
+        // Large targets, high durability
+        .torso => .{ .hit_chance = 0.30, .durability = 2.0, .trauma_mult = 1.0 },
+        .abdomen => .{ .hit_chance = 0.15, .durability = 1.5, .trauma_mult = 1.2 },
+        .head => .{ .hit_chance = 0.10, .durability = 1.0, .trauma_mult = 2.0 },
+
+        // Limbs - moderate
+        .thigh => .{ .hit_chance = 0.08, .durability = 1.2, .trauma_mult = 1.0 },
+        .arm, .forearm, .shin => .{ .hit_chance = 0.05, .durability = 0.8, .trauma_mult = 1.0 },
+        .shoulder => .{ .hit_chance = 0.04, .durability = 1.0, .trauma_mult = 1.0 },
+
+        // Small targets, fragile
+        .hand, .foot => .{ .hit_chance = 0.03, .durability = 0.5, .trauma_mult = 1.5 },
+        .finger, .thumb, .toe => .{ .hit_chance = 0.01, .durability = 0.2, .trauma_mult = 2.0 },
+        .eye, .ear, .nose => .{ .hit_chance = 0.02, .durability = 0.3, .trauma_mult = 3.0 },
+
+        // Joints - small but important
+        .neck => .{ .hit_chance = 0.04, .durability = 0.6, .trauma_mult = 2.5 },
+        .wrist, .ankle, .elbow, .knee => .{ .hit_chance = 0.02, .durability = 0.4, .trauma_mult = 1.5 },
+        .groin => .{ .hit_chance = 0.03, .durability = 0.5, .trauma_mult = 2.5 },
+
+        // Organs - can't be hit directly (enclosed), variable fragility
+        .brain => .{ .hit_chance = 0.0, .durability = 0.3, .trauma_mult = 5.0 },
+        .heart => .{ .hit_chance = 0.0, .durability = 0.4, .trauma_mult = 5.0 },
+        .lung => .{ .hit_chance = 0.0, .durability = 0.5, .trauma_mult = 3.0 },
+        .liver, .stomach, .spleen => .{ .hit_chance = 0.0, .durability = 0.4, .trauma_mult = 2.5 },
+        .intestine => .{ .hit_chance = 0.0, .durability = 0.6, .trauma_mult = 2.0 },
+        .trachea => .{ .hit_chance = 0.0, .durability = 0.2, .trauma_mult = 4.0 },
+        .tongue => .{ .hit_chance = 0.0, .durability = 0.3, .trauma_mult = 2.0 },
+    };
+}
 
 fn definePartFull(
     comptime name: []const u8,
@@ -268,6 +299,8 @@ fn definePartFull(
     comptime enclosing_name: ?[]const u8,
     flags: PartFlags,
 ) PartDef {
+    @setEvalBranchQuota(10000);
+    const stats = defaultStats(tag);
     return .{
         .id = PartId.init(name),
         .parent = if (parent_name) |p| PartId.init(p) else null,
@@ -275,14 +308,35 @@ fn definePartFull(
         .tag = tag,
         .side = side,
         .name = name,
-        .base_hit_chance = 1.0,
-        .base_durability = 1.0,
-        .trauma_mult = 1.0,
+        .base_hit_chance = stats.hit_chance,
+        .base_durability = stats.durability,
+        .trauma_mult = stats.trauma_mult,
         .flags = flags,
     };
 }
 
-fn defineOrgan(
+// Basic structural part (limb segments, joints, digits)
+fn ext(
+    comptime name: []const u8,
+    tag: PartTag,
+    side: Side,
+    comptime parent_name: ?[]const u8,
+) PartDef {
+    return definePartFull(name, tag, side, parent_name, null, .{});
+}
+
+// Vital exterior part (head, neck, torso) - loss is fatal or catastrophic
+fn vital(
+    comptime name: []const u8,
+    tag: PartTag,
+    side: Side,
+    comptime parent_name: ?[]const u8,
+) PartDef {
+    return definePartFull(name, tag, side, parent_name, null, .{ .is_vital = true });
+}
+
+// Internal organ - enclosed by another part, vital by default
+fn organ(
     comptime name: []const u8,
     tag: PartTag,
     side: Side,
@@ -294,71 +348,130 @@ fn defineOrgan(
         .is_internal = true,
     });
 }
+
+// Non-vital internal part (e.g. spleen - survivable loss)
+fn organMinor(
+    comptime name: []const u8,
+    tag: PartTag,
+    side: Side,
+    comptime parent_name: []const u8,
+    comptime enclosing_name: []const u8,
+) PartDef {
+    return definePartFull(name, tag, side, parent_name, enclosing_name, .{
+        .is_internal = true,
+    });
+}
+
+// Sensory organ
+fn sensory(
+    comptime name: []const u8,
+    tag: PartTag,
+    side: Side,
+    comptime parent_name: []const u8,
+    comptime flags: PartFlags,
+) PartDef {
+    return definePartFull(name, tag, side, parent_name, null, flags);
+}
+
+// Grasping part (hands)
+fn grasping(
+    comptime name: []const u8,
+    tag: PartTag,
+    side: Side,
+    comptime parent_name: []const u8,
+) PartDef {
+    return definePartFull(name, tag, side, parent_name, null, .{ .can_grasp = true });
+}
+
+// Weight-bearing part (feet, legs)
+fn standing(
+    comptime name: []const u8,
+    tag: PartTag,
+    side: Side,
+    comptime parent_name: []const u8,
+) PartDef {
+    return definePartFull(name, tag, side, parent_name, null, .{ .can_stand = true });
+}
 // to look up parts by ID at runtime, store a std.AutoHashMap(u64, PartIndex)
 // when building the body, using part.id.hash as the key.
 
 pub const HumanoidPlan = [_]PartDef{
-    // Core
-    definePart("torso", .torso, .center, null),
-    definePart("neck", .neck, .center, "torso"),
-    definePart("head", .head, .center, "neck"),
-    definePart("abdomen", .abdomen, .center, "torso"),
-    definePart("groin", .groin, .center, "abdomen"),
+    // === Core structure ===
+    vital("torso", .torso, .center, null),
+    vital("neck", .neck, .center, "torso"),
+    vital("head", .head, .center, "neck"),
+    vital("abdomen", .abdomen, .center, "torso"),
+    ext("groin", .groin, .center, "abdomen"),
 
-    // Head details
-    definePart("left_eye", .eye, .left, "head"),
-    definePart("right_eye", .eye, .right, "head"),
-    definePart("nose", .nose, .center, "head"),
-    definePart("left_ear", .ear, .left, "head"),
-    definePart("right_ear", .ear, .right, "head"),
+    // === Head - sensory organs ===
+    sensory("left_eye", .eye, .left, "head", .{ .can_see = true }),
+    sensory("right_eye", .eye, .right, "head", .{ .can_see = true }),
+    ext("nose", .nose, .center, "head"),
+    sensory("left_ear", .ear, .left, "head", .{ .can_hear = true }),
+    sensory("right_ear", .ear, .right, "head", .{ .can_hear = true }),
 
-    // Left arm chain
-    definePart("left_shoulder", .shoulder, .left, "torso"),
-    definePart("left_arm", .arm, .left, "left_shoulder"),
-    definePart("left_elbow", .elbow, .left, "left_arm"),
-    definePart("left_forearm", .forearm, .left, "left_elbow"),
-    definePart("left_wrist", .wrist, .left, "left_forearm"),
-    definePart("left_hand", .hand, .left, "left_wrist"),
-    definePart("left_thumb", .thumb, .left, "left_hand"),
-    definePart("left_index_finger", .finger, .left, "left_hand"),
-    definePart("left_middle_finger", .finger, .left, "left_hand"),
-    definePart("left_ring_finger", .finger, .left, "left_hand"),
-    definePart("left_pinky_finger", .finger, .left, "left_hand"),
+    // === Internal organs - head ===
+    organ("brain", .brain, .center, "head", "head"),
 
-    // Right arm chain
-    definePart("right_shoulder", .shoulder, .right, "torso"),
-    definePart("right_arm", .arm, .right, "right_shoulder"),
-    definePart("right_elbow", .elbow, .right, "right_arm"),
-    definePart("right_forearm", .forearm, .right, "right_elbow"),
-    definePart("right_wrist", .wrist, .right, "right_forearm"),
-    definePart("right_hand", .hand, .right, "right_wrist"),
-    definePart("right_thumb", .thumb, .right, "right_hand"),
-    definePart("right_index_finger", .finger, .right, "right_hand"),
-    definePart("right_middle_finger", .finger, .right, "right_hand"),
-    definePart("right_ring_finger", .finger, .right, "right_hand"),
-    definePart("right_pinky_finger", .finger, .right, "right_hand"),
+    // === Internal organs - torso (enclosed by torso) ===
+    organ("heart", .heart, .center, "torso", "torso"),
+    organ("left_lung", .lung, .left, "torso", "torso"),
+    organ("right_lung", .lung, .right, "torso", "torso"),
+    organ("trachea", .trachea, .center, "neck", "neck"),
 
-    // Left leg chain
-    definePart("left_thigh", .thigh, .left, "groin"),
-    definePart("left_knee", .knee, .left, "left_thigh"),
-    definePart("left_shin", .shin, .left, "left_knee"),
-    definePart("left_ankle", .ankle, .left, "left_shin"),
-    definePart("left_foot", .foot, .left, "left_ankle"),
-    definePart("left_big_toe", .toe, .left, "left_foot"),
-    definePart("left_second_toe", .toe, .left, "left_foot"),
-    definePart("left_third_toe", .toe, .left, "left_foot"),
-    definePart("left_fourth_toe", .toe, .left, "left_foot"),
-    definePart("left_pinky_toe", .toe, .left, "left_foot"),
+    // === Internal organs - abdomen (enclosed by abdomen) ===
+    organ("liver", .liver, .center, "abdomen", "abdomen"),
+    organ("stomach", .stomach, .center, "abdomen", "abdomen"),
+    organMinor("spleen", .spleen, .left, "abdomen", "abdomen"),
+    organMinor("intestines", .intestine, .center, "abdomen", "abdomen"),
 
-    // Right leg chain
-    definePart("right_thigh", .thigh, .right, "groin"),
-    definePart("right_knee", .knee, .right, "right_thigh"),
-    definePart("right_shin", .shin, .right, "right_knee"),
-    definePart("right_ankle", .ankle, .right, "right_shin"),
-    definePart("right_foot", .foot, .right, "right_ankle"),
-    definePart("right_big_toe", .toe, .right, "right_foot"),
-    definePart("right_second_toe", .toe, .right, "right_foot"),
-    definePart("right_third_toe", .toe, .right, "right_foot"),
-    definePart("right_fourth_toe", .toe, .right, "right_foot"),
-    definePart("right_pinky_toe", .toe, .right, "right_foot"),
+    // === Left arm chain ===
+    ext("left_shoulder", .shoulder, .left, "torso"),
+    ext("left_arm", .arm, .left, "left_shoulder"),
+    ext("left_elbow", .elbow, .left, "left_arm"),
+    ext("left_forearm", .forearm, .left, "left_elbow"),
+    ext("left_wrist", .wrist, .left, "left_forearm"),
+    grasping("left_hand", .hand, .left, "left_wrist"),
+    ext("left_thumb", .thumb, .left, "left_hand"),
+    ext("left_index_finger", .finger, .left, "left_hand"),
+    ext("left_middle_finger", .finger, .left, "left_hand"),
+    ext("left_ring_finger", .finger, .left, "left_hand"),
+    ext("left_pinky_finger", .finger, .left, "left_hand"),
+
+    // === Right arm chain ===
+    ext("right_shoulder", .shoulder, .right, "torso"),
+    ext("right_arm", .arm, .right, "right_shoulder"),
+    ext("right_elbow", .elbow, .right, "right_arm"),
+    ext("right_forearm", .forearm, .right, "right_elbow"),
+    ext("right_wrist", .wrist, .right, "right_forearm"),
+    grasping("right_hand", .hand, .right, "right_wrist"),
+    ext("right_thumb", .thumb, .right, "right_hand"),
+    ext("right_index_finger", .finger, .right, "right_hand"),
+    ext("right_middle_finger", .finger, .right, "right_hand"),
+    ext("right_ring_finger", .finger, .right, "right_hand"),
+    ext("right_pinky_finger", .finger, .right, "right_hand"),
+
+    // === Left leg chain ===
+    standing("left_thigh", .thigh, .left, "groin"),
+    ext("left_knee", .knee, .left, "left_thigh"),
+    standing("left_shin", .shin, .left, "left_knee"),
+    ext("left_ankle", .ankle, .left, "left_shin"),
+    standing("left_foot", .foot, .left, "left_ankle"),
+    ext("left_big_toe", .toe, .left, "left_foot"),
+    ext("left_second_toe", .toe, .left, "left_foot"),
+    ext("left_third_toe", .toe, .left, "left_foot"),
+    ext("left_fourth_toe", .toe, .left, "left_foot"),
+    ext("left_pinky_toe", .toe, .left, "left_foot"),
+
+    // === Right leg chain ===
+    standing("right_thigh", .thigh, .right, "groin"),
+    ext("right_knee", .knee, .right, "right_thigh"),
+    standing("right_shin", .shin, .right, "right_knee"),
+    ext("right_ankle", .ankle, .right, "right_shin"),
+    standing("right_foot", .foot, .right, "right_ankle"),
+    ext("right_big_toe", .toe, .right, "right_foot"),
+    ext("right_second_toe", .toe, .right, "right_foot"),
+    ext("right_third_toe", .toe, .right, "right_foot"),
+    ext("right_fourth_toe", .toe, .right, "right_foot"),
+    ext("right_pinky_toe", .toe, .right, "right_foot"),
 };
