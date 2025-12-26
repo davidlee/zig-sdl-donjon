@@ -9,6 +9,7 @@ const combat = @import("combat.zig");
 const events = @import("events.zig");
 const world = @import("world.zig");
 const entity = @import("entity.zig");
+const tick = @import("tick.zig");
 
 const Event = events.Event;
 const EventSystem = events.EventSystem;
@@ -348,20 +349,86 @@ pub fn evaluateTargets(
     return targets;
 }
 
+// ============================================================================
+// Tick Cleanup (cost enforcement, card zone transitions, cooldowns)
+// ============================================================================
+
+const DEFAULT_COOLDOWN_TICKS: u8 = 2;
+
+/// Apply costs and cleanup after tick resolution.
+/// This is the authority for stamina deduction, card movement, and cooldowns.
+pub fn applyCommittedCosts(
+    committed: []const tick.CommittedAction,
+    event_system: *EventSystem,
+) !void {
+    for (committed) |action| {
+        const card = action.card orelse continue;
+        const agent = action.actor;
+
+        // Deduct actual stamina cost
+        const stamina_cost = card.template.cost.stamina;
+        const old_stamina = agent.stamina;
+        agent.stamina = @max(0, agent.stamina - stamina_cost);
+
+        try event_system.push(.{
+            .stamina_deducted = .{
+                .agent_id = agent.id,
+                .amount = stamina_cost,
+                .new_value = agent.stamina,
+            },
+        });
+
+        // Move card to discard or exhaust (deck-based only)
+        switch (agent.cards) {
+            .deck => |*d| {
+                const dest_zone: cards.Zone = if (card.template.cost.exhausts)
+                    .exhaust
+                else
+                    .discard;
+
+                try d.move(card.id, .in_play, dest_zone);
+                try event_system.push(.{
+                    .card_moved = .{
+                        .instance = card.id,
+                        .from = .in_play,
+                        .to = dest_zone,
+                    },
+                });
+            },
+            .pool => |*pool| {
+                // Apply cooldown to technique
+                try pool.applyCooldown(card.template.id, DEFAULT_COOLDOWN_TICKS);
+                try event_system.push(.{
+                    .cooldown_applied = .{
+                        .agent_id = agent.id,
+                        .template_id = card.template.id,
+                        .ticks = DEFAULT_COOLDOWN_TICKS,
+                    },
+                });
+            },
+        }
+
+        _ = old_stamina; // suppress unused warning for now
+    }
+}
+
+// ============================================================================
+// Design Notes
+// ============================================================================
 // event -> state mutation
 //
 // keep the core as:
 // State: all authoritative game data
-// Command: a player/AI intent (“PlayCard {card_id, target}”)
+// Command: a player/AI intent ("PlayCard {card_id, target}")
 // Resolver: validates + applies rules
-// Event log: what happened (“DamageDealt”, “StatusApplied”, “CardMovedZones”)
+// Event log: what happened ("DamageDealt", "StatusApplied", "CardMovedZones")
 // RNG stream: explicit, seeded, reproducible
 //
 // for:
 //
 // deterministic replays
 // easy undo/redo (event-sourcing or snapshots)
-// “what-if” simulations for AI / balance tools
+// "what-if" simulations for AI / balance tools
 // clean separation from rendering
 //
 // resolve a command into events, then apply events to state in a predictable way.

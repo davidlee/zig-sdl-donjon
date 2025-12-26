@@ -3,7 +3,8 @@
     "allow": [
       "WebFetch(domain:dwarffortresswiki.org)",
       "Bash(zig build:*)",
-      "Bash(zig fmt:*)"
+      "Bash(zig fmt:*)",
+      "mcp__serena__get_symbols_overview"
     ]
   }
 }

@@ -105,3 +105,12 @@ pub fn main() !void {
             };
     }
 }
+
+// Force test discovery for all modules with tests
+test {
+    @import("std").testing.refAllDecls(@This());
+    _ = @import("body.zig");
+    _ = @import("resolution.zig");
+    _ = @import("weapon_list.zig");
+    _ = @import("tick.zig");
+}

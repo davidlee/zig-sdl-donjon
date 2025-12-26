@@ -140,14 +140,14 @@ pub const TickResolver = struct {
     fn commitSingleMob(self: *TickResolver, mob: *Agent) !void {
         switch (mob.cards) {
             .pool => |*pool| {
-                // Select next technique from pool
-                if (pool.selectNext()) |template| {
-                    const technique = template.technique orelse return;
-                    const time_cost = template.cost.time;
+                // Select next technique instance from pool
+                if (pool.selectNext()) |instance| {
+                    const technique = instance.template.technique orelse return;
+                    const time_cost = instance.template.cost.time;
 
                     try self.addAction(.{
                         .actor = mob,
-                        .card = null, // pool-based mobs don't have card instances
+                        .card = instance,
                         .technique = technique,
                         .stakes = .guarded, // TODO: behavior-based stakes
                         .time_start = 0.0,
@@ -255,15 +255,8 @@ pub const TickResolver = struct {
 
     fn isOffensiveAction(self: *TickResolver, action: *const CommittedAction) bool {
         _ = self;
-        // Check card tags if we have a card, otherwise assume technique-based
-        if (action.card) |card| {
-            return card.template.tags.offensive;
-        }
-        // Pool-based: infer from technique id
-        return switch (action.technique.id) {
-            .thrust, .swing, .feint => true,
-            .deflect, .parry, .block => false,
-        };
+        // All actions now have card instances with proper tags
+        return if (action.card) |card| card.template.tags.offensive else false;
     }
 
     fn getTargetQuery(self: *TickResolver, action: *const CommittedAction) ?cards.TargetQuery {
@@ -290,13 +283,8 @@ pub const TickResolver = struct {
         for (self.committed.items) |*action| {
             if (action.actor != defender) continue;
 
-            // Check if defensive
-            const is_defensive = if (action.card) |card|
-                card.template.tags.defensive
-            else switch (action.technique.id) {
-                .deflect, .parry, .block => true,
-                else => false,
-            };
+            // All actions now have card instances with proper tags
+            const is_defensive = if (action.card) |card| card.template.tags.defensive else false;
             if (!is_defensive) continue;
 
             // Check time overlap
@@ -326,64 +314,8 @@ pub const TickResolver = struct {
     }
 
     // -------------------------------------------------------------------------
-    // Tick Cleanup
+    // Tick Cleanup (Note: Cost enforcement moved to apply.zig)
     // -------------------------------------------------------------------------
-
-    /// Apply costs and cleanup after tick resolution
-    pub fn cleanup(self: *TickResolver) !void {
-        for (self.committed.items) |*action| {
-            // Deduct actual stamina cost
-            if (action.card) |card| {
-                action.actor.stamina -= card.template.cost.stamina;
-                if (action.actor.stamina < 0) action.actor.stamina = 0;
-
-                // Move card to discard or exhaust
-                const dest_zone: cards.Zone = if (card.template.cost.exhausts) .exhaust else .discard;
-                try self.moveCardToZone(action.actor, card, dest_zone);
-            }
-
-            // Apply technique cooldowns for pool-based mobs
-            if (action.card == null) {
-                // Pool-based mob: apply cooldown to technique
-                switch (action.actor.cards) {
-                    .pool => |*pool| {
-                        // Set cooldown (e.g., 2 ticks)
-                        try pool.cooldowns.put(self.alloc, action.technique.id, 2);
-                    },
-                    .deck => {},
-                }
-            }
-        }
-
-        // Reset available resources for next tick
-        // (This would typically be done at tick start, but noting it here)
-    }
-
-    fn moveCardToZone(self: *TickResolver, agent: *Agent, card: *cards.Instance, dest: cards.Zone) !void {
-        _ = self;
-        switch (agent.cards) {
-            .deck => |*d| {
-                // Remove from in_play
-                var i: usize = 0;
-                while (i < d.in_play.items.len) {
-                    if (d.in_play.items[i] == card) {
-                        _ = d.in_play.swapRemove(i);
-                        break;
-                    } else {
-                        i += 1;
-                    }
-                }
-
-                // Add to destination
-                switch (dest) {
-                    .discard => try d.discard.append(d.alloc, card),
-                    .exhaust => try d.exhaust.append(d.alloc, card),
-                    else => {},
-                }
-            },
-            .pool => {}, // Pools don't use card instances
-        }
-    }
 
     /// Reset agent resources for next tick
     pub fn resetForNextTick(self: *TickResolver, agents: []*Agent) void {
@@ -394,14 +326,7 @@ pub const TickResolver = struct {
 
             // Decrement cooldowns for pool-based
             switch (agent.cards) {
-                .pool => |*pool| {
-                    var it = pool.cooldowns.iterator();
-                    while (it.next()) |entry| {
-                        if (entry.value_ptr.* > 0) {
-                            entry.value_ptr.* -= 1;
-                        }
-                    }
-                },
+                .pool => |*pool| pool.tickCooldowns(),
                 .deck => {},
             }
         }

@@ -111,7 +111,19 @@ pub const Event = union(enum) {
         volume: f32,
     },
     player_turn_ended: void, // Payload: none
-    tick_ended: void, // NEW: tick resolution completed
+    tick_ended: void, // tick resolution completed
+
+    // Tick cleanup events (for observability)
+    stamina_deducted: struct {
+        agent_id: entity.ID,
+        amount: f32,
+        new_value: f32,
+    },
+    cooldown_applied: struct {
+        agent_id: entity.ID,
+        template_id: cards.ID,
+        ticks: u8,
+    },
 };
 
 pub const EventSystem = struct {

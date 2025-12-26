@@ -52,29 +52,85 @@ pub const Strat = union(enum) {
     pool: TechniquePool,
 };
 
-// Humanoid AI: simplified pool
+// Humanoid AI: simplified pool with card instances
 pub const TechniquePool = struct {
-    available: []const *cards.Template, // what they know
-    in_play: std.ArrayList(*cards.Instance), // committed this tick
-    cooldowns: std.AutoHashMap(cards.ID, u8), // technique -> ticks remaining
+    alloc: std.mem.Allocator,
+    entities: SlotMap(*Instance), // entity ID provider for instances
+    instances: std.ArrayList(*Instance), // technique instances (one per template)
+    in_play: std.ArrayList(*Instance), // committed this tick
+    cooldowns: std.AutoHashMap(cards.ID, u8), // template.id -> ticks remaining
     next_index: usize = 0, // for round-robin selection
 
-    // No hand/draw - AI picks from available based on behavior pattern
-    pub fn canUse(self: *const TechniquePool, t: *const cards.Template) bool {
-        return (self.cooldowns.get(t.id) orelse 0) == 0;
+    pub fn init(alloc: std.mem.Allocator, templates: []const *const Template) !TechniquePool {
+        var pool = TechniquePool{
+            .alloc = alloc,
+            .entities = try SlotMap(*Instance).init(alloc),
+            .instances = try std.ArrayList(*Instance).initCapacity(alloc, templates.len),
+            .in_play = try std.ArrayList(*Instance).initCapacity(alloc, 4),
+            .cooldowns = std.AutoHashMap(cards.ID, u8).init(alloc),
+        };
+        errdefer pool.deinit();
+
+        // Create one instance per template
+        for (templates) |template| {
+            const instance = try pool.createInstance(template);
+            try pool.instances.append(alloc, instance);
+        }
+
+        return pool;
     }
 
-    /// Select next available technique (round-robin, skips cooldowns)
-    pub fn selectNext(self: *TechniquePool) ?*const cards.Template {
-        if (self.available.len == 0) return null;
+    fn createInstance(self: *TechniquePool, template: *const Template) !*Instance {
+        const instance = try self.alloc.create(Instance);
+        instance.* = .{
+            .id = undefined,
+            .template = template,
+        };
+        const id = try self.entities.insert(instance);
+        instance.id = id;
+        return instance;
+    }
+
+    pub fn deinit(self: *TechniquePool) void {
+        for (self.entities.items.items) |instance| {
+            self.alloc.destroy(instance);
+        }
+        self.entities.deinit();
+        self.instances.deinit(self.alloc);
+        self.in_play.deinit(self.alloc);
+        self.cooldowns.deinit();
+    }
+
+    pub fn canUse(self: *const TechniquePool, instance: *const Instance) bool {
+        return (self.cooldowns.get(instance.template.id) orelse 0) == 0;
+    }
+
+    /// Select next available technique instance (round-robin, skips cooldowns)
+    pub fn selectNext(self: *TechniquePool) ?*Instance {
+        if (self.instances.items.len == 0) return null;
 
         var attempts: usize = 0;
-        while (attempts < self.available.len) : (attempts += 1) {
-            const template = self.available[self.next_index];
-            self.next_index = (self.next_index + 1) % self.available.len;
-            if (self.canUse(template)) return template;
+        while (attempts < self.instances.items.len) : (attempts += 1) {
+            const instance = self.instances.items[self.next_index];
+            self.next_index = (self.next_index + 1) % self.instances.items.len;
+            if (self.canUse(instance)) return instance;
         }
         return null; // all on cooldown
+    }
+
+    /// Apply cooldown to a technique (by template ID)
+    pub fn applyCooldown(self: *TechniquePool, template_id: cards.ID, ticks: u8) !void {
+        try self.cooldowns.put(self.alloc, template_id, ticks);
+    }
+
+    /// Decrement all cooldowns by 1
+    pub fn tickCooldowns(self: *TechniquePool) void {
+        var it = self.cooldowns.iterator();
+        while (it.next()) |entry| {
+            if (entry.value_ptr.* > 0) {
+                entry.value_ptr.* -= 1;
+            }
+        }
     }
 };
 
@@ -176,10 +232,9 @@ pub const Agent = struct {
         const alloc = self.alloc;
         // slot_map.remove(self.id);
 
-        //self.cards.deinit(alloc);
         switch (self.cards) {
             .deck => |*dk| dk.deinit(),
-            else => {},
+            .pool => |*pl| pl.deinit(),
         }
 
         self.conditions.deinit(alloc);

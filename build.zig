@@ -163,7 +163,9 @@ pub fn build(b: *std.Build) !void {
         try buildBin(b, target, optimize);
     }
 
-    // Test step
+    // Test step - single entry point to avoid running tests multiple times
+    // (Zig runs tests from all transitive imports, so separate test modules
+    // would cause duplication: tick→resolution→body means body tests run 3x)
     const test_step = b.step("test", "Run unit tests");
 
     const infra_mod = b.addModule("infra", .{
@@ -175,56 +177,16 @@ pub fn build(b: *std.Build) !void {
     }).module("sdl3"));
     infra_mod.addImport("zigfsm", b.dependency("zigfsm", .{}).module("zigfsm"));
 
-    // Add test modules - body.zig pulls in its dependencies
-    const body_tests = b.addTest(.{
+    const main_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/body.zig"),
+            .root_source_file = b.path("src/main.zig"),
             .target = target,
             .optimize = optimize,
         }),
     });
-    body_tests.root_module.addImport("infra", infra_mod);
+    main_tests.root_module.addImport("infra", infra_mod);
+    main_tests.root_module.addImport("zigfsm", b.dependency("zigfsm", .{}).module("zigfsm"));
 
-    const run_body_tests = b.addRunArtifact(body_tests);
-    test_step.dependOn(&run_body_tests.step);
-
-    // Resolution tests - includes integration tests for combat resolution
-    const resolution_tests = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/resolution.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
-    });
-    resolution_tests.root_module.addImport("infra", infra_mod);
-    resolution_tests.root_module.addImport("zigfsm", b.dependency("zigfsm", .{}).module("zigfsm"));
-
-    const run_resolution_tests = b.addRunArtifact(resolution_tests);
-    test_step.dependOn(&run_resolution_tests.step);
-
-    // Weapon list tests
-    const weapon_tests = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/weapon_list.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
-    });
-
-    const run_weapon_tests = b.addRunArtifact(weapon_tests);
-    test_step.dependOn(&run_weapon_tests.step);
-
-    // Tick resolver tests
-    const tick_tests = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/tick.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
-    });
-    tick_tests.root_module.addImport("infra", infra_mod);
-    tick_tests.root_module.addImport("zigfsm", b.dependency("zigfsm", .{}).module("zigfsm"));
-
-    const run_tick_tests = b.addRunArtifact(tick_tests);
-    test_step.dependOn(&run_tick_tests.step);
+    const run_main_tests = b.addRunArtifact(main_tests);
+    test_step.dependOn(&run_main_tests.step);
 }

@@ -111,7 +111,7 @@ These feed into `calculateHitChance`.
 ### Working
 - `resolution.zig` created and compiling
 - `tick.zig` created with full resolution loop
-- All 153+ tests passing (body + resolution + weapon_list + tick)
+- All 64 tests passing (body + resolution + weapon_list + tick + armour + damage)
 - Armor resolution complete with events
 - Body/wound system complete with events
 - Card playing and event system working
@@ -369,6 +369,14 @@ zig build test --summary all
 - Modified: `src/card_list.zig` (added feint technique with advantage override, fixed deflect id)
 - Modified: `build.zig` (added resolution.zig, weapon_list.zig, tick.zig test modules)
 
+### Refactoring Session: tick/apply separation
+- Modified: `src/combat.zig` - TechniquePool now creates card instances with init/deinit, applyCooldown(), tickCooldowns()
+- Modified: `src/tick.zig` - Uses card instances uniformly; removed hardcoded technique ID switch; removed duplicate moveCardToZone; cleanup logic moved out
+- Modified: `src/apply.zig` - Added applyCommittedCosts() as the authority for stamina deduction, card movement, and cooldowns
+- Modified: `src/events.zig` - Added stamina_deducted and cooldown_applied events
+- Modified: `build.zig` - Fixed test duplication (was running tests 2-3x due to transitive imports); single entry point via main.zig
+- Modified: `src/main.zig` - Added test block to force discovery of all test modules
+
 ## Known Limitations & Shortcuts
 
 Items to revisit when extending the system:
@@ -383,9 +391,8 @@ Items to revisit when extending the system:
 
 ### Mob AI
 - **Round-robin only:** `TechniquePool.selectNext()` cycles through techniques. No state-based selection, weighted options, or situational awareness.
-- **Fixed cooldown:** Pool-based mobs get 2-tick cooldown on used techniques (hardcoded in `tick.zig:cleanup()`).
+- **Fixed cooldown:** Pool-based mobs get 2-tick cooldown (defined in `apply.zig:DEFAULT_COOLDOWN_TICKS`).
 - **No defensive selection:** Mobs don't actively choose to defend; they only attack. Step 6 addresses this.
-- **Technique ID fallback:** For pool-based mobs without cards, offensive/defensive detection uses a switch on `TechniqueID` rather than tags.
 
 ### Targeting
 - **1v1 assumption:** Many places assume player vs single mob engagement. Multi-mob targeting works but engagement lookup may need refinement.
@@ -393,7 +400,7 @@ Items to revisit when extending the system:
 
 ### Stamina & Resources
 - **No stamina=0 blocking:** Design doc says stamina exhaustion should block commitment, but this isn't enforced.
-- **Stamina can go negative:** `cleanup()` clamps to 0 but doesn't prevent over-spending.
+- **Stamina can go negative:** `applyCommittedCosts()` clamps to 0 but doesn't prevent over-spending.
 
 ### Resolution
 - **No reactions during resolution:** The FSM has `player_reaction` state but reactions aren't integrated into `TickResolver.resolve()`.
@@ -402,10 +409,8 @@ Items to revisit when extending the system:
 
 ### FSM / Game Loop
 - **processTick() not called automatically:** `World.processTick()` exists but nothing triggers the FSM transition yet. UI/harness must drive it.
-- **No draw phase:** Card draw at tick start isn't implemented.
+- **No draw phase:** Card draw at tick start isn't implemented. 
 
-### Testing
-- **No tick.zig integration tests with real agents:** Unit tests use mock techniques; need integration tests with full World + agents.
 
 ## Open Design Questions
 
