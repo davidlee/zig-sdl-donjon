@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "WebFetch(domain:dwarffortresswiki.org)"
+      "WebFetch(domain:dwarffortresswiki.org)",
+      "Bash(zig build:*)",
+      "Bash(zig fmt:*)"
     ]
   }
 }

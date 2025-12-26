@@ -162,10 +162,10 @@ pub const Technique = struct {
     counter_mult: f32 = 1.0,
 
     pub fn byID(comptime id: TechniqueID) Technique {
-        for (TechniqueEntries) |tn| {
+        inline for (TechniqueEntries) |tn| {
             if (tn.id == id) return tn;
         }
-        @compileError("unknown technique: " ++ id);
+        @compileError("unknown technique: " ++ @tagName(id));
     }
 };
 

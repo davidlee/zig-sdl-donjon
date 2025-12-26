@@ -419,7 +419,7 @@ pub const Body = struct {
 
     /// Apply a damage packet to a specific part.
     /// Creates a wound, adds it to the part, updates severity, checks for severing.
-    fn applyDamageToPart(self: *Body, part_idx: PartIndex, packet: damage.Packet) !DamageResult {
+    pub fn applyDamageToPart(self: *Body, part_idx: PartIndex, packet: damage.Packet) !DamageResult {
         const part = &self.parts.items[part_idx];
 
         // Generate wound based on part's tissue template

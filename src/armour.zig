@@ -32,12 +32,12 @@ const Material = struct {
     name: []const u8,
 
     // these modify to the wearer
-    resistances: []Resistance,
-    vulnerabilities: []Vulnerability,
+    resistances: []const Resistance,
+    vulnerabilities: []const Vulnerability,
 
     // these modify to the material itself
-    self_resistances: []Resistance,
-    self_vulnerabilities: []Vulnerability,
+    self_resistances: []const Resistance,
+    self_vulnerabilities: []const Vulnerability,
 
     quality: Quality,
     durability: f32, // base - modified by size, quality, etc
@@ -93,7 +93,7 @@ const PatternCoverage = struct {
 };
 
 const Pattern = struct {
-    coverage: []PatternCoverage,
+    coverage: []const PatternCoverage,
 };
 
 // designed to be easily definable at comptime

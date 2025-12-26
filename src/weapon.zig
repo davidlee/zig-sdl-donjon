@@ -55,7 +55,7 @@ pub const Projectile = struct {
 pub const Offensive = struct {
     name: []const u8,
     reach: combat.Reach,
-    damage_types: []damage.Kind,
+    damage_types: []const damage.Kind,
     // TODO hit location weights
     // TODO consider balance, pressure, control, position
 
@@ -111,7 +111,7 @@ pub const Features = packed struct {
 pub const Template = struct {
     name: []const u8,
 
-    categories: []Category,
+    categories: []const Category,
     features: Features,
     grip: Grip,
 

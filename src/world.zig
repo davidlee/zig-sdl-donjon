@@ -85,10 +85,10 @@ pub const World = struct {
 
     pub fn deinit(self: *World) void {
         self.events.deinit();
-        self.player.deinit();
         if (self.encounter) |*encounter| {
             encounter.deinit(self.alloc);
         }
+        // Player is in agents, so no separate deinit needed
         for (self.agents.items.items) |x| x.deinit();
         self.agents.deinit();
         self.alloc.destroy(self.agents);

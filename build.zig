@@ -166,6 +166,15 @@ pub fn build(b: *std.Build) !void {
     // Test step
     const test_step = b.step("test", "Run unit tests");
 
+    const infra_mod = b.addModule("infra", .{
+        .root_source_file = b.path("src/infra.zig"),
+    });
+    infra_mod.addImport("sdl3", b.dependency("sdl3", .{
+        .target = target,
+        .optimize = optimize,
+    }).module("sdl3"));
+    infra_mod.addImport("zigfsm", b.dependency("zigfsm", .{}).module("zigfsm"));
+
     // Add test modules - body.zig pulls in its dependencies
     const body_tests = b.addTest(.{
         .root_module = b.createModule(.{
@@ -174,7 +183,22 @@ pub fn build(b: *std.Build) !void {
             .optimize = optimize,
         }),
     });
+    body_tests.root_module.addImport("infra", infra_mod);
 
     const run_body_tests = b.addRunArtifact(body_tests);
     test_step.dependOn(&run_body_tests.step);
+
+    // Resolution tests - includes integration tests for combat resolution
+    const resolution_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/resolution.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    resolution_tests.root_module.addImport("infra", infra_mod);
+    resolution_tests.root_module.addImport("zigfsm", b.dependency("zigfsm", .{}).module("zigfsm"));
+
+    const run_resolution_tests = b.addRunArtifact(resolution_tests);
+    test_step.dependOn(&run_resolution_tests.step);
 }

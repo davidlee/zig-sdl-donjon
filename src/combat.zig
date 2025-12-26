@@ -13,7 +13,7 @@ const SlotMap = @import("slot_map.zig").SlotMap;
 const Instance = cards.Instance;
 const Template = cards.Template;
 
-const Director = enum {
+pub const Director = enum {
     player,
     ai,
 };
@@ -140,7 +140,7 @@ pub const Agent = struct {
             .stats = sb,
             // .state = State.init(alloc, stamina),
             .body = bd,
-            .armour = undefined, //armour.Stack{.coverage = &.{}},
+            .armour = armour.Stack.init(alloc),
             .weapons = undefined,
             .engagement = (if (dr == .ai) Engagement{} else null),
             .stamina = stamina,
@@ -171,6 +171,11 @@ pub const Agent = struct {
         self.immunities.deinit(alloc);
         self.resistances.deinit(alloc);
         self.vulnerabilities.deinit(alloc);
+
+        self.body.deinit();
+        self.armour.deinit();
+
+        alloc.destroy(self);
     }
 
     pub fn destroy(self: *Agent, slot_map: *SlotMap(*Agent)) void {

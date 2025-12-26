@@ -352,7 +352,7 @@ pub const ResolutionResult = struct {
     advantage_applied: AdvantageEffect,
     damage_packet: ?damage.Packet,
     armour_result: ?armour.AbsorptionResult,
-    body_result: ?body.DamageResult,
+    body_result: ?body.Body.DamageResult,
 };
 
 /// Resolve a single technique against a defense, applying all effects
@@ -372,7 +372,7 @@ pub fn resolveTechniqueVsDefense(
     // 3. If hit, create damage packet and resolve through armor/body
     var dmg_packet: ?damage.Packet = null;
     var armour_result: ?armour.AbsorptionResult = null;
-    var body_result: ?body.DamageResult = null;
+    var body_result: ?body.Body.DamageResult = null;
 
     if (outcome == .hit) {
         dmg_packet = createDamagePacket(
@@ -473,4 +473,368 @@ test "getAdvantageEffect miss penalty scales with stakes" {
 
     // Reckless miss should have bigger balance penalty
     try std.testing.expect(reckless_miss.self_balance < guarded_miss.self_balance);
+}
+
+// ============================================================================
+// Integration Test Fixtures
+// ============================================================================
+
+const TestWeapons = struct {
+    pub const sword_swing = weapon.Offensive{
+        .name = "sword swing",
+        .reach = .longsword,
+        .damage_types = &.{.slash},
+        .accuracy = 1.0,
+        .speed = 1.0,
+        .damage = 1.0,
+        .penetration = 0.5,
+        .penetration_max = 2.0,
+        .fragility = 0.1,
+        .defender_modifiers = .{
+            .name = "",
+            .reach = .longsword,
+            .parry = 0.8,
+            .deflect = 0.6,
+            .block = 0.4,
+            .fragility = 0.1,
+        },
+    };
+
+    pub const sword_thrust = weapon.Offensive{
+        .name = "sword thrust",
+        .reach = .longsword,
+        .damage_types = &.{.pierce},
+        .accuracy = 0.9,
+        .speed = 1.2,
+        .damage = 0.8,
+        .penetration = 1.0,
+        .penetration_max = 4.0,
+        .fragility = 0.1,
+        .defender_modifiers = .{
+            .name = "",
+            .reach = .longsword,
+            .parry = 1.0,
+            .deflect = 0.8,
+            .block = 0.5,
+            .fragility = 0.1,
+        },
+    };
+
+    pub const sword_defence = weapon.Defensive{
+        .name = "sword defence",
+        .reach = .longsword,
+        .parry = 1.0,
+        .deflect = 0.8,
+        .block = 0.3,
+        .fragility = 0.1,
+    };
+
+    pub const sword = weapon.Template{
+        .name = "longsword",
+        .categories = &.{.sword},
+        .features = .{
+            .hooked = false,
+            .spiked = false,
+            .crossguard = true,
+            .pommel = true,
+        },
+        .grip = .{
+            .one_handed = true,
+            .two_handed = true,
+            .versatile = false,
+            .bastard = true,
+            .half_sword = true,
+            .murder_stroke = true,
+        },
+        .length = 100.0,
+        .weight = 1.5,
+        .balance = 0.3,
+        .swing = sword_swing,
+        .thrust = sword_thrust,
+        .defence = sword_defence,
+        .ranged = null,
+        .integrity = 100.0,
+    };
+};
+
+fn makeTestWorld(alloc: std.mem.Allocator) !*World {
+    return World.init(alloc);
+}
+
+fn makeTestAgent(
+    alloc: std.mem.Allocator,
+    agents: *@import("slot_map.zig").SlotMap(*Agent),
+    director: @import("combat.zig").Director,
+) !*Agent {
+    const deck_mod = @import("deck.zig");
+    const card_list = @import("card_list.zig");
+
+    const agent_deck = try deck_mod.Deck.init(alloc, &card_list.BeginnerDeck);
+    const agent_stats = stats.Block.splat(5);
+    const agent_body = try body.Body.fromPlan(alloc, &body.HumanoidPlan);
+
+    const agent = try Agent.init(
+        alloc,
+        agents,
+        director,
+        combat.Strat{ .deck = agent_deck },
+        agent_stats,
+        agent_body,
+        10.0,
+    );
+
+    return agent;
+}
+
+test "resolveTechniqueVsDefense emits technique_resolved event" {
+    const alloc = std.testing.allocator;
+
+    var w = try makeTestWorld(alloc);
+    defer w.deinit();
+    w.attachEventHandlers();
+
+    // Create attacker (player) and defender (mob)
+    const attacker = w.player;
+    const defender = try makeTestAgent(alloc, w.agents, .ai);
+    // Note: defender is cleaned up by w.deinit() since it's in w.agents
+
+    // Set up engagement on defender
+    defender.engagement = Engagement{};
+    const engagement = &defender.engagement.?;
+
+    // Get thrust technique
+    const technique = &cards.Technique.byID(.thrust);
+
+    // Create attack and defense contexts
+    const attack = AttackContext{
+        .attacker = attacker,
+        .defender = defender,
+        .technique = technique,
+        .weapon_template = &TestWeapons.sword,
+        .stakes = .guarded,
+        .engagement = engagement,
+    };
+
+    const defense = DefenseContext{
+        .defender = defender,
+        .technique = null, // passive defense
+        .weapon_template = &TestWeapons.sword,
+    };
+
+    // Get a target body part
+    const target_part: body.PartIndex = 0; // torso
+
+    // Resolve the technique
+    const result = try resolveTechniqueVsDefense(w, attack, defense, target_part);
+
+    // Swap buffers to make events readable
+    w.events.swap_buffers();
+
+    // Check that technique_resolved event was emitted
+    var found_technique_resolved = false;
+    while (w.events.pop()) |event| {
+        switch (event) {
+            .technique_resolved => |data| {
+                try std.testing.expectEqual(attacker.id, data.attacker_id);
+                try std.testing.expectEqual(defender.id, data.defender_id);
+                try std.testing.expectEqual(cards.TechniqueID.thrust, data.technique_id);
+                try std.testing.expectEqual(result.outcome, data.outcome);
+                found_technique_resolved = true;
+            },
+            else => {},
+        }
+    }
+
+    try std.testing.expect(found_technique_resolved);
+}
+
+test "resolveTechniqueVsDefense emits advantage_changed events on hit" {
+    const alloc = std.testing.allocator;
+
+    var w = try makeTestWorld(alloc);
+    defer w.deinit();
+    w.attachEventHandlers();
+
+    const attacker = w.player;
+    const defender = try makeTestAgent(alloc, w.agents, .ai);
+    // Note: defender is cleaned up by w.deinit() since it's in w.agents
+
+    defender.engagement = Engagement{};
+    const engagement = &defender.engagement.?;
+
+    const technique = &cards.Technique.byID(.swing);
+
+    const attack = AttackContext{
+        .attacker = attacker,
+        .defender = defender,
+        .technique = technique,
+        .weapon_template = &TestWeapons.sword,
+        .stakes = .committed, // higher stakes = bigger advantage swings
+        .engagement = engagement,
+    };
+
+    const defense = DefenseContext{
+        .defender = defender,
+        .technique = null,
+        .weapon_template = &TestWeapons.sword,
+    };
+
+    const target_part: body.PartIndex = 0;
+
+    // Force a hit by setting defender balance very low
+    defender.balance = 0.1;
+
+    const result = try resolveTechniqueVsDefense(w, attack, defense, target_part);
+
+    w.events.swap_buffers();
+
+    // Count advantage_changed events
+    var advantage_events: u32 = 0;
+    var found_balance_event = false;
+
+    while (w.events.pop()) |event| {
+        switch (event) {
+            .advantage_changed => |data| {
+                advantage_events += 1;
+                if (data.axis == .balance) {
+                    found_balance_event = true;
+                    // Balance changes should have engagement_with = null (intrinsic)
+                    try std.testing.expectEqual(@as(?entity.ID, null), data.engagement_with);
+                }
+            },
+            else => {},
+        }
+    }
+
+    // Hit or miss, we should get advantage events based on outcome
+    if (result.outcome == .hit) {
+        // Hit should change pressure, control, and target_balance
+        try std.testing.expect(advantage_events >= 2);
+    } else {
+        // Miss should change control and self_balance
+        try std.testing.expect(advantage_events >= 1);
+    }
+}
+
+test "resolveTechniqueVsDefense applies damage on hit" {
+    const alloc = std.testing.allocator;
+
+    var w = try makeTestWorld(alloc);
+    defer w.deinit();
+    w.attachEventHandlers();
+
+    const attacker = w.player;
+    const defender = try makeTestAgent(alloc, w.agents, .ai);
+    // Note: defender is cleaned up by w.deinit() since it's in w.agents
+
+    defender.engagement = Engagement{};
+    const engagement = &defender.engagement.?;
+
+    const technique = &cards.Technique.byID(.thrust);
+
+    const attack = AttackContext{
+        .attacker = attacker,
+        .defender = defender,
+        .technique = technique,
+        .weapon_template = &TestWeapons.sword,
+        .stakes = .reckless, // maximum damage
+        .engagement = engagement,
+    };
+
+    const defense = DefenseContext{
+        .defender = defender,
+        .technique = null,
+        .weapon_template = &TestWeapons.sword,
+    };
+
+    const target_part: body.PartIndex = 0;
+
+    // Stack odds for a hit
+    defender.balance = 0.0;
+    engagement.pressure = 0.9; // player advantage
+    engagement.control = 0.9;
+    engagement.position = 0.9;
+
+    const result = try resolveTechniqueVsDefense(w, attack, defense, target_part);
+
+    if (result.outcome == .hit) {
+        // Should have created a damage packet
+        try std.testing.expect(result.damage_packet != null);
+
+        const packet = result.damage_packet.?;
+        try std.testing.expect(packet.amount > 0);
+        try std.testing.expectEqual(damage.Kind.pierce, packet.kind);
+
+        // Reckless stakes should give 2x damage multiplier
+        // Base damage is technique.damage * stat_mult * weapon_mult * stakes_mult
+    }
+}
+
+test "AdvantageEffect.apply modifies engagement and balance" {
+    var engagement = Engagement{
+        .pressure = 0.5,
+        .control = 0.5,
+        .position = 0.5,
+    };
+
+    const alloc = std.testing.allocator;
+    const agents = try alloc.create(@import("slot_map.zig").SlotMap(*Agent));
+    agents.* = try @import("slot_map.zig").SlotMap(*Agent).init(alloc);
+    defer {
+        agents.deinit();
+        alloc.destroy(agents);
+    }
+
+    var attacker = try makeTestAgent(alloc, agents, .player);
+    defer attacker.deinit();
+
+    var defender = try makeTestAgent(alloc, agents, .ai);
+    defer defender.deinit();
+
+    attacker.balance = 1.0;
+    defender.balance = 1.0;
+
+    const effect = AdvantageEffect{
+        .pressure = 0.1,
+        .control = -0.1,
+        .position = 0.05,
+        .self_balance = -0.1,
+        .target_balance = -0.2,
+    };
+
+    effect.apply(&engagement, attacker, defender);
+
+    try std.testing.expectApproxEqAbs(@as(f32, 0.6), engagement.pressure, 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.4), engagement.control, 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.55), engagement.position, 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.9), attacker.balance, 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.8), defender.balance, 0.001);
+}
+
+test "createDamagePacket scales by stakes" {
+    const alloc = std.testing.allocator;
+    const agents = try alloc.create(@import("slot_map.zig").SlotMap(*Agent));
+    agents.* = try @import("slot_map.zig").SlotMap(*Agent).init(alloc);
+    defer {
+        agents.deinit();
+        alloc.destroy(agents);
+    }
+
+    var attacker = try makeTestAgent(alloc, agents, .player);
+    defer attacker.deinit();
+
+    const technique = &cards.Technique.byID(.swing);
+
+    const probing = createDamagePacket(technique, &TestWeapons.sword, attacker, .probing);
+    const guarded = createDamagePacket(technique, &TestWeapons.sword, attacker, .guarded);
+    const committed = createDamagePacket(technique, &TestWeapons.sword, attacker, .committed);
+    const reckless = createDamagePacket(technique, &TestWeapons.sword, attacker, .reckless);
+
+    // Damage should increase with stakes
+    try std.testing.expect(probing.amount < guarded.amount);
+    try std.testing.expect(guarded.amount < committed.amount);
+    try std.testing.expect(committed.amount < reckless.amount);
+
+    // Reckless should be 2x guarded (from stakes multiplier)
+    try std.testing.expectApproxEqAbs(guarded.amount * 2.0, reckless.amount, 0.01);
 }
