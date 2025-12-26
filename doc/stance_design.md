@@ -1,5 +1,7 @@
 # Stance System Design
 
+> **Revision**: 2025-12-27. Committed to compositional model; enum heights; pipeline synthesis; deferred relative angle. See Open Questions for remaining decisions.
+
 ## Problem
 
 Hit location weighting needs to work across body types (humanoids, oozes, centaurs). The current `base_hit_chance` on body parts doesn't capture:
@@ -20,199 +22,101 @@ Hit location weighting needs to work across body types (humanoids, oozes, centau
 
 ### Height Representation
 
-**Open question: enum vs f32**
+**Decision: enum `{ low, mid, high }`**
 
-Enum `{ low, mid, high }`:
 - Simple for defense matching ("high guard covers high")
 - Clean technique targeting ("targets mid")
-- Loses gradients (slash centered high but tails into mid)
+- Creates clear tactical choices with stamina cost to adjust
+- Gradient attacks (slash centered high but tails into mid) modeled as `targets: .high, secondary: ?Height`
 
-Continuous `f32` (0.0 = ground, 1.0 = max):
-- Attack has `target_height` + `spread` for distribution
-- Defense covers a range (high guard: 0.6-1.0)
-- More expressive but more complex
-- Enables reaction cost = distance to adjust
+Continuous f32 deferred — adds complexity without proportional gameplay benefit. The interface is card-based; players don't need to intuit probability distributions.
 
-**Hybrid possibility**: f32 for targeting math, but define named zones for defense/UI.
-
-### Flexible Parts
-
-Some parts (hands, arms) can move within a stance without changing the whole stance.
-
-Options:
-- `height_range: struct { min: f32, max: f32 }` - part can be anywhere in range
-- `flexible: bool` - matches adjacent heights
-- Per-part height override when technique implies stance
-
-### Proposed Structures
+### Core Structures
 
 ```zig
 // body.zig
 pub const Height = enum { low, mid, high };
-// Or: pub const Height = f32; // 0.0-1.0
 
 pub const PartExposure = struct {
     tag: PartTag,
     side: Side,           // for L|R matching
-    hit_chance: f32,      // base probability in this stance
-    height: Height,       // or f32
-    // height_range: ?struct { min: f32, max: f32 }, // for flexible parts
+    hit_chance: f32,      // base probability
+    height: Height,
 };
 
-pub const StanceDefinition = struct {
-    name: []const u8,
-    exposures: []const PartExposure,
-    // mirror: bool, // if true, L|R can be flipped based on dominant hand
-};
-
-// Blueprint/Plan gains:
-stances: []const StanceDefinition,
-default_stance: []const u8,
-
-// Part loses:
-// base_hit_chance: f32,  // REMOVED - now lives in stance
+// Part loses base_hit_chance - exposure is now compositional
 ```
 
-```zig
-// combat.zig Agent
-stance: *const StanceDefinition,
-prior_stance: ?*const StanceDefinition,  // for revert after technique
-```
+### Attack Height Mechanics
 
 ```zig
 // cards.zig Technique
-implied_stance: ?[]const u8 = null,   // stance during execution
-exit_stance: ?[]const u8 = null,      // null = revert to prior_stance
+target_height: Height = .mid,         // primary target zone
+secondary_height: ?Height = null,     // for attacks that span zones (e.g. slash high→mid)
 
-// Targeting (details TBD based on height model)
-target_height: ?Height = null,        // enum version
-// Or: target_height: f32, height_spread: f32,  // continuous version
+// Resolution:
+// - Parts at target_height: full hit_chance
+// - Parts at secondary_height (if set): reduced hit_chance (0.5x)
+// - Parts at other heights: minimal hit_chance (0.1x)
 ```
 
-## L|R Mirroring
+**Example attacks:**
+- Downward slash: `target: .high, secondary: .mid` - centered high, can hit mid
+- Thrust: `target: .mid, secondary: null` - tight cluster at mid
+- Leg sweep: `target: .low, secondary: null` - low only
 
-Many stances are symmetric but favoring one side (lead with left vs right).
+### Defense Height Mechanics
 
-- Define stance once with canonical side assignment
-- Mirror flag or separate mirroring logic flips L↔R based on dominant hand
-- Technique's `implied_stance` resolves using agent's `dominant_side`
+**TODO: Needs development to fit compositional model.**
 
-Example: "right lead" stance has right hand forward (high), left hand back (mid).
-For a left-handed fighter, this becomes "left lead" with parts swapped.
-
-## Attack Height Mechanics
-
-### Enum Approach
+Current sketch:
 ```zig
-target_height: ?Height = null,  // null = no preference
-
-// Resolution: parts matching target_height get bonus multiplier
-// Parts at adjacent heights get smaller bonus
-// Parts at opposite height get penalty
-```
-
-### Continuous Approach
-```zig
-target_height: f32 = 0.5,   // center of attack (0.0-1.0)
-height_spread: f32 = 0.3,   // width of distribution
-
-// Resolution: for each part, calculate overlap between
-// attack range and part's height (or height_range)
-// Weight hit_chance by overlap amount
-```
-
-**Example attacks (continuous):**
-- Downward slash: `target: 0.75, spread: 0.35` - centered high, spreads to mid
-- Thrust: `target: 0.5, spread: 0.15` - tight cluster at mid
-- Leg sweep: `target: 0.15, spread: 0.2` - low only
-
-## Defense Height Mechanics
-
-Defensive techniques cover height zones:
-
-```zig
-// Enum: covers one primary height, maybe adjacent
+// Defense technique contributes guard position
 guard_height: Height,
-covers_adjacent: bool,
+covers_adjacent: bool = false,  // if true, partial coverage of adjacent heights
 
-// Continuous: covers a range
-guard_min: f32,
-guard_max: f32,
+// Resolution:
+// - Parts at guard_height: hit_chance reduced (0.3x)
+// - Parts at adjacent height (if covers_adjacent): hit_chance reduced (0.6x)
+// - Parts at opposite height: full hit_chance (opening)
 ```
 
-**Reaction cost**: adjusting defense one "step" (low→mid, mid→high) costs stamina. This creates tactical depth - feint high, strike low.
+**Reaction cost**: adjusting defense one "step" (low→mid, mid→high) costs stamina. This creates tactical depth — feint high, strike low.
 
-## Resolution Algorithm
+### Resolution Algorithm
+
+The core question: **does defense affect hit chance, hit location, or both?**
+
+**Answer: Both, in sequence.**
 
 ```
-1. Attacker commits technique
-   - If implied_stance, save prior_stance, switch to implied
+1. Synthesize attacker's exposures (grip + arm + body contributions)
+2. Synthesize defender's exposures (grip + arm + body contributions)
 
-2. Defender's active defense (if any) establishes coverage
+3. Calculate base hit chance:
+   - Technique difficulty
+   - Weapon accuracy
+   - Stakes modifier
+   - Engagement advantage (pressure, control, position)
+   - Attacker/defender balance
 
-3. selectHitLocation():
+4. Apply defense coverage to hit chance:
+   - If defender's guard_height matches attack's target_height: penalty to hit
+   - If covers_adjacent and attack is adjacent: smaller penalty
+   - If attack targets opening (opposite height): bonus to hit
+
+5. Roll outcome: hit / miss / blocked / parried / deflected / dodged / countered
+
+6. If hit, select location:
    a. Get defender's current stance exposures
-   b. Filter/weight by technique's target_height preference
-   c. Apply defense coverage (reduce hit_chance for covered heights)
+   b. Filter by technique's target_height (primary = 1.0x, secondary = 0.5x, other = 0.1x)
+   c. Apply technique's target_side preference (lead/rear bonus)
    d. Random selection from weighted distribution
 
-4. Resolve hit/miss, damage, etc.
-
-5. Technique ends
-   - If exit_stance set, switch to it
-   - Else revert to prior_stance
+7. Resolve damage through armor to selected location
 ```
 
-## Starting Point: "Standing Frontwise"
-
-Migrate current humanoid hit chances to a default stance:
-
-```zig
-const standing_frontwise = StanceDefinition{
-    .name = "standing_frontwise",
-    .exposures = &.{
-        // High
-        .{ .tag = .head,     .side = .center, .hit_chance = 0.10, .height = .high },
-        .{ .tag = .neck,     .side = .center, .hit_chance = 0.04, .height = .high },
-        .{ .tag = .eye,      .side = .left,   .hit_chance = 0.01, .height = .high },
-        .{ .tag = .eye,      .side = .right,  .hit_chance = 0.01, .height = .high },
-        .{ .tag = .ear,      .side = .left,   .hit_chance = 0.01, .height = .high },
-        .{ .tag = .ear,      .side = .right,  .hit_chance = 0.01, .height = .high },
-        .{ .tag = .nose,     .side = .center, .hit_chance = 0.02, .height = .high },
-
-        // Mid
-        .{ .tag = .torso,    .side = .center, .hit_chance = 0.30, .height = .mid },
-        .{ .tag = .abdomen,  .side = .center, .hit_chance = 0.15, .height = .mid },
-        .{ .tag = .shoulder, .side = .left,   .hit_chance = 0.02, .height = .mid },
-        .{ .tag = .shoulder, .side = .right,  .hit_chance = 0.02, .height = .mid },
-        .{ .tag = .arm,      .side = .left,   .hit_chance = 0.025, .height = .mid },
-        .{ .tag = .arm,      .side = .right,  .hit_chance = 0.025, .height = .mid },
-        .{ .tag = .forearm,  .side = .left,   .hit_chance = 0.025, .height = .mid },
-        .{ .tag = .forearm,  .side = .right,  .hit_chance = 0.025, .height = .mid },
-        .{ .tag = .elbow,    .side = .left,   .hit_chance = 0.01, .height = .mid },
-        .{ .tag = .elbow,    .side = .right,  .hit_chance = 0.01, .height = .mid },
-        .{ .tag = .wrist,    .side = .left,   .hit_chance = 0.01, .height = .mid },
-        .{ .tag = .wrist,    .side = .right,  .hit_chance = 0.01, .height = .mid },
-        .{ .tag = .hand,     .side = .left,   .hit_chance = 0.015, .height = .mid },
-        .{ .tag = .hand,     .side = .right,  .hit_chance = 0.015, .height = .mid },
-
-        // Low
-        .{ .tag = .groin,    .side = .center, .hit_chance = 0.03, .height = .low },
-        .{ .tag = .thigh,    .side = .left,   .hit_chance = 0.04, .height = .low },
-        .{ .tag = .thigh,    .side = .right,  .hit_chance = 0.04, .height = .low },
-        .{ .tag = .knee,     .side = .left,   .hit_chance = 0.01, .height = .low },
-        .{ .tag = .knee,     .side = .right,  .hit_chance = 0.01, .height = .low },
-        .{ .tag = .shin,     .side = .left,   .hit_chance = 0.025, .height = .low },
-        .{ .tag = .shin,     .side = .right,  .hit_chance = 0.025, .height = .low },
-        .{ .tag = .ankle,    .side = .left,   .hit_chance = 0.01, .height = .low },
-        .{ .tag = .ankle,    .side = .right,  .hit_chance = 0.01, .height = .low },
-        .{ .tag = .foot,     .side = .left,   .hit_chance = 0.015, .height = .low },
-        .{ .tag = .foot,     .side = .right,  .hit_chance = 0.015, .height = .low },
-    },
-};
-```
-
-Note: fingers, toes, internal organs omitted (hit_chance = 0 or covered by parent).
+Defense thus provides a **global hit penalty** (covering the targeted zone) AND **influences where you get hit** (via stance exposures). A high guard both makes high attacks harder to land AND shifts your body to expose different targets.
 
 ## Compositional Stance Model
 
@@ -291,9 +195,23 @@ Attack and defense techniques modify the arm configuration:
 ```zig
 // cards.zig Technique
 pub const ArmContribution = struct {
-    height: ?Height = null,       // high/mid/low override
-    extension: ?f32 = null,       // 0.0 retracted ↔ 1.0 full extension
-    hand_exposure: ?f32 = null,   // extra exposure for hands (thrust = high)
+    height: ?Height = null,         // high/mid/low override
+    extension: ?f32 = null,         // 0.0 retracted ↔ 1.0 full extension
+    hand_exposure: ?f32 = null,     // extra exposure for hands (thrust = high)
+    target_side: ?SidePreference = null,  // attack side preference
+    arc: AttackArc = .level,        // overhead/level/rising
+};
+
+pub const SidePreference = enum {
+    lead,       // target defender's lead side
+    rear,       // target defender's rear side
+    either,     // no preference (default)
+};
+
+pub const AttackArc = enum {
+    overhead,  // downward cuts, hammerfist — can hit .top facing
+    level,     // horizontal cuts, thrusts — default
+    rising,    // uppercuts, rising cuts — can hit .bottom facing
 };
 
 // On Technique:
@@ -304,6 +222,11 @@ arm_contribution: ArmContribution = .{},
 - Thrust: `{ .height = .mid, .extension = 0.9, .hand_exposure = 0.15 }`
 - High guard: `{ .height = .high, .extension = 0.3 }`
 - Half-sword thrust: `{ .height = .mid, .extension = 0.6 }` (shorter reach)
+- Inside line attack: `{ .height = .mid, .extension = 0.8, .target_side = .lead }`
+- Overhead chop: `{ .height = .high, .extension = 0.9, .arc = .overhead }`
+- Uppercut: `{ .height = .low, .extension = 0.7, .arc = .rising }`
+
+Side preference affects hit location weighting — parts on the targeted side get bonus hit chance. Not a sniper shot, just a tendency.
 
 ### Footwork Contributions
 
@@ -329,44 +252,50 @@ body_contribution: BodyContribution = .{},
 
 ### Synthesis Algorithm
 
+Synthesis is a **pipeline of pure transforms** — each step takes exposures in, returns exposures out, no mutation.
+
 ```zig
+pub const ExposureTransform = *const fn ([]const PartExposure) []const PartExposure;
+
+/// Pipeline: each transform is a pure function that returns new exposures
 pub fn synthesizeExposures(
     grip: GripCategory,
     arm_mods: ArmContribution,
     body_mods: BodyContribution,
     dominant_side: Side,
-) ExposureMap {
-    // 1. Start with grip's base arm exposure pattern
-    var exposures = grip.baseExposures();
+    allocator: Allocator,
+) ![]const PartExposure {
+    // Each step is a pure function: []PartExposure → []PartExposure
+    const base = grip.baseExposures();
 
-    // 2. Apply arm height/extension from technique
-    if (arm_mods.height) |h| {
-        exposures.setArmHeight(h);
-    }
-    if (arm_mods.extension) |ext| {
-        exposures.scaleArmExposure(ext);  // more extension = more exposed
-    }
-    if (arm_mods.hand_exposure) |he| {
-        exposures.addHandExposure(he);
-    }
+    const with_height = applyArmHeight(base, arm_mods.height, allocator);
+    const with_extension = applyArmExtension(with_height, arm_mods.extension, allocator);
+    const with_hands = applyHandExposure(with_extension, arm_mods.hand_exposure, allocator);
 
-    // 3. Apply body facing modifiers
-    const lead_side = body_mods.facing.leadSide(dominant_side);
-    exposures.applyFacingMods(lead_side, body_mods.lead_exposure_mod, body_mods.rear_exposure_mod);
+    const lead_side = resolveLead(body_mods.facing, dominant_side);
+    const with_facing = applyFacingMods(with_hands, lead_side, body_mods, allocator);
+    const with_crouch = applyCrouch(with_facing, body_mods.crouch, allocator);
+    const final = applyWeight(with_crouch, body_mods.weight, allocator);
 
-    // 4. Apply crouch (shifts everything toward low)
-    if (body_mods.crouch) |c| {
-        exposures.applyCrouch(c);
-    }
-
-    // 5. Apply weight distribution (affects leg exposure, recovery options)
-    if (body_mods.weight) |w| {
-        exposures.applyWeight(w);
-    }
-
-    return exposures;
+    return final;
 }
+
+// Each transform is independently testable:
+fn applyArmHeight(exposures: []const PartExposure, height: ?Height, alloc: Allocator) []const PartExposure;
+fn applyArmExtension(exposures: []const PartExposure, extension: ?f32, alloc: Allocator) []const PartExposure;
+fn applyHandExposure(exposures: []const PartExposure, delta: ?f32, alloc: Allocator) []const PartExposure;
+fn applyFacingMods(exposures: []const PartExposure, lead: Side, body: BodyContribution, alloc: Allocator) []const PartExposure;
+fn applyCrouch(exposures: []const PartExposure, crouch: ?f32, alloc: Allocator) []const PartExposure;
+fn applyWeight(exposures: []const PartExposure, weight: ?f32, alloc: Allocator) []const PartExposure;
 ```
+
+**Benefits:**
+- Each transform is pure and independently testable
+- Order can be reasoned about without hidden state
+- Easy to insert/remove transforms
+- Allocation strategy is explicit
+
+**Optimization note:** For comptime-known contributions, consider arena allocation or comptime evaluation.
 
 ### Conflict Handling
 
@@ -400,7 +329,9 @@ Much smaller data footprint, richer expression space.
 
 ## Relative Angle and Part Facing
 
-Stance composition tells us how the *attacker* is positioned. We also need to model *relative angle* - whether the attacker has flanked or gotten behind the defender.
+> **Status: DEFERRED.** This section validates that the compositional model can support flanking/rear attacks. Implementation priority is lower than core height/side mechanics. The model is sound; defer until height targeting is working.
+
+Stance composition tells us how the *attacker* is positioned. We also need to model *relative angle* — whether the attacker has flanked or gotten behind the defender.
 
 ### Angle as Engagement Property
 
@@ -421,7 +352,7 @@ angle: RelativeAngle = .frontal,
 
 ### Part Facing (One Field, No Duplication)
 
-Each body part has a primary facing - the direction it naturally presents from:
+Each body part has a primary facing — the direction it naturally presents from:
 
 ```zig
 pub const PrimaryFacing = enum {
@@ -429,14 +360,21 @@ pub const PrimaryFacing = enum {
     back,    // spine, back of head, back of knee
     outer,   // outer arm/leg surfaces (combines with side)
     inner,   // armpits, inner thighs
-    any,     // top of head, groin - equally accessible
+    top,     // top of head, shoulders - accessible from overhead
+    bottom,  // soles of feet, underside of chin - rarely accessible
 };
 
 // On PartDef (one new field):
 facing: PrimaryFacing = .front,
 ```
 
-**No part duplication.** The knee is one part. Attack angle determines whether you're hitting the kneecap or the back of the knee - same part, different accessibility and armor coverage.
+**No "any" facing.** Previously this was a cop-out for parts like groin/crown. Better solutions:
+- **Crown of head**: `facing = .top` — accessible from overhead attacks or when target is prone/crouching
+- **Groin**: `facing = .front` with low height — already modeled by height system
+
+The combination of height + facing + attack angle provides sufficient discrimination without a catch-all.
+
+**No part duplication.** The knee is one part. Attack angle determines whether you're hitting the kneecap or the back of the knee — same part, different accessibility and armor coverage.
 
 ### Accessibility Derivation
 
@@ -452,6 +390,7 @@ fn deriveAccess(
     part_facing: PrimaryFacing,
     part_side: Side,
     attack_angle: RelativeAngle,
+    attack_arc: AttackArc,  // new: overhead/level/rising
     defender_dominant: Side,
 ) AccessLevel {
     return switch (part_facing) {
@@ -468,7 +407,6 @@ fn deriveAccess(
             .frontal => .none,
         },
         .outer => blk: {
-            // Accessible when angle matches part's side
             const part_is_lead = (part_side == defender_dominant);
             break :blk switch (attack_angle) {
                 .inside => if (part_is_lead) .full else .grazing,
@@ -477,11 +415,30 @@ fn deriveAccess(
                 .frontal, .rear => .grazing,
             };
         },
-        .inner => // inverse of .outer logic
-        .any => .full,
+        .inner => blk: {
+            // Inverse of .outer logic
+            const part_is_lead = (part_side == defender_dominant);
+            break :blk switch (attack_angle) {
+                .inside => if (!part_is_lead) .partial else .grazing,
+                .outside => if (part_is_lead) .partial else .grazing,
+                .flank => .grazing,
+                .frontal, .rear => .none,
+            };
+        },
+        .top => switch (attack_arc) {
+            .overhead => .full,
+            .level => .grazing,
+            .rising => .none,
+        },
+        .bottom => switch (attack_arc) {
+            .rising => .partial,  // rare but possible (uppercut)
+            .level, .overhead => .none,
+        },
     };
 }
 ```
+
+`AttackArc` is defined on `ArmContribution` (see Technique Contributions). Most attacks default to `.level`.
 
 ### Armor Integration
 
@@ -511,23 +468,27 @@ Resolution:
 
 ### Hooked Weapons
 
-Weapons already have `Features.hooked: bool`. When combined with appropriate technique, grants a chance to hit from a non-facing angle.
+Weapons already have `Features.hooked: bool`. When combined with appropriate technique, grants a chance to hit from a non-facing angle. Hook success is tied to **control advantage** — you can only hook effectively when you've established blade control.
 
 ```zig
-// Resolution: if hooked weapon + hooking technique, roll for angle bypass
+// Resolution: if hooked weapon + hooking technique, check control for angle bypass
 fn resolveHitAngle(
-    engagement_angle: RelativeAngle,
+    engagement: *const Engagement,
     weapon: *const Weapon,
     technique: *const Technique,
     rng: *Random,
 ) RelativeAngle {
     if (weapon.features.hooked and technique.can_hook) {
-        // Chance to hit back-facing surface from front
-        if (rng.float() < 0.3) {  // tunable
-            return .rear;  // or opposite of current angle
+        // Hook chance scales with control advantage
+        // control 0.5 = neutral = 0% chance
+        // control 0.8 = dominant = 60% chance
+        // control 1.0 = full control = 100% chance
+        const control_bonus = @max(0, engagement.control - 0.5) * 2.0;
+        if (rng.float() < control_bonus) {
+            return .rear;  // hits back-facing surface
         }
     }
-    return engagement_angle;
+    return engagement.angle;
 }
 ```
 
@@ -541,7 +502,7 @@ fn resolveHitAngle(
 can_hook: bool = false,  // enables hook resolution when weapon.features.hooked
 ```
 
-Simple boolean combo, no need to specify which angle - hooking hits the "back" of whatever part is selected.
+Simple boolean combo, no need to specify which angle — hooking hits the "back" of whatever part is selected. The control requirement means you can't just fish for hooks; you have to earn the position first.
 
 ### Techniques That Create Angle
 
@@ -722,53 +683,64 @@ const standing_frontwise = [_]ExposureEntry{
 
 ## Open Questions
 
-1. **Enum vs f32 for height**: Enum is simpler but loses attack distribution gradients. Continuous enables richer targeting math but adds complexity.
+### Resolved
 
-2. **Flexible parts**: Partially addressed by arm_contribution - hands/arms vary based on technique rather than needing separate stance definitions.
+1. ~~**Enum vs f32 for height**~~: **Enum.** Gradient attacks use `secondary_height`.
 
-3. **Mirror implementation**: `dominant_side` + `Facing.leadSide()` handles this at synthesis time.
+2. ~~**Flexible parts**~~: **Handled by arm_contribution.** Technique modifies arm height/extension.
 
-4. **Defense coverage**: Defense technique contributes arm height/extension; body stance can be separate footwork or implied. Coverage emerges from synthesized exposure.
+3. ~~**Mirror implementation**~~: **`dominant_side` + `Facing.leadSide()` at synthesis time.**
 
-5. **Stamina cost for defense adjustment**: Could be derived from delta between current and target body_contribution values.
+4. ~~**Defense coverage**~~: **Affects both hit chance and location.** See Resolution Algorithm.
 
-6. **Stance terminology**: Research HEMA/fechtbuch terms for flavor (separate task).
+5. ~~**"any" facing**~~: **Replaced with `top`/`bottom`.** Height + facing + arc provides discrimination.
 
-7. **Conflict detection**: How strict? Prevent invalid pairings, or allow with penalties?
+6. ~~**Attack arc integration**~~: **Field on `ArmContribution`.** Defaults to `.level`; techniques specify `.overhead` or `.rising` as needed.
 
-8. **Synergy bonuses**: Worth tracking explicitly, or let the math handle it?
+### Open
 
-9. **Angle momentum**: Should repeated same-direction movement grant easier angle gain? Defender "spinning" to track?
+7. **Stamina cost for defense adjustment**: Derive from delta between current and target contributions? Or flat per-step cost?
+
+8. **Stance terminology**: Research HEMA/fechtbuch terms for flavor (separate task).
+
+9. **Conflict detection UX**: How to communicate invalid pairings to player? Gray out cards? Error message on play?
+
+10. **Synergy bonuses**: Worth tracking explicitly, or let the exposure math handle it implicitly?
+
+11. **Angle momentum** (deferred): Should repeated same-direction movement grant easier angle gain?
 
 ## Non-Humanoid Examples
 
+Non-humanoids demonstrate the model's flexibility. They use **base exposure patterns** (analogous to grip base patterns for humanoids) rather than compositional synthesis.
+
 **Ooze:**
 ```zig
-const ooze_blob = StanceDefinition{
-    .name = "amorphous",
-    .exposures = &.{
-        .{ .tag = .core,    .side = .center, .hit_chance = 0.80, .height = .low },
-        .{ .tag = .nucleus, .side = .center, .hit_chance = 0.20, .height = .low },
-    },
+// Simple creatures use static exposure patterns — no stance changes
+const ooze_base_exposures = [_]PartExposure{
+    .{ .tag = .core,    .side = .center, .hit_chance = 0.80, .height = .low },
+    .{ .tag = .nucleus, .side = .center, .hit_chance = 0.20, .height = .low },
 };
-// All low, simple anatomy, no stance changes
+// All low, amorphous — no grip, no facing, no composition needed
 ```
 
 **Centaur (front-facing):**
 ```zig
-const centaur_front = StanceDefinition{
-    .name = "centaur_front",
-    .exposures = &.{
-        // Human upper body - high/mid
-        .{ .tag = .head,       .side = .center, .hit_chance = 0.08, .height = .high },
-        .{ .tag = .torso,      .side = .center, .hit_chance = 0.20, .height = .mid },
-        // ...arms at mid...
+// Centaurs have unique grip categories (lance from horseback, etc.)
+// but can use similar composition for upper body
+const centaur_base_exposures = [_]PartExposure{
+    // Human upper body - high/mid (can use humanoid arm contributions)
+    .{ .tag = .head,       .side = .center, .hit_chance = 0.08, .height = .high },
+    .{ .tag = .torso,      .side = .center, .hit_chance = 0.20, .height = .mid },
+    // ...arms at mid, modified by grip/technique...
 
-        // Horse body - low/mid
-        .{ .tag = .horse_body, .side = .center, .hit_chance = 0.35, .height = .low },
-        .{ .tag = .foreleg,    .side = .left,   .hit_chance = 0.05, .height = .low },
-        .{ .tag = .foreleg,    .side = .right,  .hit_chance = 0.05, .height = .low },
-        // ...etc
-    },
+    // Horse body - low/mid (static, no arm contribution applies)
+    .{ .tag = .horse_body, .side = .center, .hit_chance = 0.35, .height = .low },
+    .{ .tag = .foreleg,    .side = .left,   .hit_chance = 0.05, .height = .low },
+    .{ .tag = .foreleg,    .side = .right,  .hit_chance = 0.05, .height = .low },
+    // ...etc
 };
+// Body contributions apply to horse body (facing, weight)
+// Arm contributions apply to humanoid upper body
 ```
+
+The compositional model gracefully degrades: simple creatures use static patterns, complex creatures use full composition.
