@@ -111,6 +111,7 @@ pub const Event = union(enum) {
         volume: f32,
     },
     player_turn_ended: void, // Payload: none
+    tick_ended: void, // NEW: tick resolution completed
 };
 
 pub const EventSystem = struct {

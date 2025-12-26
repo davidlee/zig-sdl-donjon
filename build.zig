@@ -213,4 +213,18 @@ pub fn build(b: *std.Build) !void {
 
     const run_weapon_tests = b.addRunArtifact(weapon_tests);
     test_step.dependOn(&run_weapon_tests.step);
+
+    // Tick resolver tests
+    const tick_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/tick.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    tick_tests.root_module.addImport("infra", infra_mod);
+    tick_tests.root_module.addImport("zigfsm", b.dependency("zigfsm", .{}).module("zigfsm"));
+
+    const run_tick_tests = b.addRunArtifact(tick_tests);
+    test_step.dependOn(&run_tick_tests.step);
 }

@@ -110,7 +110,8 @@ These feed into `calculateHitChance`.
 
 ### Working
 - `resolution.zig` created and compiling
-- All 90 tests passing (23 body + 61 resolution + 6 weapon_list)
+- `tick.zig` created with full resolution loop
+- All 153+ tests passing (body + resolution + weapon_list + tick)
 - Armor resolution complete with events
 - Body/wound system complete with events
 - Card playing and event system working
@@ -256,23 +257,43 @@ MVP height-based targeting system implemented:
 - Attack arc (overhead/level/rising)
 - L/R side preference
 
-### Step 5: Simultaneous Resolution Loop
+### Step 5: Simultaneous Resolution Loop ✓ COMPLETE
 
-The core game loop needs to:
+**Implementation in `src/tick.zig`:**
 
-1. **Commit phase**: Collect player cards + mob actions for this tick
-2. **Sort by time**: Actions happen in 0.1s increments within the tick
-3. **Resolve in order**: For each 0.1s slice:
-   - Determine interactions (RPS: strike vs block, etc.)
-   - Call `resolveTechniqueVsDefense` for each
-   - Handle interrupts/reactions
-4. **Apply costs**: Stamina, time, card exhaustion
-5. **Emit summary events**
+```zig
+// Core types
+pub const CommittedAction = struct {
+    actor: *Agent,
+    card: ?*cards.Instance,  // null for pool-based mobs
+    technique: *const Technique,
+    stakes: Stakes,
+    time_start: f32,  // 0.0-1.0 within tick
+    time_end: f32,
+};
 
-This is the most complex step. Consider:
-- A `TickResolver` struct that accumulates committed actions
-- Sorting by `card.template.cost.time`
-- Processing in time slices
+pub const TickResolver = struct {
+    // Methods:
+    commitPlayerCards()   // extract from deck.in_play
+    commitMobActions()    // use TechniquePool.selectNext()
+    resolve()             // pair attacks with defenses, call resolution
+    cleanup()             // deduct costs, move cards, apply cooldowns
+    resetForNextTick()    // reset agent resources
+};
+```
+
+**Key additions:**
+- `TechniquePool.selectNext()` — round-robin selection with cooldown check
+- `apply.evaluateTargets()` — resolve TargetQuery to agent list
+- `World.processTick()` — orchestrates full tick cycle
+- FSM: `player_card_selection` → `tick_resolution` → `player_reaction`
+- Event: `tick_ended`
+
+**Resolution flow:**
+1. Offensive actions identified by `card.template.tags.offensive`
+2. Targets resolved via `TargetQuery` (`.all_enemies`, `.self`, etc.)
+3. Defender's active defense found by time window overlap
+4. `resolution.resolveTechniqueVsDefense()` called for each pair
 
 ### Step 6: Defense Technique Selection
 
@@ -324,7 +345,13 @@ zig build test --summary all
 
 ## Files Modified This Session
 
+- Created: `src/tick.zig` (TickResolver, CommittedAction, resolution loop)
+- Created: `doc/step5_plan.md` (full implementation plan for tick resolution loop)
 - Created: `src/resolution.zig`
+- Modified: `src/world.zig` (added tickResolver, processTick(), FSM states)
+- Modified: `src/combat.zig` (added TechniquePool.selectNext())
+- Modified: `src/apply.zig` (added evaluateTargets())
+- Modified: `src/events.zig` (added tick_ended event)
 - Created: `src/weapon_list.zig` (8 weapon templates: horseman's mace, footman's axe, greataxe, knight's sword, falchion, dirk, spear, buckler)
 - Created: `doc/stance_design.md` (full stance system design, compositional model)
 - Modified: `src/main.zig` (added resolution, weapon_list imports)
@@ -340,7 +367,45 @@ zig build test --summary all
 - Modified: `src/weapon.zig` ([]const for damage_types, categories)
 - Modified: `src/cards.zig` (inline for, @tagName for compileError, added advantage field to Technique)
 - Modified: `src/card_list.zig` (added feint technique with advantage override, fixed deflect id)
-- Modified: `build.zig` (added resolution.zig, weapon_list.zig test modules)
+- Modified: `build.zig` (added resolution.zig, weapon_list.zig, tick.zig test modules)
+
+## Known Limitations & Shortcuts
+
+Items to revisit when extending the system:
+
+### Weapon Handling
+- **Default weapon:** `tick.zig:getWeaponTemplate()` returns `knights_sword` for all agents. Need to read from `Agent.armament` once equipped weapons are wired up.
+- **No weapon on Agent:** The `Armament` type exists but agents don't have equipped weapons tracked yet.
+
+### Stakes / Commitment
+- **Hardcoded stakes:** All committed actions use `.guarded` stakes. Need UI/AI to select commitment level.
+- **No overcommit logic:** Players can commit >1s of actions, but interrupt penalties aren't implemented (per design doc: queued actions past interrupt point should be lost).
+
+### Mob AI
+- **Round-robin only:** `TechniquePool.selectNext()` cycles through techniques. No state-based selection, weighted options, or situational awareness.
+- **Fixed cooldown:** Pool-based mobs get 2-tick cooldown on used techniques (hardcoded in `tick.zig:cleanup()`).
+- **No defensive selection:** Mobs don't actively choose to defend; they only attack. Step 6 addresses this.
+- **Technique ID fallback:** For pool-based mobs without cards, offensive/defensive detection uses a switch on `TechniqueID` rather than tags.
+
+### Targeting
+- **1v1 assumption:** Many places assume player vs single mob engagement. Multi-mob targeting works but engagement lookup may need refinement.
+- **Partial TargetQuery:** `apply.evaluateTargets()` handles `.all_enemies`, `.self`, `.single` but stubs out `.body_part` and `.event_source`.
+
+### Stamina & Resources
+- **No stamina=0 blocking:** Design doc says stamina exhaustion should block commitment, but this isn't enforced.
+- **Stamina can go negative:** `cleanup()` clamps to 0 but doesn't prevent over-spending.
+
+### Resolution
+- **No reactions during resolution:** The FSM has `player_reaction` state but reactions aren't integrated into `TickResolver.resolve()`.
+- **Single defense per window:** `findDefensiveAction()` returns first overlapping defense; doesn't handle multiple or prioritize.
+- **No simultaneous death handling:** Both combatants can land lethal blows (correct per design) but no special game-over logic.
+
+### FSM / Game Loop
+- **processTick() not called automatically:** `World.processTick()` exists but nothing triggers the FSM transition yet. UI/harness must drive it.
+- **No draw phase:** Card draw at tick start isn't implemented.
+
+### Testing
+- **No tick.zig integration tests with real agents:** Unit tests use mock techniques; need integration tests with full World + agents.
 
 ## Open Design Questions
 

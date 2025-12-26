@@ -10,6 +10,7 @@ const card_list = @import("card_list.zig");
 const stats = @import("stats.zig");
 const combat = @import("combat.zig");
 const body = @import("body.zig");
+const tick = @import("tick.zig");
 
 const EventSystem = events.EventSystem;
 const CommandHandler = apply.CommandHandler;
@@ -18,10 +19,12 @@ const Event = events.Event;
 const SlotMap = @import("slot_map.zig").SlotMap;
 const Deck = @import("deck.zig").Deck;
 const BeginnerDeck = card_list.BeginnerDeck;
+const TickResolver = tick.TickResolver;
 
 pub const GameEvent = enum {
     start_game,
     end_player_card_selection,
+    end_tick_resolution,
     end_player_reaction,
     end_animation,
 };
@@ -29,6 +32,7 @@ pub const GameEvent = enum {
 pub const GameState = enum {
     menu,
     player_card_selection,
+    tick_resolution, // NEW: resolve committed actions
     player_reaction,
     animating,
 };
@@ -41,6 +45,7 @@ pub const World = struct {
     agents: *SlotMap(*combat.Agent),
     player: *combat.Agent,
     fsm: zigfsm.StateMachine(GameState, GameEvent, .player_card_selection),
+    tickResolver: TickResolver,
     // deck: Deck,
     commandHandler: CommandHandler,
     eventProcessor: EventProcessor,
@@ -51,7 +56,8 @@ pub const World = struct {
         var fsm = FSM.init();
 
         try fsm.addEventAndTransition(.start_game, .menu, .player_card_selection);
-        try fsm.addEventAndTransition(.end_player_card_selection, .player_card_selection, .player_reaction);
+        try fsm.addEventAndTransition(.end_player_card_selection, .player_card_selection, .tick_resolution);
+        try fsm.addEventAndTransition(.end_tick_resolution, .tick_resolution, .player_reaction);
         try fsm.addEventAndTransition(.end_player_reaction, .player_reaction, .animating);
         try fsm.addEventAndTransition(.end_animation, .animating, .player_card_selection);
 
@@ -71,6 +77,7 @@ pub const World = struct {
             .agents = agents,
             .player = try player.newPlayer(alloc, agents, playerDeck, playerStats, playerBody),
             .fsm = fsm,
+            .tickResolver = try TickResolver.init(alloc),
             // .deck = try Deck.init(alloc, &BeginnerDeck),
             .eventProcessor = undefined,
             .commandHandler = undefined,
@@ -85,6 +92,7 @@ pub const World = struct {
 
     pub fn deinit(self: *World) void {
         self.events.deinit();
+        self.tickResolver.deinit();
         if (self.encounter) |*encounter| {
             encounter.deinit(self.alloc);
         }
@@ -99,6 +107,31 @@ pub const World = struct {
         while (try self.eventProcessor.dispatchEvent(&self.events)) {
             // std.debug.print("processed events:\n", .{});
         }
+    }
+
+    /// Process a complete tick: commit actions, resolve, cleanup
+    pub fn processTick(self: *World) !tick.TickResult {
+        // Reset resolver for new tick
+        self.tickResolver.reset();
+
+        // Commit player cards
+        try self.tickResolver.commitPlayerCards(self.player);
+
+        // Commit mob actions
+        if (self.encounter) |*enc| {
+            try self.tickResolver.commitMobActions(enc.enemies.items);
+        }
+
+        // Resolve all actions
+        const result = try self.tickResolver.resolve(self);
+
+        // Cleanup: apply costs, move cards
+        try self.tickResolver.cleanup();
+
+        // Emit tick ended event
+        try self.events.push(.{ .tick_ended = {} });
+
+        return result;
     }
 
     pub fn drawRandom(self: *World, id: random.RandomStreamID) !f32 {

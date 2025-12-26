@@ -57,10 +57,24 @@ pub const TechniquePool = struct {
     available: []const *cards.Template, // what they know
     in_play: std.ArrayList(*cards.Instance), // committed this tick
     cooldowns: std.AutoHashMap(cards.ID, u8), // technique -> ticks remaining
+    next_index: usize = 0, // for round-robin selection
 
     // No hand/draw - AI picks from available based on behavior pattern
     pub fn canUse(self: *const TechniquePool, t: *const cards.Template) bool {
         return (self.cooldowns.get(t.id) orelse 0) == 0;
+    }
+
+    /// Select next available technique (round-robin, skips cooldowns)
+    pub fn selectNext(self: *TechniquePool) ?*const cards.Template {
+        if (self.available.len == 0) return null;
+
+        var attempts: usize = 0;
+        while (attempts < self.available.len) : (attempts += 1) {
+            const template = self.available[self.next_index];
+            self.next_index = (self.next_index + 1) % self.available.len;
+            if (self.canUse(template)) return template;
+        }
+        return null; // all on cooldown
     }
 };
 

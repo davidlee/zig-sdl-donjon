@@ -15,6 +15,7 @@ const deck = @import("card_list.zig").BeginnerDeck;
 const harness = @import("harness.zig");
 const resolution = @import("resolution.zig");
 const weapon_list = @import("weapon_list.zig");
+const tick = @import("tick.zig");
 
 const CommandHandler = @import("apply.zig").CommandHandler;
 

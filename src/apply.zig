@@ -302,6 +302,52 @@ fn evaluatePredicate(p: *const cards.Predicate, card: *const cards.Instance, act
     };
 }
 
+// ============================================================================
+// Target Evaluation (used by tick.zig for resolution)
+// ============================================================================
+
+/// Evaluate targets for a card effect based on TargetQuery
+/// Returns a slice of target agents (caller owns the memory)
+pub fn evaluateTargets(
+    alloc: std.mem.Allocator,
+    query: cards.TargetQuery,
+    actor: *Agent,
+    w: *World,
+) !std.ArrayList(*Agent) {
+    var targets = try std.ArrayList(*Agent).initCapacity(alloc, 4);
+    errdefer targets.deinit(alloc);
+
+    switch (query) {
+        .self => {
+            try targets.append(alloc, actor);
+        },
+        .all_enemies => {
+            if (actor.director == .player) {
+                // Player targets all mobs
+                if (w.encounter) |*enc| {
+                    for (enc.enemies.items) |enemy| {
+                        try targets.append(alloc, enemy);
+                    }
+                }
+            } else {
+                // AI targets player
+                try targets.append(alloc, w.player);
+            }
+        },
+        .single => |selector| {
+            // Look up by entity ID
+            if (w.agents.get(selector.id)) |agent| {
+                try targets.append(alloc, agent);
+            }
+        },
+        .body_part, .event_source => {
+            // Not applicable for agent targeting
+        },
+    }
+
+    return targets;
+}
+
 // event -> state mutation
 //
 // keep the core as:
