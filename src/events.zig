@@ -167,7 +167,7 @@ pub const EventSystem = struct {
 
     // Systems call this to queue something for NEXT frame
     pub fn push(self: *EventSystem, event: Event) !void {
-        self.logEvent("push", &event);
+        // self.logEvent("push", &event);
         try self.next_events.append(self.alloc, event);
     }
 

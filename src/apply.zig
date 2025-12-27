@@ -91,17 +91,14 @@ pub const EventProcessor = struct {
             // std.debug.print("             -> dispatchEvent: {}\n", .{event});
             switch (event) {
                 .game_state_transitioned_to => |state| {
-                    std.debug.print("\n game state ==> {}\n", .{state});
+                    std.debug.print("\nSTATE ==> {}\n\n", .{state});
                     for (self.world.encounter.?.enemies.items) |mob| {
                         for (mob.cards.deck.in_play.items) |instance| {
                             log("cards in play (mob): {s}\n", .{instance.template.name});
                         }
                     }
                 },
-                // .played_action_card => |data| {
-                //     // g  try self.world.deck.move(data.instance, .hand, .in_play);
-                //     // try event_system.push(Event{ .card_moved = .{ .instance = data.instance, .from = .hand, .to = .in_play } });
-                // },
+                .draw_random => {},
                 else => |data| std.debug.print("event processed: {}\n", .{data}),
             }
             return true;
@@ -131,7 +128,10 @@ pub const CommandHandler = struct {
         const player = self.world.player;
         const game_state = self.world.fsm.currentState();
         var event_system = &self.world.events;
-        var pd = player.cards.deck;
+        const pd = switch (player.cards) {
+            .deck => |*d| d,
+            .pool => return CommandError.InvalidGameState,
+        };
 
         // check if it's valid to play
         // first, game and template requirements

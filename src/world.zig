@@ -59,7 +59,7 @@ pub const GameEvent = enum {
     show_loot,
     player_died,
 };
-
+ 
 pub const GameState = enum {
     menu,
     draw_hand,
