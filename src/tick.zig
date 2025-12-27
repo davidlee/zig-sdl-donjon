@@ -496,7 +496,7 @@ test "commitSingleMob fills tick with multiple pool techniques" {
         .engagement = Engagement{},
         .stamina = 10.0,
         .stamina_available = 10.0,
-        .conditions = try std.ArrayList(@import("damage.zig").Condition).initCapacity(alloc, 1),
+        .conditions = try std.ArrayList(@import("damage.zig").ActiveCondition).initCapacity(alloc, 1),
         .resistances = try std.ArrayList(@import("damage.zig").Resistance).initCapacity(alloc, 1),
         .immunities = try std.ArrayList(@import("damage.zig").Immunity).initCapacity(alloc, 1),
         .vulnerabilities = try std.ArrayList(@import("damage.zig").Vulnerability).initCapacity(alloc, 1),
@@ -570,7 +570,7 @@ test "commitSingleMob stops when stamina exhausted" {
         .engagement = Engagement{},
         .stamina = 10.0,
         .stamina_available = 10.0, // Only enough for 2 techniques (8 stamina)
-        .conditions = try std.ArrayList(@import("damage.zig").Condition).initCapacity(alloc, 1),
+        .conditions = try std.ArrayList(@import("damage.zig").ActiveCondition).initCapacity(alloc, 1),
         .resistances = try std.ArrayList(@import("damage.zig").Resistance).initCapacity(alloc, 1),
         .immunities = try std.ArrayList(@import("damage.zig").Immunity).initCapacity(alloc, 1),
         .vulnerabilities = try std.ArrayList(@import("damage.zig").Vulnerability).initCapacity(alloc, 1),

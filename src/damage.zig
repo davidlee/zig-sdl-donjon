@@ -29,18 +29,26 @@ pub const Susceptibility = struct {
     // trigger: null, // TODO:
 };
 
-pub const TemporaryCondition = struct {
+// pub const TemporaryCondition = struct {
+//     condition: Condition,
+//     time_remaining: f32,
+//     // todo: conditions like recovering stamina / advantage, etc
+//     // random chance per tick
+//     // on_remove: null,  // TODO: function - check for sepsis, apply lesser condition, etc
+// };
+
+pub const ActiveCondition = struct {
     condition: Condition,
-    time_remaining: f32,
-    // todo: conditions like recovering stamina / advantage, etc
-    // random chance per tick
-    // on_remove: null,  // TODO: function - check for sepsis, apply lesser condition, etc
+    expiration: union(enum) {
+        dynamic, // derived state
+        permanent, // until dispelled / removed
+        ticks: f32, // countdown
+        end_of_action,
+        end_of_tick,
+        end_of_combat,
+    },
 };
 
-// pub const Trigger = union(enum) { };
-
-// DoT are separate
-//
 pub const Condition = enum {
     blinded,
     deafened,
@@ -60,6 +68,21 @@ pub const Condition = enum {
     starving,
     dehydrating,
     exhausted,
+
+    // dwarven BAC
+    sober,
+    tipsy,
+    buzzed,
+    slurring,
+    pissed,
+    hammered,
+    pickled,
+    munted,
+
+    // computed: advantage
+    pressured,
+    weapon_bound,
+    unbalanced,
 };
 
 pub const DoTEffect = union(enum) {

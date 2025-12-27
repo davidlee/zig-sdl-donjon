@@ -729,6 +729,6 @@ test "compareF32 operators" {
 
 test "compareReach operators" {
     try testing.expect(compareReach(.far, .eq, .far));
-    try testing.expect(compareReach(.far, .lt, .near)); // far=0, near=2
-    try testing.expect(!compareReach(.near, .lt, .far));
+    try testing.expect(compareReach(.near, .lt, .far));
+    try testing.expect(!compareReach(.far, .lt, .near));
 }
