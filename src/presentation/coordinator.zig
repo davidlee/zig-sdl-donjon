@@ -14,7 +14,7 @@ const GameState = World.GameState;
 const effects = @import("effects.zig");
 const graphics = @import("graphics.zig");
 const view = @import("views/view.zig");
-const menu = @import("views/menu.zig");
+const splash = @import("views/splash.zig");
 const combat = @import("views/combat.zig");
 const summary = @import("views/summary.zig");
 
@@ -51,7 +51,7 @@ pub const Coordinator = struct {
     // Get the active view based on game state
     pub fn activeView(self: *Coordinator) View {
         return switch (self.world.fsm.currentState()) {
-            .menu => View{ .menu = menu.MenuView.init(self.world) },
+            .splash => View{ .title = splash.TitleScreenView.init(self.world) },
             .encounter_summary => View{ .summary = summary.SummaryView.init(self.world) },
             // All combat-related states use CombatView
             .draw_hand,
@@ -111,8 +111,12 @@ pub const Coordinator = struct {
 
     // Render current state
     pub fn render(self: *Coordinator) !void {
-        // For now, delegate to existing UX.render
-        // TODO: gather renderables from view + effects, pass to UX
-        try self.ux.render(self.world);
+        var v = self.activeView();
+        var renderables = try v.renderables(self.alloc);
+        defer renderables.deinit(self.alloc);
+
+        // TODO: also gather effect renderables and append
+
+        try self.ux.renderView(renderables.items);
     }
 };

@@ -61,7 +61,7 @@ pub const GameEvent = enum {
 };
 
 pub const GameState = enum {
-    menu,
+    splash,
     draw_hand,
     player_card_selection,
     tick_resolution, // NEW: resolve committed actions
@@ -78,18 +78,18 @@ pub const World = struct {
     entities: EntityMap,
     // agents: *SlotMap(*combat.Agent),
     player: *combat.Agent,
-    fsm: zigfsm.StateMachine(GameState, GameEvent, .draw_hand),
+    fsm: zigfsm.StateMachine(GameState, GameEvent, .splash),
     tickResolver: TickResolver,
     // deck: Deck,
     commandHandler: CommandHandler,
     eventProcessor: EventProcessor,
 
     pub fn init(alloc: std.mem.Allocator) !*World {
-        const FSM = zigfsm.StateMachine(GameState, GameEvent, .draw_hand);
+        const FSM = zigfsm.StateMachine(GameState, GameEvent, .splash);
 
         var fsm = FSM.init();
 
-        try fsm.addEventAndTransition(.start_encounter, .menu, .draw_hand);
+        try fsm.addEventAndTransition(.start_encounter, .splash, .draw_hand);
 
         try fsm.addEventAndTransition(.begin_player_card_selection, .draw_hand, .player_card_selection);
         try fsm.addEventAndTransition(.begin_tick_resolution, .player_card_selection, .tick_resolution);
@@ -98,7 +98,7 @@ pub const World = struct {
         try fsm.addEventAndTransition(.animate_resolution, .tick_resolution, .animating);
         try fsm.addEventAndTransition(.continue_tick_resolution, .animating, .tick_resolution);
 
-        try fsm.addEventAndTransition(.player_died, .animating, .menu);
+        try fsm.addEventAndTransition(.player_died, .animating, .splash);
         try fsm.addEventAndTransition(.show_loot, .animating, .encounter_summary);
         try fsm.addEventAndTransition(.redraw, .animating, .draw_hand);
 

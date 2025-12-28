@@ -47,6 +47,7 @@ pub fn main() !void {
     var ux = try gfx.UX.init(alloc, &config);
 
     var coordinator = try presentation.Coordinator.init(alloc, world, &ux);
+    defer coordinator.deinit();
 
     var quit = false;
 

@@ -1,9 +1,11 @@
 const std = @import("std");
-const World = @import("../domain/world.zig").World;
 const lib = @import("infra");
 const Cast = lib.util.Cast;
 const s = @import("sdl3");
 const rect = s.rect;
+const view = @import("views/view.zig");
+const AssetId = view.AssetId;
+const Renderable = view.Renderable;
 
 pub const UIState = struct {
     zoom: f32,
@@ -25,18 +27,20 @@ pub const UIState = struct {
 //
 
 const font_path = "assets/font/Caudex-Bold.ttf";
-const tagline = "When life gives you goblins, make goblinade.";
+const tagline_text = "When life gives you goblins, make goblinade.";
+
+// Asset registry - indexed by AssetId
+const AssetCount = @typeInfo(AssetId).@"enum".fields.len;
+
 pub const UX = struct {
     alloc: std.mem.Allocator,
     ui: UIState,
     renderer: s.render.Renderer,
     window: s.video.Window,
     fps_capper: s.extras.FramerateCapper(f32),
-    menu_img: s.render.Texture,
-    tagline: s.render.Texture,
+    assets: [AssetCount]?s.render.Texture,
 
     /// initialise the presentation layer
-    ///
     pub fn init(alloc: std.mem.Allocator, config: *const lib.config.Config) !UX {
         const window = try s.video.Window.init(
             "Deck of Dwarf",
@@ -51,31 +55,32 @@ pub const UX = struct {
             null,
         );
 
-        const img = try s.image.loadTexture(renderer, "assets/dod_menu.png");
-        errdefer img.deinit();
+        // Load assets
+        var assets: [AssetCount]?s.render.Texture = .{null} ** AssetCount;
 
-        // Set logical presentation: fixed resolution, scaled to fit with letterboxing
-        const img_w, const img_h = try img.getSize();
+        const splash_bg = try s.image.loadTexture(renderer, "assets/dod_menu.png");
+        assets[@intFromEnum(AssetId.splash_background)] = splash_bg;
+
+        // Set logical presentation based on splash background size
+        const img_w, const img_h = try splash_bg.getSize();
         try renderer.setLogicalPresentation(
             @intFromFloat(img_w),
             @intFromFloat(img_h),
             .letter_box,
         );
 
+        // Load tagline as pre-rendered text
         try s.ttf.init();
         defer s.ttf.quit();
-        // std.debug.print("Linked against SDL_ttf version: {any}", .{s.ttf.getVersion()});
 
         var font = try s.ttf.Font.init(font_path, 24);
         defer font.deinit();
 
         const white: s.ttf.Color = .{ .r = 255, .g = 255, .b = 255, .a = 255 };
-        // const yellow: s.ttf.Color = .{ .r = 255, .g = 255, .b = 0, .a = 255 };
-        // const cyan: s.ttf.Color = .{ .r = 0, .g = 255, .b = 255, .a = 255 };
-        // const magenta: s.ttf.Color = .{ .r = 255, .g = 0, .b = 255, .a = 255 };
-
-        const solid_texture = try textureFromSurface(renderer, try font.renderTextBlended(tagline, white));
-        // defer solid_texture.deinit();
+        assets[@intFromEnum(AssetId.splash_tagline)] = try textureFromSurface(
+            renderer,
+            try font.renderTextBlended(tagline_text, white),
+        );
 
         return UX{
             .alloc = alloc,
@@ -83,16 +88,20 @@ pub const UX = struct {
             .window = window,
             .renderer = renderer,
             .fps_capper = s.extras.FramerateCapper(f32){ .mode = .{ .limited = config.fps } },
-            .menu_img = img,
-            .tagline = solid_texture,
+            .assets = assets,
         };
     }
 
     pub fn deinit(self: *UX) void {
-        self.window.deinit();
+        for (&self.assets) |*asset| {
+            if (asset.*) |tex| tex.deinit();
+        }
         self.renderer.deinit();
-        self.menu_img.deinit();
-        self.tagline.deinit();
+        self.window.deinit();
+    }
+
+    pub fn getTexture(self: *const UX, id: AssetId) ?s.render.Texture {
+        return self.assets[@intFromEnum(id)];
     }
 
     // Convert screen coordinates to logical coordinates (accounts for scaling/letterbox)
@@ -100,26 +109,46 @@ pub const UX = struct {
         return self.renderer.renderCoordinatesFromWindowCoordinates(screen) catch screen;
     }
 
-    // TODO: remove world
-    // replace with higher level logical x presentational mapper, or event/command driven integration
-    //
-    pub fn render(self: *UX, world: *World) !void {
-        _ = world;
-
+    /// Render a list of renderables
+    pub fn renderView(self: *UX, renderables: []const Renderable) !void {
         try self.renderer.clear();
 
-        var w, var h = try self.menu_img.getSize();
+        for (renderables) |r| {
+            switch (r) {
+                .sprite => |sprite| try self.renderSprite(sprite),
+                .rect => |r_rect| try self.renderRect(r_rect),
+                .text => {
+                    // TODO: dynamic text rendering
+                },
+            }
+        }
 
-        var src = s.rect.FRect{ .x = 0, .y = 0, .w = w, .h = h };
-        var dst = s.rect.FRect{ .x = 0, .y = 0, .w = w, .h = h };
-
-        try self.renderer.renderTexture(self.menu_img, src, dst);
-
-        w, h = try self.tagline.getSize();
-        src = s.rect.FRect{ .x = 0, .y = 0, .w = w, .h = h };
-        dst = s.rect.FRect{ .x = 160, .y = 420, .w = w, .h = h };
-        try self.renderer.renderTexture(self.tagline, src, dst);
         try self.renderer.present();
+    }
+
+    fn renderSprite(self: *UX, sprite: view.Sprite) !void {
+        const tex = self.getTexture(sprite.asset) orelse return;
+        const tex_w, const tex_h = try tex.getSize();
+
+        const src = rect.FRect{ .x = 0, .y = 0, .w = tex_w, .h = tex_h };
+        const dst = rect.FRect{
+            .x = sprite.x,
+            .y = sprite.y,
+            .w = sprite.w orelse tex_w,
+            .h = sprite.h orelse tex_h,
+        };
+
+        try self.renderer.renderTexture(tex, src, dst);
+    }
+
+    fn renderRect(self: *UX, r: view.Rect) !void {
+        try self.renderer.setDrawColor(.{
+            .r = r.fill_r,
+            .g = r.fill_g,
+            .b = r.fill_b,
+            .a = r.fill_a,
+        });
+        try self.renderer.renderFillRect(.{ .x = r.x, .y = r.y, .w = r.w, .h = r.h });
     }
 };
 

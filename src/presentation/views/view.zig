@@ -8,9 +8,17 @@ const s = @import("sdl3");
 const infra = @import("infra");
 const Command = infra.commands.Command;
 
+const splash = @import("splash.zig");
 const menu = @import("menu.zig");
 const combat = @import("combat.zig");
 const summary = @import("summary.zig");
+
+// Asset identifiers - views reference assets by ID, UX resolves to textures
+pub const AssetId = enum {
+    splash_background,
+    splash_tagline,
+    // TODO: add more as needed
+};
 
 // Renderable primitives - what UX knows how to draw
 pub const Renderable = union(enum) {
@@ -21,11 +29,11 @@ pub const Renderable = union(enum) {
 };
 
 pub const Sprite = struct {
-    texture_id: u32, // index into texture atlas / asset manager
+    asset: AssetId,
     x: f32,
     y: f32,
-    w: f32,
-    h: f32,
+    w: ?f32 = null, // null = use texture's native size
+    h: ?f32 = null,
     rotation: f32 = 0,
     alpha: f32 = 1.0,
 };
@@ -63,12 +71,14 @@ pub const InputEvent = union(enum) {
 
 // View union - active view determined by game state
 pub const View = union(enum) {
+    title: splash.TitleScreenView,
     menu: menu.MenuView,
     combat: combat.CombatView,
     summary: summary.SummaryView,
 
     pub fn handleInput(self: *View, event: InputEvent) ?Command {
         return switch (self.*) {
+            .title => |*v| v.handleInput(event),
             .menu => |*v| v.handleInput(event),
             .combat => |*v| v.handleInput(event),
             .summary => |*v| v.handleInput(event),
@@ -77,6 +87,7 @@ pub const View = union(enum) {
 
     pub fn renderables(self: *const View, alloc: std.mem.Allocator) !std.ArrayList(Renderable) {
         return switch (self.*) {
+            .title => |*v| v.renderables(alloc),
             .menu => |*v| v.renderables(alloc),
             .combat => |*v| v.renderables(alloc),
             .summary => |*v| v.renderables(alloc),

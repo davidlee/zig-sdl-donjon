@@ -93,8 +93,8 @@ pub const EffectSystem = struct {
     }
 
     pub fn deinit(self: *EffectSystem) void {
-        self.pending.deinit();
-        self.animations.deinit();
+        self.pending.deinit(self.alloc);
+        self.animations.deinit(self.alloc);
     }
 
     pub fn push(self: *EffectSystem, effect: Effect) !void {
