@@ -104,11 +104,11 @@ pub const Deck = struct {
                 }
             }
 
-            for(0..5) |_| {
+            for (0..5) |_| {
                 const instance = try self.createInstance(t);
                 try self.draw.append(alloc, instance);
             }
-            
+
             // TODO shuffle, etc
         }
         return self;

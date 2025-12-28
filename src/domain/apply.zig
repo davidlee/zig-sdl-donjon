@@ -643,7 +643,7 @@ test "canUseCard allows card with always predicate" {
 test "canUseCard allows shield block with shield equipped" {
     const shield_block = card_list.byName("shield block");
     var buckler_instance = weapon.Instance{ .id = testId(0), .template = &weapon_list.buckler };
-    const agent = makeTestAgent(.{ .single =  &buckler_instance });
+    const agent = makeTestAgent(.{ .single = &buckler_instance });
 
     try testing.expect(canUseCard(shield_block, &agent));
 }
@@ -694,7 +694,7 @@ test "expressionAppliesToTarget with advantage_threshold filter passes when cont
     const riposte = card_list.byName("riposte");
     const expr = &riposte.rules[0].expressions[0];
     var sword_instance = weapon.Instance{ .id = testId(0), .template = &weapon_list.knights_sword };
-    const actor = makeTestAgent(.{ .single =  &sword_instance });
+    const actor = makeTestAgent(.{ .single = &sword_instance });
     const target = makeTestAgent(.{ .single = &sword_instance });
     const card = makeTestCardInstance(riposte);
 
@@ -708,7 +708,7 @@ test "expressionAppliesToTarget with advantage_threshold filter fails when contr
     const riposte = card_list.byName("riposte");
     const expr = &riposte.rules[0].expressions[0];
     var sword_instance = weapon.Instance{ .id = testId(0), .template = &weapon_list.knights_sword };
-    const actor = makeTestAgent(.{ .single =  &sword_instance });
+    const actor = makeTestAgent(.{ .single = &sword_instance });
     const target = makeTestAgent(.{ .single = &sword_instance });
     const card = makeTestCardInstance(riposte);
 

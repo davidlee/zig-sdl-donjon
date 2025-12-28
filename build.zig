@@ -28,10 +28,10 @@ fn buildBin(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.built
         .root_source_file = b.path("src/infra.zig"),
     });
 
-    infra_mod.addImport("sdl3", sdl3.module("sdl3"));
     infra_mod.addImport("zigfsm", b.dependency("zigfsm", .{}).module("zigfsm"));
     exe_mod.addImport("zigfsm", b.dependency("zigfsm", .{}).module("zigfsm"));
     exe_mod.addImport("infra", infra_mod);
+    exe_mod.addImport("sdl3", sdl3.module("sdl3"));
 
     const exe = b.addExecutable(.{
         .name = "cardigan",
@@ -186,6 +186,12 @@ pub fn build(b: *std.Build) !void {
     });
     main_tests.root_module.addImport("infra", infra_mod);
     main_tests.root_module.addImport("zigfsm", b.dependency("zigfsm", .{}).module("zigfsm"));
+    main_tests.root_module.addImport("sdl3", b.dependency("sdl3", .{
+        .target = target,
+        .optimize = optimize,
+        .callbacks = true,
+        .ext_image = true,
+    }).module("sdl3"));
 
     const run_main_tests = b.addRunArtifact(main_tests);
     test_step.dependOn(&run_main_tests.step);

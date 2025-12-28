@@ -33,5 +33,4 @@ pub fn newPlayer(
         10.0,
         combat.Armament{ .single = buckler },
     );
-
 }

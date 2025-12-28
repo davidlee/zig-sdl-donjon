@@ -7,7 +7,7 @@ const world = @import("world.zig");
 const body = @import("body.zig");
 const apply = @import("apply.zig");
 const weapon_list = @import("weapon_list.zig");
-const weapon= @import("weapon.zig");
+const weapon = @import("weapon.zig");
 
 const Agent = combat.Agent;
 const Engagement = combat.Engagement;

@@ -1,7 +1,7 @@
 const std = @import("std");
-const World = @import("world.zig").World;
+const World = @import("../domain/world.zig").World;
 const lib = @import("infra");
-const s = lib.sdl;
+const s = @import("sdl3");
 
 pub fn keypress(keycode: s.keycode.Keycode, world: *World) bool {
     _ = world;

@@ -7,9 +7,8 @@ pub const Config = config.Config;
 pub const Cast = @import("util.zig").Cast;
 // pub const random = @import("random.zig");
 
-// 3rd party libs
+// 3rd party libs (SDL intentionally excluded - use presentation/mod.zig)
 pub const zigfsm = @import("zigfsm");
-pub const sdl = @import("sdl3");
 
 // conveniences - not that much point but why not
 pub const log = std.debug.print;

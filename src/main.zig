@@ -1,23 +1,23 @@
 const std = @import("std");
 const lib = @import("infra");
+const s = @import("sdl3");
 
 const Cast = lib.Cast;
 const log = lib.log;
-const s = lib.sdl;
 
-// const gfx = lib.gfx;
-const World = @import("world.zig").World;
-const ctrl = @import("controls.zig");
-const gfx = @import("graphics.zig");
-const cards = @import("cards.zig");
-const deck = @import("card_list.zig").BeginnerDeck;
-
+// domain
+const World = @import("domain/world.zig").World;
+const cards = @import("domain/cards.zig");
+const deck = @import("domain/card_list.zig").BeginnerDeck;
 const harness = @import("harness.zig");
-const resolution = @import("resolution.zig");
-const weapon_list = @import("weapon_list.zig");
-const tick = @import("tick.zig");
+const resolution = @import("domain/resolution.zig");
+const weapon_list = @import("domain/weapon_list.zig");
+const tick = @import("domain/tick.zig");
+const CommandHandler = @import("domain/apply.zig").CommandHandler;
 
-const CommandHandler = @import("apply.zig").CommandHandler;
+// presentation
+const ctrl = @import("presentation/controls.zig");
+const gfx = @import("presentation/graphics.zig");
 
 pub fn main() !void {
     defer s.shutdown();
@@ -88,8 +88,8 @@ pub fn main() !void {
 // Force test discovery for all modules with tests
 test {
     @import("std").testing.refAllDecls(@This());
-    _ = @import("body.zig");
-    _ = @import("resolution.zig");
-    _ = @import("weapon_list.zig");
-    _ = @import("tick.zig");
+    _ = @import("domain/body.zig");
+    _ = @import("domain/resolution.zig");
+    _ = @import("domain/weapon_list.zig");
+    _ = @import("domain/tick.zig");
 }

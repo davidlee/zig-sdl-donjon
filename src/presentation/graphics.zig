@@ -1,9 +1,9 @@
 const std = @import("std");
-const World = @import("world.zig").World;
+const World = @import("../domain/world.zig").World;
 const lib = @import("infra");
 const Cast = lib.util.Cast;
-const s = lib.sdl;
-const rect = lib.sdl.rect;
+const s = @import("sdl3");
+const rect = s.rect;
 
 pub const UIState = struct {
     zoom: f32,

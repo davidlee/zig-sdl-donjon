@@ -661,7 +661,6 @@ fn makeTestAgent(
     const agent_stats = stats.Block.splat(5);
     const agent_body = try body.Body.fromPlan(alloc, &body.HumanoidPlan);
 
-    
     const agent = try Agent.init(
         alloc,
         agents,
