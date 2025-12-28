@@ -109,6 +109,10 @@ pub const EventProcessor = struct {
 pub const CommandHandler = struct {
     world: *World,
 
+    fn sink(self: *CommandHandler, event: Event) !void {
+        try self.world.events.push(event);
+    }
+
     pub fn init(ctx: *World) CommandHandler {
         return CommandHandler{
             .world = ctx,
@@ -118,15 +122,18 @@ pub const CommandHandler = struct {
     pub fn gameStateTransition(self: *CommandHandler, target_state: world.GameState) !void {
         if (self.world.fsm.canTransitionTo(target_state)) {
             try self.world.fsm.transitionTo(target_state);
-            try self.world.events.push(Event{ .game_state_transitioned_to = target_state });
+            try self.sink(Event{ .game_state_transitioned_to = target_state });
         } else {
             return CommandError.InvalidGameState;
         }
     }
 
     pub fn handle(self: *CommandHandler, cmd: lib.Command) !void {
-        _ = self;
+        // _ = self;
         switch (cmd) {
+            .start_game => {
+                try self.gameStateTransition(.draw_hand);
+            },
             else => {},
         }
     }
@@ -134,7 +141,6 @@ pub const CommandHandler = struct {
     pub fn playActionCard(self: *CommandHandler, card: *cards.Instance) !void {
         const player = self.world.player;
         const game_state = self.world.fsm.currentState();
-        var event_system = &self.world.events;
         const pd = switch (player.cards) {
             .deck => |*d| d,
             .pool => return CommandError.InvalidGameState,
@@ -161,14 +167,14 @@ pub const CommandHandler = struct {
 
         // lock it in: move the card
         try pd.move(card.id, .hand, .in_play);
-        try event_system.push(
+        try self.sink(
             Event{
                 .card_moved = .{ .instance = card.id, .from = .hand, .to = .in_play },
             },
         );
 
         // sink an event for the card being played
-        try event_system.push(
+        try self.sink(
             Event{
                 .played_action_card = .{
                     .instance = card.id,
@@ -180,7 +186,7 @@ pub const CommandHandler = struct {
         // put a hold on the time & stamina costs for the UI to display / player state
         player.stamina_available -= card.template.cost.stamina;
         player.time_available -= card.template.cost.time;
-        try event_system.push(
+        try self.sink(
             Event{
                 .card_cost_reserved = .{
                     .stamina = 0,

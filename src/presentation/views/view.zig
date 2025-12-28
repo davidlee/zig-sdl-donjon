@@ -66,7 +66,7 @@ pub const Point = struct {
 // Input event (simplified from SDL)
 pub const InputEvent = union(enum) {
     click: Point,
-    key: u32,
+    key: s.keycode.Keycode,
 };
 
 // View union - active view determined by game state

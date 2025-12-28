@@ -9,12 +9,14 @@ const infra = @import("infra");
 const World = @import("../../domain/world.zig").World;
 const cards = @import("../../domain/cards.zig");
 const combat = @import("../../domain/combat.zig");
+const s = @import("sdl3");
 
 const Renderable = view.Renderable;
 const InputEvent = view.InputEvent;
 const Point = view.Point;
 const Command = infra.commands.Command;
 const ID = infra.commands.ID;
+const Keycode = s.keycode.Keycode;
 
 pub const CombatView = struct {
     world: *const World,
@@ -63,11 +65,12 @@ pub const CombatView = struct {
         return null;
     }
 
-    fn handleKey(self: *CombatView, keycode: u32) ?Command {
+    fn handleKey(self: *CombatView, keycode: Keycode) ?Command {
         _ = self;
         // Space/Enter to end turn, Escape to cancel, etc.
         switch (keycode) {
-            ' ' => return Command{ .end_turn = {} },
+            .q => { std.process.exit(0); },
+            .space => return Command{ .end_turn = {} },
             else => return null,
         }
     }

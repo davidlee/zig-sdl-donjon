@@ -70,9 +70,11 @@ pub const Coordinator = struct {
                 const coords = self.ux.translateCoords(.{ .x = data.x, .y = data.y });
                 break :blk InputEvent{ .click = .{ .x = coords.x, .y = coords.y } };
             },
-            .key_down => |data| InputEvent{ .key = @intFromEnum(data.key.?) },
+            .key_down => |data| InputEvent{ .key = data.key.? },
             else => return null,
         };
+
+        std.debug.print("input event: {any}", .{input_event});
 
         var v = self.activeView();
         return v.handleInput(input_event);
