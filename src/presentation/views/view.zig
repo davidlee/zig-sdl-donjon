@@ -7,17 +7,24 @@ const std = @import("std");
 const s = @import("sdl3");
 const infra = @import("infra");
 const Command = infra.commands.Command;
+const World = @import("../../domain/world.zig").World;
 
 const splash = @import("splash.zig");
 const menu = @import("menu.zig");
 const combat = @import("combat.zig");
 const summary = @import("summary.zig");
 pub const card_view = @import("card_view.zig");
+pub const vs = @import("../view_state.zig");
 
 // Re-export SDL types for view layer
 pub const Point = s.rect.FPoint;
 pub const Rect = s.rect.FRect;
 pub const Color = s.pixels.Color;
+
+// Re-export view state types
+pub const ViewState = vs.ViewState;
+pub const CombatState = vs.CombatState;
+pub const DragState = vs.DragState;
 
 // Re-export card view model
 pub const CardViewModel = card_view.CardViewModel;
@@ -64,10 +71,10 @@ pub const FilledRect = struct {
     color: Color,
 };
 
-// Input event (simplified from SDL)
-pub const InputEvent = union(enum) {
-    click: Point,
-    key: s.keycode.Keycode,
+// Result from handleInput - command to execute + optional view state update
+pub const InputResult = struct {
+    command: ?Command = null,
+    vs: ?ViewState = null,
 };
 
 // View union - active view determined by game state
@@ -77,21 +84,21 @@ pub const View = union(enum) {
     combat: combat.CombatView,
     summary: summary.SummaryView,
 
-    pub fn handleInput(self: *View, event: InputEvent) ?Command {
+    pub fn handleInput(self: *View, event: s.events.Event, world: *const World, state: ViewState) InputResult {
         return switch (self.*) {
-            .title => |*v| v.handleInput(event),
-            .menu => |*v| v.handleInput(event),
-            .combat => |*v| v.handleInput(event),
-            .summary => |*v| v.handleInput(event),
+            .title => |*v| v.handleInput(event, world, state),
+            .menu => |*v| v.handleInput(event, world, state),
+            .combat => |*v| v.handleInput(event, world, state),
+            .summary => |*v| v.handleInput(event, world, state),
         };
     }
 
-    pub fn renderables(self: *const View, alloc: std.mem.Allocator) !std.ArrayList(Renderable) {
+    pub fn renderables(self: *const View, alloc: std.mem.Allocator, state: ViewState) !std.ArrayList(Renderable) {
         return switch (self.*) {
-            .title => |*v| v.renderables(alloc),
-            .menu => |*v| v.renderables(alloc),
-            .combat => |*v| v.renderables(alloc),
-            .summary => |*v| v.renderables(alloc),
+            .title => |*v| v.renderables(alloc, state),
+            .menu => |*v| v.renderables(alloc, state),
+            .combat => |*v| v.renderables(alloc, state),
+            .summary => |*v| v.renderables(alloc, state),
         };
     }
 };

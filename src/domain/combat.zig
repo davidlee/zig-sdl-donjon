@@ -1,5 +1,6 @@
 const std = @import("std");
-const entity = @import("entity.zig");
+const lib = @import("infra");
+const entity = lib.entity;
 const armour = @import("armour.zig");
 const weapon = @import("weapon.zig");
 const combat = @import("combat.zig");

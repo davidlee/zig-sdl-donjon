@@ -1,6 +1,7 @@
+const lib = @import("infra");
 const combat = @import("combat.zig");
 const damage = @import("damage.zig");
-const entity = @import("entity.zig");
+const entity = lib.entity;
 
 pub const ProjectileType = enum {
     arrow,

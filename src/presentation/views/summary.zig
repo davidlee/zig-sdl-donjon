@@ -6,9 +6,11 @@ const std = @import("std");
 const view = @import("view.zig");
 const infra = @import("infra");
 const World = @import("../../domain/world.zig").World;
+const s = @import("sdl3");
 
 const Renderable = view.Renderable;
-const InputEvent = view.InputEvent;
+const ViewState = view.ViewState;
+const InputResult = view.InputResult;
 const Command = infra.commands.Command;
 
 pub const SummaryView = struct {
@@ -18,21 +20,17 @@ pub const SummaryView = struct {
         return .{ .world = world };
     }
 
-    pub fn handleInput(self: *SummaryView, event: InputEvent) ?Command {
+    pub fn handleInput(self: *SummaryView, event: s.events.Event, world: *const World, vs: ViewState) InputResult {
         _ = self;
-        switch (event) {
-            .click => |_| {
-                // TODO: hit test loot selection, continue button
-                return null;
-            },
-            .key => |_| {
-                return null;
-            },
-        }
+        _ = event;
+        _ = world;
+        _ = vs;
+        return .{};
     }
 
-    pub fn renderables(self: *const SummaryView, alloc: std.mem.Allocator) !std.ArrayList(Renderable) {
+    pub fn renderables(self: *const SummaryView, alloc: std.mem.Allocator, vs: ViewState) !std.ArrayList(Renderable) {
         _ = self;
+        _ = vs;
         const list = try std.ArrayList(Renderable).initCapacity(alloc, 16);
         // TODO: add summary renderables
         // - victory/defeat banner

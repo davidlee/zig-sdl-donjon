@@ -5,7 +5,8 @@
 
 const std = @import("std");
 const cards = @import("../../domain/cards.zig");
-const entity = @import("../../domain/entity.zig");
+const lib = @import("infra");
+const entity = lib.entity;
 
 /// Visual card kind (determines background color scheme)
 pub const CardKind = enum {

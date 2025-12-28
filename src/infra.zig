@@ -8,6 +8,7 @@ pub const Cast = @import("util.zig").Cast;
 
 // shared contracts
 pub const commands = @import("commands.zig");
+pub const entity = @import("entity.zig");
 pub const Command = commands.Command;
 
 // 3rd party libs (SDL intentionally excluded - use presentation/mod.zig)

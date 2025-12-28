@@ -8,7 +8,7 @@ const card_list = @import("card_list.zig");
 const combat = @import("combat.zig");
 const events = @import("events.zig");
 const world = @import("world.zig");
-const entity = @import("entity.zig");
+const entity = lib.entity;
 const tick = @import("tick.zig");
 
 const Event = events.Event;

@@ -45,6 +45,7 @@ pub fn main() !void {
     }
 
     var ux = try gfx.UX.init(alloc, &config);
+    defer ux.deinit();
 
     var coordinator = try presentation.Coordinator.init(alloc, world, &ux);
     defer coordinator.deinit();
@@ -62,6 +63,7 @@ pub fn main() !void {
                     if (cmd) |c| try world.commandHandler.handle(c);
 
                     coordinator.processSystemEvent(event);
+                    // std.debug.print("event: {any} \n",.{event});
                 },
             };
 

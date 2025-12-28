@@ -6,6 +6,7 @@
 const std = @import("std");
 const events = @import("../domain/events.zig");
 const infra = @import("infra");
+const entity = infra.entity;
 const Event = events.Event;
 const ID = infra.commands.ID;
 
@@ -50,8 +51,6 @@ pub const Tween = struct {
 
 // Maps domain events to presentation effects
 pub const EffectMapper = struct {
-    const entity = @import("../domain/entity.zig");
-
     pub fn map(event: Event) ?Effect {
         return switch (event) {
             .card_moved => |data| switch (data.to) {

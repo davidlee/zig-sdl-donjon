@@ -1,5 +1,6 @@
 const std = @import("std");
-const entity = @import("entity.zig");
+const lib = @import("infra");
+const entity = lib.entity;
 
 // generational index - dispenses valid entity IDs (in the absence of an ECS)
 // the generation is just a version number to guard against collisions / undefined

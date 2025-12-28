@@ -1,9 +1,10 @@
 const std = @import("std");
+const lib = @import("infra");
 const damage = @import("damage.zig");
 const events = @import("events.zig");
 const EventSystem = events.EventSystem;
 const Event = events.Event;
-const entity = @import("entity.zig");
+const entity = lib.entity;
 
 const DamageKind = damage.Kind;
 

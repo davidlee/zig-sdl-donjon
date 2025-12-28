@@ -7,7 +7,7 @@ const card_list = @import("card_list.zig");
 const slot_map = @import("slot_map.zig");
 const events = @import("events.zig");
 
-const entity = @import("entity.zig");
+const entity = lib.entity;
 const World = @import("world.zig").World;
 const Instance = cards.Instance;
 const Event = events.Event;

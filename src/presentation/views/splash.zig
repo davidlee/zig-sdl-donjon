@@ -5,10 +5,12 @@
 const std = @import("std");
 const view = @import("view.zig");
 const infra = @import("infra");
+const s = @import("sdl3");
 const World = @import("../../domain/world.zig").World;
 
 const Renderable = view.Renderable;
-const InputEvent = view.InputEvent;
+const ViewState = view.ViewState;
+const InputResult = view.InputResult;
 const Command = infra.commands.Command;
 const AssetId = view.AssetId;
 
@@ -19,15 +21,20 @@ pub const TitleScreenView = struct {
         return .{ .world = world };
     }
 
-    pub fn handleInput(self: *TitleScreenView, event: InputEvent) ?Command {
+    pub fn handleInput(self: *TitleScreenView, event: s.events.Event, world: *const World, vs: ViewState) InputResult {
         _ = self;
-        _ = event;
-        // Any input starts the game
-        return Command{ .start_game = {} };
+        _ = world;
+        _ = vs;
+        switch (event) {
+            .key_down, .mouse_button_down => return .{ .command = .{ .start_game = {} } },
+            else => {},
+        }
+        return .{};
     }
 
-    pub fn renderables(self: *const TitleScreenView, alloc: std.mem.Allocator) !std.ArrayList(Renderable) {
+    pub fn renderables(self: *const TitleScreenView, alloc: std.mem.Allocator, vs: ViewState) !std.ArrayList(Renderable) {
         _ = self;
+        _ = vs;
         var list = try std.ArrayList(Renderable).initCapacity(alloc, 8);
 
         // Background image (null dst = native size at origin)

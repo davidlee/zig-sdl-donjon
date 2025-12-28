@@ -5,10 +5,12 @@
 const std = @import("std");
 const view = @import("view.zig");
 const infra = @import("infra");
+const s = @import("sdl3");
 const World = @import("../../domain/world.zig").World;
 
 const Renderable = view.Renderable;
-const InputEvent = view.InputEvent;
+const ViewState = view.ViewState;
+const InputResult = view.InputResult;
 const Command = infra.commands.Command;
 
 pub const MenuView = struct {
@@ -18,21 +20,17 @@ pub const MenuView = struct {
         return .{ .world = world };
     }
 
-    pub fn handleInput(self: *MenuView, event: InputEvent) ?Command {
+    pub fn handleInput(self: *MenuView, event: s.events.Event, world: *const World, vs: ViewState) InputResult {
         _ = self;
-        switch (event) {
-            .click => |_| {
-                // TODO: hit test menu buttons
-                return Command{ .start_game = {} };
-            },
-            .key => |_| {
-                return null;
-            },
-        }
+        _ = event;
+        _ = world;
+        _ = vs;
+        return .{};
     }
 
-    pub fn renderables(self: *const MenuView, alloc: std.mem.Allocator) !std.ArrayList(Renderable) {
+    pub fn renderables(self: *const MenuView, alloc: std.mem.Allocator, vs: ViewState) !std.ArrayList(Renderable) {
         _ = self;
+        _ = vs;
         const list = try std.ArrayList(Renderable).initCapacity(alloc, 8);
         // TODO: add menu renderables
         // - title sprite

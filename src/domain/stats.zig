@@ -1,4 +1,5 @@
 const std = @import("std");
+const lib = @import("infra");
 pub const Scaling = struct {
     stats: CheckSignature,
     ratio: f32 = 1.0,

@@ -6,10 +6,13 @@
 // Note: Uses own ID type to avoid module dependency issues.
 // Domain code should convert to/from entity.ID as needed.
 
-pub const ID = struct {
-    index: u32,
-    generation: u32,
-};
+// pub const ID = struct {
+//     index: u32,
+//     generation: u32,
+// };
+
+const entity = @import("entity.zig");
+pub const ID = entity.ID;
 
 pub const Command = union(enum) {
     // Game flow

@@ -9,7 +9,7 @@ const cards = @import("domain/cards.zig");
 const body = @import("domain/body.zig");
 const card_list = @import("domain/card_list.zig");
 const stats = @import("domain/stats.zig");
-const entity = @import("domain/entity.zig");
+const entity = lib.entity;
 const weapon = @import("domain/weapon.zig");
 const weapon_list = @import("domain/weapon_list.zig");
 

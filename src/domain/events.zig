@@ -1,5 +1,6 @@
 const std = @import("std");
-const entity = @import("entity.zig");
+const lib = @import("infra");
+const entity = lib.entity;
 const RandomStreamID = @import("random.zig").RandomStreamID;
 const Slot = void; // TODO what's this look like?
 const deck = @import("deck.zig");

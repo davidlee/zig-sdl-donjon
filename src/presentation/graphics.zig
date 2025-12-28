@@ -9,20 +9,20 @@ const AssetId = view.AssetId;
 const Renderable = view.Renderable;
 const CardRenderer = card_renderer.CardRenderer;
 
-pub const UIState = struct {
-    zoom: f32,
-    screen: rect.IRect,
-    camera: rect.IRect,
-    mouse: rect.FPoint,
-    pub fn init() UIState {
-        return UIState{
-            .zoom = 1.0,
-            .screen = .{ .x = 0, .y = 0, .w = 0, .h = 0 },
-            .camera = .{ .x = 0, .y = 0, .w = 0, .h = 0 },
-            .mouse = .{ .x = 0, .y = 0 },
-        };
-    }
-};
+// pub const UIState = struct {
+//     zoom: f32,
+//     screen: rect.IRect,
+//     camera: rect.IRect,
+//     mouse: rect.FPoint,
+//     pub fn init() UIState {
+//         return UIState{
+//             .zoom = 1.0,
+//             .screen = .{ .x = 0, .y = 0, .w = 0, .h = 0 },
+//             .camera = .{ .x = 0, .y = 0, .w = 0, .h = 0 },
+//             .mouse = .{ .x = 0, .y = 0 },
+//         };
+//     }
+// };
 
 // IMPORTANT: this shouldn't know shit about the World (logical model)
 // although for now we might allow some haxx in the name of forward progress
@@ -36,7 +36,7 @@ const AssetCount = @typeInfo(AssetId).@"enum".fields.len;
 
 pub const UX = struct {
     alloc: std.mem.Allocator,
-    ui: UIState,
+    // ui: UIState,
     renderer: s.render.Renderer,
     window: s.video.Window,
     fps_capper: s.extras.FramerateCapper(f32),
@@ -87,7 +87,7 @@ pub const UX = struct {
 
         return UX{
             .alloc = alloc,
-            .ui = UIState.init(),
+            // .ui = UIState.init(),
             .window = window,
             .renderer = renderer,
             .fps_capper = s.extras.FramerateCapper(f32){ .mode = .{ .limited = config.fps } },
