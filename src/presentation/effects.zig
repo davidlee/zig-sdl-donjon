@@ -1,0 +1,140 @@
+// Effects - transient presentation state (animations, particles, floating text)
+//
+// EffectMapper: transforms domain Events -> presentation Effects
+// EffectSystem: owns in-flight Tweens, ticks them, produces Renderables
+
+const std = @import("std");
+const events = @import("../domain/events.zig");
+const commands = @import("../commands.zig");
+const Event = events.Event;
+const ID = commands.ID;
+
+// Presentation effects - what the UI should show
+pub const Effect = union(enum) {
+    // Card animations
+    card_dealt: struct { card_id: ID },
+    card_played: struct { card_id: ID },
+    card_discarded: struct { card_id: ID },
+
+    // Combat feedback
+    damage_number: struct { target_id: ID, amount: f32 },
+    hit_flash: struct { target_id: ID },
+    status_applied: struct { target_id: ID, status: []const u8 },
+
+    // Advantage changes
+    advantage_changed: struct { agent_id: ID, axis: u8, delta: f32 },
+
+    // Screen effects
+    screen_shake: struct { intensity: f32 },
+};
+
+// Animation interpolation
+pub const Tween = struct {
+    effect: Effect,
+    start_time: f32,
+    duration: f32,
+    elapsed: f32 = 0,
+
+    pub fn progress(self: *const Tween) f32 {
+        return std.math.clamp(self.elapsed / self.duration, 0.0, 1.0);
+    }
+
+    pub fn isComplete(self: *const Tween) bool {
+        return self.elapsed >= self.duration;
+    }
+
+    pub fn tick(self: *Tween, dt: f32) void {
+        self.elapsed += dt;
+    }
+};
+
+// Maps domain events to presentation effects
+pub const EffectMapper = struct {
+    const entity = @import("../domain/entity.zig");
+
+    pub fn map(event: Event) ?Effect {
+        return switch (event) {
+            .card_moved => |data| switch (data.to) {
+                .hand => Effect{ .card_dealt = .{ .card_id = toID(data.instance) } },
+                .in_play => Effect{ .card_played = .{ .card_id = toID(data.instance) } },
+                .discard => Effect{ .card_discarded = .{ .card_id = toID(data.instance) } },
+                else => null,
+            },
+            .wound_inflicted => |data| Effect{ .hit_flash = .{ .target_id = toID(data.agent_id) } },
+            .advantage_changed => |data| Effect{
+                .advantage_changed = .{
+                    .agent_id = toID(data.agent_id),
+                    .axis = @intFromEnum(data.axis),
+                    .delta = data.new_value - data.old_value,
+                },
+            },
+            // Most events don't need visual feedback
+            else => null,
+        };
+    }
+
+    fn toID(eid: entity.ID) ID {
+        return .{ .index = eid.index, .generation = eid.generation };
+    }
+};
+
+// Owns and ticks in-flight animations
+pub const EffectSystem = struct {
+    alloc: std.mem.Allocator,
+    pending: std.ArrayList(Effect),
+    animations: std.ArrayList(Tween),
+
+    pub fn init(alloc: std.mem.Allocator) EffectSystem {
+        return .{
+            .alloc = alloc,
+            .pending = std.ArrayList(Effect).init(alloc),
+            .animations = std.ArrayList(Tween).init(alloc),
+        };
+    }
+
+    pub fn deinit(self: *EffectSystem) void {
+        self.pending.deinit();
+        self.animations.deinit();
+    }
+
+    pub fn push(self: *EffectSystem, effect: Effect) !void {
+        try self.pending.append(effect);
+    }
+
+    // Process pending effects into animations
+    pub fn spawnAnimations(self: *EffectSystem, current_time: f32) !void {
+        for (self.pending.items) |effect| {
+            const duration: f32 = switch (effect) {
+                .card_dealt, .card_played, .card_discarded => 0.3,
+                .damage_number => 1.0,
+                .hit_flash => 0.15,
+                .status_applied => 0.5,
+                .advantage_changed => 0.4,
+                .screen_shake => 0.2,
+            };
+            try self.animations.append(.{
+                .effect = effect,
+                .start_time = current_time,
+                .duration = duration,
+            });
+        }
+        self.pending.clearRetainingCapacity();
+    }
+
+    // Tick all animations, remove completed ones
+    pub fn tick(self: *EffectSystem, dt: f32) void {
+        var i: usize = 0;
+        while (i < self.animations.items.len) {
+            self.animations.items[i].tick(dt);
+            if (self.animations.items[i].isComplete()) {
+                _ = self.animations.swapRemove(i);
+            } else {
+                i += 1;
+            }
+        }
+    }
+
+    pub fn activeAnimations(self: *const EffectSystem) []const Tween {
+        return self.animations.items;
+    }
+};

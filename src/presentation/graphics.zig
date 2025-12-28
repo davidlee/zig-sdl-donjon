@@ -51,6 +51,14 @@ pub const UX = struct {
         const img = try s.image.loadTexture(renderer, "assets/dod_menu.png");
         errdefer img.deinit();
 
+        // Set logical presentation: fixed resolution, scaled to fit with letterboxing
+        const img_w, const img_h = try img.getSize();
+        try renderer.setLogicalPresentation(
+            @intFromFloat(img_w),
+            @intFromFloat(img_h),
+            .letter_box,
+        );
+
         return UX{
             .alloc = alloc,
             .ui = UIState.init(),
@@ -64,6 +72,11 @@ pub const UX = struct {
     pub fn deinit(self: *UX) void {
         self.window.deinit();
         self.renderer.deinit();
+    }
+
+    // Convert screen coordinates to logical coordinates (accounts for scaling/letterbox)
+    pub fn translateCoords(self: *UX, screen: rect.FPoint) rect.FPoint {
+        return self.renderer.renderCoordinatesFromWindowCoordinates(screen) catch screen;
     }
 
     // TODO: remove world

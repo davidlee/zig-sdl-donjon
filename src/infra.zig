@@ -7,6 +7,10 @@ pub const Config = config.Config;
 pub const Cast = @import("util.zig").Cast;
 // pub const random = @import("random.zig");
 
+// shared contracts
+pub const commands = @import("commands.zig");
+pub const Command = commands.Command;
+
 // 3rd party libs (SDL intentionally excluded - use presentation/mod.zig)
 pub const zigfsm = @import("zigfsm");
 
