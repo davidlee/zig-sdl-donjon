@@ -174,9 +174,10 @@ pub const Encounter = struct {
         };
     }
 
-    pub fn deinit(self: *Encounter, alloc: std.mem.Allocator) void {
-        for (self.enemies.items) |nme| {
-            nme.deinit();
+    pub fn deinit(self: *Encounter, alloc: std.mem.Allocator, agents: *SlotMap(*Agent)) void {
+        for (self.enemies.items) |enemy| {
+            agents.remove(enemy.id);
+            enemy.deinit();
         }
         self.enemies.deinit(alloc);
     }

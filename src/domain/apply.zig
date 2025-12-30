@@ -133,9 +133,14 @@ pub const EventProcessor = struct {
                         .tick_resolution => {
                             const res = try self.world.processTick();
                             std.debug.print("Tick Resolution: {any}\n", .{res});
-                            // try self.world.transitionTo(.player_card_selection);
+                            try self.world.transitionTo(.animating);
                         },
-                        else => {std.debug.print("unhandled world state transition: {}",.{state});},
+                        .animating => {
+                            try self.world.transitionTo(.draw_hand);
+                        },
+                        else => {
+                            std.debug.print("unhandled world state transition: {}", .{state});
+                        },
                     }
 
                     for (self.world.encounter.?.enemies.items) |mob| {

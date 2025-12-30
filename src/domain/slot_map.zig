@@ -74,7 +74,7 @@ pub fn SlotMap(comptime T: type) type {
             self.generations.items[id.index] += 1;
 
             // Add index to freelist so we can reuse it later
-            self.free_indices.append(id.index) catch unreachable; // memory error handling omitted for brevity
+            self.free_indices.append(self.alloc, id.index) catch unreachable;
         }
     };
 }

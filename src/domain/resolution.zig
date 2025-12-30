@@ -686,7 +686,7 @@ test "resolveTechniqueVsDefense emits technique_resolved event" {
     // Create attacker (player) and defender (mob)
     const attacker = w.player;
     const defender = try makeTestAgent(alloc, w.entities.agents, .ai);
-    // Note: defender is cleaned up by w.deinit() since it's in w.agents
+    defer defender.deinit();
 
     // Set up engagement on defender
     defender.engagement = Engagement{};
@@ -747,7 +747,7 @@ test "resolveTechniqueVsDefense emits advantage_changed events on hit" {
 
     const attacker = w.player;
     const defender = try makeTestAgent(alloc, w.entities.agents, .ai);
-    // Note: defender is cleaned up by w.deinit() since it's in w.agents
+    defer defender.deinit();
 
     defender.engagement = Engagement{};
     const engagement = &defender.engagement.?;
@@ -815,7 +815,7 @@ test "resolveTechniqueVsDefense applies damage on hit" {
 
     const attacker = w.player;
     const defender = try makeTestAgent(alloc, w.entities.agents, .ai);
-    // Note: defender is cleaned up by w.deinit() since it's in w.agents
+    defer defender.deinit();
 
     defender.engagement = Engagement{};
     const engagement = &defender.engagement.?;

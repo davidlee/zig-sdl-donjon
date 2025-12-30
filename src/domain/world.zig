@@ -41,8 +41,8 @@ pub const EntityMap = struct {
         return .{ .agents = agents, .weapons = weapons };
     }
 
+    /// Frees containers only - callers must explicitly deinit items before calling this
     pub fn deinit(self: *EntityMap, alloc: std.mem.Allocator) void {
-        for (self.agents.items.items) |x| x.deinit();
         self.agents.deinit();
         alloc.destroy(self.agents);
 
@@ -100,7 +100,7 @@ pub const World = struct {
         try fsm.addEventAndTransition(.player_reaction_opportunity, .tick_resolution, .player_reaction);
         try fsm.addEventAndTransition(.continue_tick_resolution, .player_reaction, .tick_resolution);
         try fsm.addEventAndTransition(.animate_resolution, .tick_resolution, .animating);
-        try fsm.addEventAndTransition(.continue_tick_resolution, .animating, .tick_resolution);
+        // try fsm.addEventAndTransition(.continue_tick_resolution, .animating, .tick_resolution);
 
         try fsm.addEventAndTransition(.player_died, .animating, .splash);
         try fsm.addEventAndTransition(.show_loot, .animating, .encounter_summary);
@@ -136,9 +136,16 @@ pub const World = struct {
     pub fn deinit(self: *World) void {
         self.events.deinit();
         self.tickResolver.deinit();
+
+        // Deinit encounter enemies (removes from entities.agents)
         if (self.encounter) |*encounter| {
-            encounter.deinit(self.alloc);
+            encounter.deinit(self.alloc, self.entities.agents);
         }
+
+        // Deinit player explicitly
+        self.player.deinit();
+
+        // Deinit entity containers (items already freed above)
         self.entities.deinit(self.alloc);
         self.alloc.destroy(self);
     }
