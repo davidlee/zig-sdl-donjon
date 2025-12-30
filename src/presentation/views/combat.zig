@@ -174,7 +174,7 @@ pub const CombatView = struct {
         if (self.hitTestHand(vs)) |id| {
             return .{ .command = .{ .play_card = id } };
         } else if (self.hitTestInPlay(vs)) |id| {
-            return .{ .command = .{ .cancel_card= id } };
+            return .{ .command = .{ .cancel_card = id } };
         } else
         // Hit test enemies (for targeting)
         if (self.hitTestEnemies(vs.mouse)) |target_id| {
@@ -366,7 +366,7 @@ pub const CombatView = struct {
             },
         });
 
-        // Player hand
+        // Player Cards
 
         var last: ?Renderable = null;
 
@@ -395,6 +395,22 @@ pub const CombatView = struct {
 
         if (last != null)
             try list.append(alloc, last.?);
+
+        // END TURN button
+        var fsm = self.world.fsm;
+        if (fsm.currentState() == .player_card_selection) {
+            try list.append(alloc, .{
+                .sprite = .{
+                    .asset = AssetId.end_turn,
+                    .dst = .{
+                        .x = 50,
+                        .y = 550,
+                        .w = 289,
+                        .h = 97,
+                    },
+                },
+            });
+        }
 
         // TODO: enemies (top area)
         // TODO: engagement info / advantage bars

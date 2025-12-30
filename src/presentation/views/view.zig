@@ -37,6 +37,7 @@ pub const AssetId = enum {
     player_halberdier,
     fredrick_snail,
     thief,
+    end_turn,
 };
 
 // Renderable primitives - what UX knows how to draw

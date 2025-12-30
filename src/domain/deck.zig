@@ -56,7 +56,7 @@ pub const Deck = struct {
         };
     }
 
-    fn findInternal( id: entity.ID, pile: *std.ArrayList(*Instance)) !usize {
+    fn findInternal(id: entity.ID, pile: *std.ArrayList(*Instance)) !usize {
         var i: usize = 0;
         while (i < pile.items.len) : (i += 1) {
             const card = pile.items[i];
@@ -147,5 +147,17 @@ pub const Deck = struct {
     pub fn instanceInZone(self: *Deck, id: entity.ID, zone: Zone) bool {
         _ = Deck.findInternal(id, self.pileForZone(zone)) catch return false;
         return true;
+    }
+
+    /// Fisher-Yates shuffle of the draw pile
+    pub fn shuffleDrawPile(self: *Deck, rand: anytype) !void {
+        const items = self.draw.items;
+        var i = items.len;
+        while (i > 1) {
+            i -= 1;
+            const r = try rand.drawRandom();
+            const j: usize = @intFromFloat(r * @as(f32, @floatFromInt(i + 1)));
+            std.mem.swap(*Instance, &items[i], &items[j]);
+        }
     }
 };

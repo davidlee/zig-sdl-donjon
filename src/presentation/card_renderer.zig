@@ -24,8 +24,8 @@ pub const CardInstanceID = packed struct {
 };
 
 // Standard card dimensions (in logical pixels)
-pub const CARD_WIDTH: f32 = 150;
-pub const CARD_HEIGHT: f32 = 200;
+pub const CARD_WIDTH: f32 = 80;
+pub const CARD_HEIGHT: f32 = 110;
 
 // Colors by card kind
 const KindColors = struct {

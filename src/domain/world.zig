@@ -22,6 +22,10 @@ const Deck = @import("deck.zig").Deck;
 const BeginnerDeck = card_list.BeginnerDeck;
 const TickResolver = tick.TickResolver;
 
+const WorldError = error{
+    InvalidStateTransition,
+};
+
 pub const EntityMap = struct {
     agents: *SlotMap(*combat.Agent),
     weapons: *SlotMap(*weapon.Instance),
@@ -145,6 +149,13 @@ pub const World = struct {
         }
     }
 
+    pub fn transitionTo(self: *World, target_state: GameState) !void {
+        if (self.fsm.canTransitionTo(target_state)) {
+            try self.fsm.transitionTo(target_state);
+            try self.events.push(Event{ .game_state_transitioned_to = target_state });
+        } else return WorldError.InvalidStateTransition;
+    }
+
     /// Process a complete tick: commit actions, resolve, cleanup
     pub fn processTick(self: *World) !tick.TickResult {
         // Reset resolver for new tick
@@ -174,5 +185,13 @@ pub const World = struct {
         const r = self.random.get(id).random().float(f32);
         try self.events.push(.{ .draw_random = .{ .stream = id, .result = r } });
         return r;
+    }
+
+    pub fn getRandomSource(self: *World, id: random.RandomStreamID) random.RandomSource {
+        return .{
+            .events = &self.events,
+            .stream = self.random.get(id),
+            .stream_id = id,
+        };
     }
 };

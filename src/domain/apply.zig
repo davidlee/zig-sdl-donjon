@@ -8,6 +8,7 @@ const card_list = @import("card_list.zig");
 const combat = @import("combat.zig");
 const events = @import("events.zig");
 const world = @import("world.zig");
+const random = @import("random.zig");
 const entity = lib.entity;
 const tick = @import("tick.zig");
 
@@ -81,6 +82,9 @@ const TechniqueContext = struct {
     calc_difficulty: ?f32 = null,
 };
 
+//
+// EventProcessor - responds to events
+//
 pub const EventProcessor = struct {
     world: *World,
     pub fn init(ctx: *World) EventProcessor {
@@ -89,27 +93,21 @@ pub const EventProcessor = struct {
         };
     }
 
-    /// Draw cards from deck to hand
-    fn drawCardsToHand(self: *EventProcessor, count: usize) !void {
+    /// Shuffle draw pile and draw cards to hand
+    fn shuffleAndDraw(self: *EventProcessor, count: usize) !void {
         const pd = switch (self.world.player.cards) {
             .deck => |*d| d,
             .pool => return, // pools don't draw
         };
+
+        var rand = self.world.getRandomSource(.shuffler);
+        try pd.shuffleDrawPile(&rand);
 
         const to_draw = @min(count, pd.draw.items.len);
         for (0..to_draw) |_| {
             if (pd.draw.items.len == 0) break;
             const card_id = pd.draw.items[0].id;
             try pd.move(card_id, .draw, .hand);
-        }
-    }
-
-    pub fn gameStateTransition(self: *EventProcessor, target_state: world.GameState) !void {
-        if (self.world.fsm.canTransitionTo(target_state)) {
-            try self.world.fsm.transitionTo(target_state);
-            try self.sink(Event{ .game_state_transitioned_to = target_state });
-        } else {
-            return EventSystemError.InvalidGameState;
         }
     }
 
@@ -127,8 +125,8 @@ pub const EventProcessor = struct {
 
                     // Draw cards when entering draw_hand state
                     if (state == .draw_hand) {
-                        try self.drawCardsToHand(5); // FIXME: catch errors & shuffle discard pile
-                        try self.gameStateTransition(.player_card_selection);
+                        try self.shuffleAndDraw(5);
+                        try self.world.transitionTo(.player_card_selection);
                     }
 
                     for (self.world.encounter.?.enemies.items) |mob| {
@@ -158,19 +156,10 @@ pub const CommandHandler = struct {
         };
     }
 
-    pub fn gameStateTransition(self: *CommandHandler, target_state: world.GameState) !void {
-        if (self.world.fsm.canTransitionTo(target_state)) {
-            try self.world.fsm.transitionTo(target_state);
-            try self.sink(Event{ .game_state_transitioned_to = target_state });
-        } else {
-            return CommandError.InvalidGameState;
-        }
-    }
-
     pub fn handle(self: *CommandHandler, cmd: lib.Command) !void {
         switch (cmd) {
             .start_game => {
-                try self.gameStateTransition(.draw_hand);
+                try self.world.transitionTo(.draw_hand);
             },
             .play_card => |id| {
                 try self.playActionCard(id);

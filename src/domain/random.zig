@@ -3,6 +3,20 @@ const std = @import("std");
 const lib = @import("infra");
 const events = @import("events.zig");
 
+const EventSystem = events.EventSystem;
+
+pub const RandomSource = struct {
+    events: *EventSystem,
+    stream: *Stream,
+    stream_id: RandomStreamID,
+
+    pub fn drawRandom(self: *RandomSource) !f32 {
+        const r = self.stream.random().float(f32);
+        try self.events.push(.{ .draw_random = .{ .stream = self.stream_id, .result = r } });
+        return r;
+    }
+};
+
 pub const Stream = struct {
     seed: u64,
     prng: std.Random.DefaultPrng,

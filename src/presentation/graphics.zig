@@ -35,6 +35,7 @@ pub const UX = struct {
         .{ .filename = "assets/halberdier.png", .id = .player_halberdier },
         .{ .filename = "assets/fredrick-snail.png", .id = .fredrick_snail },
         .{ .filename = "assets/mob-thief.png", .id = .thief },
+        .{ .filename = "assets/end-turn.png", .id = .end_turn },
     };
 
     fn loadSprites(assets: *[AssetCount]?s.render.Texture, renderer: s.render.Renderer) !void {
