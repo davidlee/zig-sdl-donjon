@@ -122,6 +122,7 @@ pub const UX = struct {
 
     /// Render a list of renderables
     pub fn renderView(self: *UX, renderables: []const Renderable) !void {
+        try self.renderer.setDrawColor(s.pixels.Color{ .r = 0, .g = 0, .b = 0 });
         try self.renderer.clear();
 
         for (renderables) |r| {

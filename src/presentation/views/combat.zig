@@ -98,6 +98,12 @@ const CardZoneView = struct {
     layout: CardLayout,
     card_list: []const *cards.Instance,
 
+    const CardWithRect = struct {
+        card: cards.Instance,
+        rect: Rect,
+        state: CardViewState,
+    };
+
     fn init(zone: cards.Zone, card_list: []const *cards.Instance) CardZoneView {
         return .{ .zone = zone, .layout = getLayout(zone), .card_list = card_list };
     }
@@ -188,38 +194,6 @@ const PlayerAvatar = struct {
     }
 };
 
-const Opposition = struct {
-    enemies: []*combat.Agent,
-
-    fn init(agents: []*combat.Agent) Opposition {
-        return Opposition{
-            .enemies = agents,
-        };
-    }
-
-    fn hitTest(self: *const Opposition, vs: ViewState) ?EnemySprite {
-        for (self.enemies, 0..) |e, i| {
-            const sprite = EnemySprite.init(e.id, i);
-            if (sprite.hitTest(vs)) {
-                return sprite;
-            }
-        }
-        return null;
-    }
-
-    fn appendRenderables(self: *const Opposition, alloc: std.mem.Allocator, list: *std.ArrayList(Renderable)) !void {
-        for (self.enemies, 0..) |e, i| {
-            const sprite = EnemySprite.init(e.id, i);
-            try list.append(alloc, sprite.renderable());
-        }
-    }
-
-    // fn sprites(self: *Opposition) {
-    //     for(self.enemies) {
-    //     }
-    // }
-};
-
 const EnemySprite = struct {
     index: usize,
     id: entity.ID,
@@ -252,25 +226,52 @@ const EnemySprite = struct {
     }
 };
 
-const CardWithRect = struct {
-    card: cards.Instance,
-    rect: Rect,
-    state: CardViewState,
+const Opposition = struct {
+    enemies: []*combat.Agent,
+
+    fn init(agents: []*combat.Agent) Opposition {
+        return Opposition{
+            .enemies = agents,
+        };
+    }
+
+    fn hitTest(self: *const Opposition, vs: ViewState) ?EnemySprite {
+        for (self.enemies, 0..) |e, i| {
+            const sprite = EnemySprite.init(e.id, i);
+            if (sprite.hitTest(vs)) {
+                return sprite;
+            }
+        }
+        return null;
+    }
+
+    fn appendRenderables(self: *const Opposition, alloc: std.mem.Allocator, list: *std.ArrayList(Renderable)) !void {
+        for (self.enemies, 0..) |e, i| {
+            const sprite = EnemySprite.init(e.id, i);
+            try list.append(alloc, sprite.renderable());
+        }
+    }
 };
 
+/// CombatView - view model for representing and interacting with combat
+/// requires an active encounter.
 pub const CombatView = struct {
     world: *const World,
     end_turn_btn: EndTurnButton,
     player_avatar: PlayerAvatar,
     opposition: Opposition,
+    combat_phase: w.GameState,
 
     pub fn init(world: *const World) CombatView {
         var fsm = world.fsm;
+        const phase = fsm.currentState();
+
         return .{
             .world = world,
-            .end_turn_btn = EndTurnButton.init(fsm.currentState()),
+            .end_turn_btn = EndTurnButton.init(phase),
             .player_avatar = PlayerAvatar.init(),
             .opposition = Opposition.init(world.encounter.?.enemies.items),
+            .combat_phase = phase,
         };
     }
 
@@ -284,19 +285,7 @@ pub const CombatView = struct {
         return self.world.player.cards.deck.in_play.items;
     }
 
-    pub fn enemies(self: *const CombatView) []const *combat.Agent {
-        if (self.world.encounter) |*enc| {
-            return enc.enemies.items;
-        }
-        return &.{};
-    }
-
-    pub fn combatPhase(self: *const CombatView) World.GameState {
-        return self.world.fsm.currentState();
-    }
-
     // Input handling - returns command + optional view state update
-
     pub fn handleInput(self: *CombatView, event: s.events.Event, world: *const World, vs: ViewState) InputResult {
         _ = world;
         const cs = vs.combat orelse CombatState{};
@@ -380,12 +369,12 @@ pub const CombatView = struct {
         var list = try std.ArrayList(Renderable).initCapacity(alloc, 32);
 
         // Debug: dark background to show combat view is active
-        try list.append(alloc, .{
-            .filled_rect = .{
-                .rect = .{ .x = 0, .y = 0, .w = 800, .h = 600 },
-                .color = .{ .r = 0, .g = 5, .b = 5, .a = 255 },
-            },
-        });
+        // try list.append(alloc, .{
+        //     .filled_rect = .{
+        //         .rect = .{ .x = 0, .y = 0, .w = 800, .h = 600 },
+        //         .color = .{ .r = 0, .g = 5, .b = 5, .a = 255 },
+        //     },
+        // });
 
         try list.append(alloc, self.player_avatar.renderable());
         try self.opposition.appendRenderables(alloc, &list);
