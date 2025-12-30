@@ -30,7 +30,7 @@ const logical_h = view.logical_h;
 
 pub const header_h = 100;
 pub const footer_h = 100;
-pub const sidebar_w = 700;
+pub const sidebar_w = 500;
 
 pub const origin = s.rect.FPoint{ .x = 0, .y = header_h };
 pub const viewport = IRect{
