@@ -83,81 +83,6 @@ const TechniqueContext = struct {
 };
 
 //
-// EventProcessor - responds to events
-//
-pub const EventProcessor = struct {
-    world: *World,
-    pub fn init(ctx: *World) EventProcessor {
-        return EventProcessor{
-            .world = ctx,
-        };
-    }
-
-    /// Shuffle draw pile and draw cards to hand
-    fn shuffleAndDraw(self: *EventProcessor, count: usize) !void {
-        const pd = switch (self.world.player.cards) {
-            .deck => |*d| d,
-            .pool => return, // pools don't draw
-        };
-
-        var rand = self.world.getRandomSource(.shuffler);
-        try pd.shuffleDrawPile(&rand);
-
-        const to_draw = @min(count, pd.draw.items.len);
-        for (0..to_draw) |_| {
-            if (pd.draw.items.len == 0) break;
-            const card_id = pd.draw.items[0].id;
-            try pd.move(card_id, .draw, .hand);
-        }
-    }
-
-    fn sink(self: *EventProcessor, event: Event) !void {
-        try self.world.events.push(event);
-    }
-
-    pub fn dispatchEvent(self: *EventProcessor, event_system: *EventSystem) !bool {
-        const result = event_system.pop();
-        if (result) |event| {
-            // std.debug.print("             -> dispatchEvent: {}\n", .{event});
-            switch (event) {
-                .game_state_transitioned_to => |state| {
-                    std.debug.print("\nSTATE ==> {}\n\n", .{state});
-
-                    switch (state) {
-                        .player_card_selection => {},
-                        // Draw cards when entering draw_hand state
-                        .draw_hand => {
-                            try self.shuffleAndDraw(5);
-                            try self.world.transitionTo(.player_card_selection);
-                        },
-                        .tick_resolution => {
-                            const res = try self.world.processTick();
-                            std.debug.print("Tick Resolution: {any}\n", .{res});
-                            try self.world.transitionTo(.animating);
-                        },
-                        .animating => {
-                            try self.world.transitionTo(.draw_hand);
-                        },
-                        else => {
-                            std.debug.print("unhandled world state transition: {}", .{state});
-                        },
-                    }
-
-                    for (self.world.encounter.?.enemies.items) |mob| {
-                        for (mob.cards.deck.in_play.items) |instance| {
-                            log("cards in play (mob): {s}\n", .{instance.template.name});
-                        }
-                    }
-                },
-                .draw_random => {},
-                else => |data| std.debug.print("event processed: {}\n", .{data}),
-            }
-            return true;
-        } else return false;
-    }
-};
-
-//
 // HANDLER
 //
 pub const CommandHandler = struct {
@@ -185,7 +110,10 @@ pub const CommandHandler = struct {
                 try self.cancelActionCard(id);
             },
             .end_turn => {
-                try self.world.transitionTo(.tick_resolution);
+                try self.world.transitionTo(.commit_phase);
+            },
+            .commit_turn => {
+
             },
             else => {
                 std.debug.print("UNHANDLED COMMAND: -- {any}", .{cmd});
@@ -288,6 +216,81 @@ pub const CommandHandler = struct {
     }
 };
 
+//
+// EventProcessor - responds to events
+//
+pub const EventProcessor = struct {
+    world: *World,
+    pub fn init(ctx: *World) EventProcessor {
+        return EventProcessor{
+            .world = ctx,
+        };
+    }
+
+    /// Shuffle draw pile and draw cards to hand
+    fn shuffleAndDraw(self: *EventProcessor, count: usize) !void {
+        const pd = switch (self.world.player.cards) {
+            .deck => |*d| d,
+            .pool => return, // pools don't draw
+        };
+
+        var rand = self.world.getRandomSource(.shuffler);
+        try pd.shuffleDrawPile(&rand);
+
+        const to_draw = @min(count, pd.draw.items.len);
+        for (0..to_draw) |_| {
+            if (pd.draw.items.len == 0) break;
+            const card_id = pd.draw.items[0].id;
+            try pd.move(card_id, .draw, .hand);
+        }
+    }
+
+    fn sink(self: *EventProcessor, event: Event) !void {
+        try self.world.events.push(event);
+    }
+
+    pub fn dispatchEvent(self: *EventProcessor, event_system: *EventSystem) !bool {
+        const result = event_system.pop();
+        if (result) |event| {
+            // std.debug.print("             -> dispatchEvent: {}\n", .{event});
+            switch (event) {
+                .game_state_transitioned_to => |state| {
+                    std.debug.print("\nSTATE ==> {}\n\n", .{state});
+
+                    switch (state) {
+                        .player_card_selection => {},
+                        // Draw cards when entering draw_hand state
+                        .draw_hand => {
+                            try self.shuffleAndDraw(5);
+                            try self.world.transitionTo(.player_card_selection);
+                        },
+                        .commit_phase => {},
+                        .tick_resolution => {
+                            const res = try self.world.processTick();
+                            std.debug.print("Tick Resolution: {any}\n", .{res});
+                            try self.world.transitionTo(.animating);
+                        },
+                        .animating => {
+                            try self.world.transitionTo(.draw_hand);
+                        },
+                        else => {
+                            std.debug.print("unhandled world state transition: {}", .{state});
+                        },
+                    }
+
+                    for (self.world.encounter.?.enemies.items) |mob| {
+                        for (mob.cards.deck.in_play.items) |instance| {
+                            log("cards in play (mob): {s}\n", .{instance.template.name});
+                        }
+                    }
+                },
+                .draw_random => {},
+                else => |data| std.debug.print("event processed: {}\n", .{data}),
+            }
+            return true;
+        } else return false;
+    }
+};
 // ============================================================================
 // Card Validity (rule.valid predicates - can this card be used by this actor?)
 // ============================================================================

@@ -24,6 +24,7 @@ pub const Command = union(enum) {
     play_card: ID,
     cancel_card: ID,
     end_turn: void,
+    commit_turn: void,
 
     // Combat - targeting
     select_target: struct { target_id: ID },

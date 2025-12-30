@@ -59,6 +59,7 @@ pub const Coordinator = struct {
             // All combat-related states use CombatView
             .draw_hand,
             .player_card_selection,
+            .commit_phase,
             .tick_resolution,
             .player_reaction,
             .animating,

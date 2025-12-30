@@ -159,6 +159,99 @@ const CardZoneView = struct {
     }
 };
 
+const MenuBar = struct {};
+
+const PlayerAvatar = struct {
+    rect: Rect,
+    asset_id: AssetId,
+
+    fn init() PlayerAvatar {
+        return PlayerAvatar{
+            .rect = Rect{
+                .x = 200,
+                .y = 50,
+                .w = 48,
+                .h = 48,
+            },
+            .asset_id = AssetId.player_halberdier,
+        };
+    }
+
+    fn hitTest(self: *const PlayerAvatar, vs: ViewState) bool {
+        return self.rect.pointIn(vs.mouse);
+    }
+    fn renderable(self: *const PlayerAvatar) Renderable {
+        return .{ .sprite = .{
+            .asset = self.asset_id,
+            .dst = self.rect,
+        } };
+    }
+};
+
+const Opposition = struct {
+    enemies: []*combat.Agent,
+
+    fn init(agents: []*combat.Agent) Opposition {
+        return Opposition{
+            .enemies = agents,
+        };
+    }
+
+    fn hitTest(self: *const Opposition, vs: ViewState) ?EnemySprite {
+        for (self.enemies, 0..) |e, i| {
+            const sprite = EnemySprite.init(e.id, i);
+            if (sprite.hitTest(vs)) {
+                return sprite;
+            }
+        }
+        return null;
+    }
+
+    fn appendRenderables(self: *const Opposition, alloc: std.mem.Allocator, list: *std.ArrayList(Renderable)) !void {
+        for (self.enemies, 0..) |e, i| {
+            const sprite = EnemySprite.init(e.id, i);
+            try list.append(alloc, sprite.renderable());
+        }
+    }
+
+    // fn sprites(self: *Opposition) {
+    //     for(self.enemies) {
+    //     }
+    // }
+};
+
+const EnemySprite = struct {
+    index: usize,
+    id: entity.ID,
+
+    rect: Rect,
+    asset_id: AssetId,
+
+    fn init(id: entity.ID, index: usize) EnemySprite {
+        return EnemySprite{
+            .rect = Rect{
+                .x = 300 + 60 * @as(f32, @floatFromInt(index)),
+                .y = 50,
+                .w = 48,
+                .h = 48,
+            },
+            .asset_id = AssetId.thief,
+            .id = id,
+            .index = index,
+        };
+    }
+
+    fn hitTest(self: *const EnemySprite, vs: ViewState) bool {
+        return self.rect.pointIn(vs.mouse);
+    }
+    fn renderable(self: *const EnemySprite) Renderable {
+        return .{ .sprite = .{
+            .asset = self.asset_id,
+            .dst = self.rect,
+        } };
+    }
+};
+
 const CardWithRect = struct {
     card: cards.Instance,
     rect: Rect,
@@ -168,12 +261,16 @@ const CardWithRect = struct {
 pub const CombatView = struct {
     world: *const World,
     end_turn_btn: EndTurnButton,
+    player_avatar: PlayerAvatar,
+    opposition: Opposition,
 
     pub fn init(world: *const World) CombatView {
         var fsm = world.fsm;
         return .{
             .world = world,
             .end_turn_btn = EndTurnButton.init(fsm.currentState()),
+            .player_avatar = PlayerAvatar.init(),
+            .opposition = Opposition.init(world.encounter.?.enemies.items),
         };
     }
 
@@ -233,9 +330,9 @@ pub const CombatView = struct {
             return .{ .command = .{ .play_card = id } };
         } else if (self.inPlayZone().hitTest(vs)) |id| {
             return .{ .command = .{ .cancel_card = id } };
-        } else if (self.hitTestEnemies(vs.mouse)) |target_id| {
-            std.debug.print("ENEMY HIT: id={d}:{d}\n", .{ target_id.index, target_id.generation });
-            return .{ .command = .{ .select_target = .{ .target_id = target_id } } };
+        } else if (self.opposition.hitTest(vs)) |sprite| {
+            std.debug.print("ENEMY HIT: id={d}:{d}\n", .{ sprite.id.index, sprite.id.generation });
+            return .{ .command = .{ .select_target = .{ .target_id = sprite.id } } };
         } else if (self.end_turn_btn.hitTest(vs)) {
             return .{ .command = .{ .end_turn = {} } };
         }
@@ -279,25 +376,6 @@ pub const CombatView = struct {
         return .{};
     }
 
-    fn hitTestEnemies(self: *CombatView, pos: Point) ?entity.ID {
-        const enemy_list = self.enemies();
-        const enemy_width: f32 = 80;
-        const enemy_height: f32 = 120;
-        const enemy_y: f32 = 100;
-        const start_x: f32 = 100;
-        const spacing: f32 = 120;
-
-        for (enemy_list, 0..) |enemy, i| {
-            const enemy_x = start_x + @as(f32, @floatFromInt(i)) * spacing;
-            if (pos.x >= enemy_x and pos.x < enemy_x + enemy_width and
-                pos.y >= enemy_y and pos.y < enemy_y + enemy_height)
-            {
-                return enemy.id;
-            }
-        }
-        return null;
-    }
-
     pub fn renderables(self: *const CombatView, alloc: std.mem.Allocator, vs: ViewState) !std.ArrayList(Renderable) {
         var list = try std.ArrayList(Renderable).initCapacity(alloc, 32);
 
@@ -309,29 +387,8 @@ pub const CombatView = struct {
             },
         });
 
-        // Player sprite (top area)
-        try list.append(alloc, .{
-            .sprite = .{
-                .asset = AssetId.player_halberdier,
-                .dst = .{ .x = 200, .y = 50, .w = 48 * 2, .h = 48 * 2 },
-            },
-        });
-
-        // Snail sprite - enemy
-        try list.append(alloc, .{
-            .sprite = .{
-                .asset = AssetId.fredrick_snail,
-                .dst = .{ .x = 400, .y = 50, .w = 48 * 2, .h = 48 * 2 },
-            },
-        });
-
-        // Snail sprite - enemy
-        try list.append(alloc, .{
-            .sprite = .{
-                .asset = AssetId.thief,
-                .dst = .{ .x = 500, .y = 50, .w = 48 * 2, .h = 48 * 2 },
-            },
-        });
+        try list.append(alloc, self.player_avatar.renderable());
+        try self.opposition.appendRenderables(alloc, &list);
 
         // Player cards - render in_play first (behind), then hand (in front)
         var last: ?Renderable = null;

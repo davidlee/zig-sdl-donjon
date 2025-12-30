@@ -55,20 +55,22 @@ pub const EntityMap = struct {
 pub const GameEvent = enum {
     start_encounter,
     begin_player_card_selection,
+    begin_commit_phask,
     begin_tick_resolution,
-    player_reaction_opportunity,
-    continue_tick_resolution,
+    // continue_tick_resolution,
     animate_resolution,
     redraw,
     show_loot,
     player_died,
 };
 
+// TODO move the encounter-specific bits into an encounter fsm ...
 pub const GameState = enum {
     splash,
     draw_hand,
-    player_card_selection,
-    tick_resolution, // NEW: resolve committed actions
+    player_card_selection, // choose cards in secret
+    commit_phase, // reveal; vary or reinforce selections
+    tick_resolution, //: resolve committed actions
     player_reaction,
     encounter_summary,
     animating,
@@ -96,9 +98,10 @@ pub const World = struct {
         try fsm.addEventAndTransition(.start_encounter, .splash, .draw_hand);
 
         try fsm.addEventAndTransition(.begin_player_card_selection, .draw_hand, .player_card_selection);
-        try fsm.addEventAndTransition(.begin_tick_resolution, .player_card_selection, .tick_resolution);
-        try fsm.addEventAndTransition(.player_reaction_opportunity, .tick_resolution, .player_reaction);
-        try fsm.addEventAndTransition(.continue_tick_resolution, .player_reaction, .tick_resolution);
+        try fsm.addEventAndTransition(.begin_commit_phask, .player_card_selection, .commit_phase);
+        try fsm.addEventAndTransition(.begin_tick_resolution, .commit_phase, .tick_resolution);
+        // try fsm.addEventAndTransition(.player_reaction_opportunity, .tick_resolution, .player_reaction);
+        // try fsm.addEventAndTransition(.continue_tick_resolution, .player_reaction, .tick_resolution);
         try fsm.addEventAndTransition(.animate_resolution, .tick_resolution, .animating);
         // try fsm.addEventAndTransition(.continue_tick_resolution, .animating, .tick_resolution);
 
