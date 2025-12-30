@@ -123,10 +123,19 @@ pub const EventProcessor = struct {
                 .game_state_transitioned_to => |state| {
                     std.debug.print("\nSTATE ==> {}\n\n", .{state});
 
-                    // Draw cards when entering draw_hand state
-                    if (state == .draw_hand) {
-                        try self.shuffleAndDraw(5);
-                        try self.world.transitionTo(.player_card_selection);
+                    switch (state) {
+                        .player_card_selection => {},
+                        // Draw cards when entering draw_hand state
+                        .draw_hand => {
+                            try self.shuffleAndDraw(5);
+                            try self.world.transitionTo(.player_card_selection);
+                        },
+                        .tick_resolution => {
+                            const res = try self.world.processTick();
+                            std.debug.print("Tick Resolution: {any}\n", .{res});
+                            // try self.world.transitionTo(.player_card_selection);
+                        },
+                        else => {std.debug.print("unhandled world state transition: {}",.{state});},
                     }
 
                     for (self.world.encounter.?.enemies.items) |mob| {

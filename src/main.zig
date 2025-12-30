@@ -49,6 +49,9 @@ pub fn main() !void {
     var ux = try gfx.UX.init(alloc, &config);
     defer ux.deinit();
 
+    // make sure we got a mob, etc
+    try harness.setupEncounter(world);
+
     var coordinator = try presentation.Coordinator.init(alloc, world, &ux);
     defer coordinator.deinit();
 

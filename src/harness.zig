@@ -25,6 +25,26 @@ const World = @import("domain/world.zig").World;
 
 const log = std.debug.print;
 
+pub fn setupEncounter(world: *World) !void {
+    const mobdeck = try Deck.init(world.alloc, &BeginnerDeck);
+    var buckler = try world.alloc.create(weapon.Instance);
+    buckler.id = try world.entities.weapons.insert(buckler);
+    buckler.template = weapon_list.byName("buckler");
+
+    const mob = try combat.Agent.init(
+        world.alloc,
+        world.entities.agents,
+        .ai,
+        combat.Strat{ .deck = mobdeck },
+        stats.Block.splat(6),
+        try body.Body.fromPlan(world.alloc, &body.HumanoidPlan),
+        10.0,
+        combat.Armament{ .single = buckler },
+    );
+
+    try world.encounter.?.enemies.append(world.alloc, mob);
+}
+
 pub fn runTestCase(world: *World) !void {
     const mobdeck = try Deck.init(world.alloc, &BeginnerDeck);
     var buckler = try world.alloc.create(weapon.Instance);
