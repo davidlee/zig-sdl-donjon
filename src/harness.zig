@@ -12,6 +12,7 @@ const stats = @import("domain/stats.zig");
 const entity = lib.entity;
 const weapon = @import("domain/weapon.zig");
 const weapon_list = @import("domain/weapon_list.zig");
+const ai = @import("domain/ai.zig");
 
 const EventSystem = events.EventSystem;
 const CommandHandler = apply.CommandHandler;
@@ -30,12 +31,12 @@ pub fn setupEncounter(world: *World) !void {
     var buckler = try world.alloc.create(weapon.Instance);
     buckler.id = try world.entities.weapons.insert(buckler);
     buckler.template = weapon_list.byName("buckler");
-    var ai = combat.SimpleDeckAIDirector{};
+    var dir = ai.SimpleDeckAIDirector{};
 
     const mob = try combat.Agent.init(
         world.alloc,
         world.entities.agents,
-        .{ .ai = ai.director() },
+        .{ .ai = dir.director() },
         combat.Strat{ .deck = mobdeck },
         stats.Block.splat(6),
         try body.Body.fromPlan(world.alloc, &body.HumanoidPlan),
