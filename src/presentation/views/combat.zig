@@ -356,7 +356,7 @@ pub const CombatView = struct {
         } else if (self.inPlayZone().hitTest(vs)) |id| {
             return .{ .command = .{ .cancel_card = id } };
         } else if (self.opposition.hitTest(vs)) |sprite| {
-            std.debug.print("ENEMY HIT: id={d}:{d}\n", .{ sprite.id.index, sprite.id.generation });
+            // std.debug.print("ENEMY HIT: id={d}:{d}\n", .{ sprite.id.index, sprite.id.generation });
             return .{ .command = .{ .select_target = .{ .target_id = sprite.id } } };
         } else if (self.end_turn_btn.hitTest(vs)) {
             return .{ .command = .{ .end_turn = {} } };
@@ -373,8 +373,7 @@ pub const CombatView = struct {
     }
 
     fn enemyInPlayZone(self: *const CombatView) CardZoneView {
-        const layout = getLayoutOffset(.in_play, Point{ .x = 200, .y = 0 });
-        std.debug.print("??={any}",.{self.enemyInPlay()});
+        const layout = getLayoutOffset(.in_play, Point{ .x = 400, .y = 0 });
         return CardZoneView.initWithLayout(.in_play, self.enemyInPlay(), layout);
     }
 

@@ -30,11 +30,12 @@ pub fn setupEncounter(world: *World) !void {
     var buckler = try world.alloc.create(weapon.Instance);
     buckler.id = try world.entities.weapons.insert(buckler);
     buckler.template = weapon_list.byName("buckler");
+    var ai = combat.SimpleDeckAIDirector{};
 
     const mob = try combat.Agent.init(
         world.alloc,
         world.entities.agents,
-        .ai,
+        .{ .ai = ai.director() },
         combat.Strat{ .deck = mobdeck },
         stats.Block.splat(6),
         try body.Body.fromPlan(world.alloc, &body.HumanoidPlan),

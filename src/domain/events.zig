@@ -30,7 +30,7 @@ pub const Event = union(enum) {
     entity_died: u32, // Payload: just the ID
     mob_died: entity.ID,
 
-    played_action_card: struct { instance: entity.ID, template: u64 },
+    played_action_card: struct { instance: entity.ID, template: u64 }, // FIXME needs more - agent id and type(player / ai)
     card_moved: struct { instance: entity.ID, from: Zone, to: Zone },
 
     game_state_transitioned_to: world.GameState,
@@ -45,7 +45,7 @@ pub const Event = union(enum) {
         time: f32,
         // TODO instances -> [exhausted?]
     },
-
+    
     // wound events
     wound_inflicted: struct {
         agent_id: entity.ID,

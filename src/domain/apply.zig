@@ -119,6 +119,8 @@ pub const CommandHandler = struct {
         }
     }
 
+    // TODO: consider moving this logic (helpers for player commands) to player.zig
+    //
     pub fn cancelActionCard(self: *CommandHandler, id: entity.ID) !void {
         const player = self.world.player;
         const game_state = self.world.fsm.currentState();
@@ -269,7 +271,16 @@ pub const EventProcessor = struct {
                     std.debug.print("\nSTATE ==> {}\n\n", .{state});
 
                     switch (state) {
-                        .player_card_selection => {},
+                        .player_card_selection => {
+                            for (self.world.encounter.?.enemies.items) |agent| {
+                                switch (agent.director) {
+                                    .ai => |*director| {
+                                        try director.playCards(agent, self.world.player, event_system);
+                                    },
+                                    else => unreachable,
+                                }
+                            }
+                        },
                         // Draw cards when entering draw_hand state
                         .draw_hand => {
                             std.debug.print("draw hand\n", .{});
