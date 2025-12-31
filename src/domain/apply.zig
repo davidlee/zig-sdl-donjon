@@ -145,22 +145,15 @@ pub const CommandHandler = struct {
         const card = try self.world.player.cards.deck.find(id, .in_play);
 
         try deck.move(id, .in_play, .hand);
-        try self.sink(
-            Event{
-                .card_moved = .{ .instance = card.id, .from = .in_play, .to = .hand },
-            },
-        );
+        try self.sink(Event{
+            .card_moved = .{ .instance = card.id, .from = .in_play, .to = .hand, .actor = .{ .id = player.id, .player = true } },
+        });
 
         player.stamina_available += card.template.cost.stamina;
         player.time_available += card.template.cost.time;
 
         try self.sink(
-            Event{
-                .card_cost_returned = .{
-                    .stamina = card.template.cost.stamina,
-                    .time = card.template.cost.time,
-                },
-            },
+            Event{ .card_cost_returned = .{ .stamina = card.template.cost.stamina, .time = card.template.cost.time, .actor = .{ .id = player.id, .player = true } } },
         );
     }
 
@@ -314,36 +307,30 @@ pub fn validateCardSelection(actor: *Agent, card: *Instance) !bool {
 /// Doesn't perform validation. Just moves card, reserves costs, emits events.
 pub fn playValidCardReservingCosts(evs: *EventSystem, actor: *Agent, card: *Instance) !void {
     const deck = &actor.cards.deck;
+    const is_player = switch (actor.director) {
+        .player => true,
+        else => false,
+    };
+
+    const actor_meta: events.AgentMeta = .{ .id = actor.id, .player = is_player };
 
     try deck.move(card.id, .hand, .in_play);
-    try evs.push(
-        Event{
-            .card_moved = .{ .instance = card.id, .from = .hand, .to = .in_play },
-        },
-    );
+    try evs.push(Event{
+        .card_moved = .{ .instance = card.id, .from = .hand, .to = .in_play, .actor = actor_meta },
+    });
 
     // sink an event for the card being played
-    try evs.push(
-        Event{
-            .played_action_card = .{
-                .instance = card.id,
-                .template = card.template.id,
-            },
-        },
-    );
+    try evs.push(Event{
+        .played_action_card = .{ .instance = card.id, .template = card.template.id, .actor = actor_meta },
+    });
 
     // put a hold on the time & stamina costs for the UI to display / player state
     actor.stamina_available -= card.template.cost.stamina;
     actor.time_available -= card.template.cost.time;
 
-    try evs.push(
-        Event{
-            .card_cost_reserved = .{
-                .stamina = card.template.cost.stamina,
-                .time = card.template.cost.time,
-            },
-        },
-    );
+    try evs.push(Event{
+        .card_cost_reserved = .{ .stamina = card.template.cost.stamina, .time = card.template.cost.time, .actor = actor_meta },
+    });
 }
 
 // ============================================================================
@@ -589,6 +576,11 @@ pub fn applyCommittedCosts(
     for (committed) |action| {
         const card = action.card orelse continue;
         const agent = action.actor;
+        const is_player = switch (agent.director) {
+            .player => true,
+            else => false,
+        };
+        const actor_meta: events.AgentMeta = .{ .id = agent.id, .player = is_player };
 
         // Deduct actual stamina cost
         const stamina_cost = card.template.cost.stamina;
@@ -617,6 +609,7 @@ pub fn applyCommittedCosts(
                         .instance = card.id,
                         .from = .in_play,
                         .to = dest_zone,
+                        .actor = actor_meta,
                     },
                 });
             },

@@ -92,7 +92,7 @@ pub const SimpleDeckDirector = struct {
             const card = dk.hand.items[hand_index];
             if (apply.isCardSelectionValid(agent, card)) {
                 try apply.playValidCardReservingCosts(events, agent, card);
-                try events.push(e.Event{ .played_action_card = .{ .instance = card.id, .template = card.template.id } });
+                try events.push(e.Event{ .played_action_card = .{ .instance = card.id, .template = card.template.id, .actor = .{ .id = agent.id, .player = false } } });
                 to_play -= 1;
             }
         }

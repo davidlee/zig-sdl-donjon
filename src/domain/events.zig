@@ -25,32 +25,42 @@ pub const RandomWithMeta = struct {
     result: f32,
 };
 
+pub const AgentMeta = struct {
+    id: entity.ID,
+    player: bool = false,
+};
+
 // tagged union: events
 pub const Event = union(enum) {
     entity_died: u32, // Payload: just the ID
     mob_died: entity.ID,
 
-    played_action_card: struct { instance: entity.ID, template: u64 }, // FIXME needs more - agent id and type(player / ai)
-    card_moved: struct { instance: entity.ID, from: Zone, to: Zone },
+    played_action_card: struct { instance: entity.ID, template: u64, actor: AgentMeta }, // FIXME needs more - agent id and type(player / ai)
+    card_moved: struct { instance: entity.ID, from: Zone, to: Zone, actor: AgentMeta },
 
     game_state_transitioned_to: world.GameState,
 
     card_cost_reserved: struct {
         stamina: f32,
         time: f32,
+        actor: AgentMeta,
     },
 
     card_cost_returned: struct {
         stamina: f32,
         time: f32,
+        actor: AgentMeta,
         // TODO instances -> [exhausted?]
     },
-    
+
+    // TODO update agent refs for the rest
+
     // wound events
     wound_inflicted: struct {
         agent_id: entity.ID,
         wound: body.Wound,
         part_idx: body.PartIndex,
+        // actor: AgentMeta,
     },
 
     body_part_severed: struct {
