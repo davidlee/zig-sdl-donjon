@@ -9,7 +9,10 @@ const AssetId = view.AssetId;
 const Renderable = view.Renderable;
 const CardRenderer = card_renderer.CardRenderer;
 
-const font_path = "assets/font/Caudex-Bold.ttf";
+const normal_font_path = "assets/font/Caudex-Bold.ttf";
+const sans_font_path = "assets/font/NotoSans.ttf";
+const mono_font_path = "assets/font/AtkinsonHyperlegibleMono.ttf";
+const small_font_path = mono_font_path;
 const tagline_text = "When life gives you goblins, make goblinade.";
 
 // Asset registry - indexed by AssetId
@@ -55,6 +58,7 @@ pub const UX = struct {
     assets: [AssetCount]?s.render.Texture,
     cards: CardRenderer,
     font: s.ttf.Font,
+    font_small: s.ttf.Font,
 
     const SpriteEntry = struct {
         filename: [:0]const u8,
@@ -104,16 +108,21 @@ pub const UX = struct {
 
         try loadSprites(&assets, renderer);
 
-        // Load font (kept alive for card rendering)
+        // Load fonts
         try s.ttf.init();
-        const font = try s.ttf.Font.init(font_path, 24);
-        errdefer font.deinit();
+
+        const font_normal = try s.ttf.Font.init(normal_font_path, 18);
+        // try font_normal.setSdf(true);
+        errdefer font_normal.deinit();
+        const font_small = try s.ttf.Font.init(small_font_path, 14);
+        // try font_small.setSdf(true);
+        errdefer font_small.deinit();
 
         // Pre-render tagline
         const white: s.ttf.Color = .{ .r = 255, .g = 255, .b = 255, .a = 255 };
         assets[@intFromEnum(AssetId.splash_tagline)] = try textureFromSurface(
             renderer,
-            try font.renderTextBlended(tagline_text, white),
+            try font_normal.renderTextBlended(tagline_text, white),
         );
 
         return UX{
@@ -122,14 +131,16 @@ pub const UX = struct {
             .renderer = renderer,
             .fps_capper = s.extras.FramerateCapper(f32){ .mode = .{ .limited = config.fps } },
             .assets = assets,
-            .cards = CardRenderer.init(alloc, renderer, font),
-            .font = font,
+            .cards = CardRenderer.init(alloc, renderer, font_normal),
+            .font = font_normal,
+            .font_small = font_small,
         };
     }
 
     pub fn deinit(self: *UX) void {
         self.cards.deinit();
         self.font.deinit();
+        self.font_small.deinit();
         s.ttf.quit();
         for (&self.assets) |*asset| {
             if (asset.*) |tex| tex.deinit();
@@ -164,9 +175,7 @@ pub const UX = struct {
                 .sprite => |sprite| try self.renderSprite(sprite),
                 .filled_rect => |fr| try self.renderFilledRect(fr),
                 .card => |card| try self.renderCard(card),
-                .text => {
-                    // TODO: dynamic text rendering
-                },
+                .text => |text| try self.renderText(text),
             }
         }
     }
@@ -192,9 +201,7 @@ pub const UX = struct {
                 .sprite => |sprite| try self.renderSprite(sprite),
                 .filled_rect => |fr| try self.renderFilledRect(fr),
                 .card => |card| try self.renderCard(card),
-                .text => {
-                    // TODO: dynamic text rendering
-                },
+                .text => |text| try self.renderText(text),
             }
         }
 
@@ -247,6 +254,38 @@ pub const UX = struct {
     fn renderFilledRect(self: *UX, fr: view.FilledRect) !void {
         try self.renderer.setDrawColor(fr.color);
         try self.renderer.renderFillRect(fr.rect);
+    }
+
+    fn renderText(self: *UX, text: view.Text) !void {
+        if (text.content.len == 0) return;
+
+        const color: s.ttf.Color = .{
+            .r = text.color.r,
+            .g = text.color.g,
+            .b = text.color.b,
+            .a = text.color.a,
+        };
+
+        const font = switch (text.font_size) {
+            .small => self.font_small,
+            .normal => self.font,
+        };
+
+        // Render text to surface, then texture
+        // const surface = font.renderTextLcd(text.content, color, s.ttf.Color{ .r = 0, .g = 0, .b = 0, .a = 0 }) catch return;
+        const surface = font.renderTextBlended(text.content, color) catch return;
+        const tex = textureFromSurface(self.renderer, surface) catch return;
+        defer tex.deinit();
+
+        // Get texture dimensions and render at position
+        const tex_w, const tex_h = try tex.getSize();
+        const dst = rect.FRect{
+            .x = text.pos.x,
+            .y = text.pos.y,
+            .w = tex_w,
+            .h = tex_h,
+        };
+        try self.renderer.renderTexture(tex, null, dst);
     }
 };
 

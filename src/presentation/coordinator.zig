@@ -19,9 +19,11 @@ const splash = @import("views/splash.zig");
 const combat = @import("views/combat.zig");
 const summary = @import("views/summary.zig");
 const chrome = @import("views/chrome.zig");
+const combat_log = @import("combat_log.zig");
 
 const EffectSystem = effects.EffectSystem;
 const EffectMapper = effects.EffectMapper;
+const CombatLog = combat_log.CombatLog;
 const View = view.View;
 const ViewState = view_state.ViewState;
 const Point = view_state.Point;
@@ -34,6 +36,7 @@ pub const Coordinator = struct {
     world: *World,
     ux: *UX,
     effect_system: EffectSystem,
+    combat_log: CombatLog,
     current_time: f32,
     vs: ViewState,
 
@@ -43,6 +46,7 @@ pub const Coordinator = struct {
             .world = world,
             .ux = ux,
             .effect_system = try EffectSystem.init(alloc),
+            .combat_log = try CombatLog.init(alloc),
             .current_time = 0,
             .vs = .{},
         };
@@ -50,6 +54,7 @@ pub const Coordinator = struct {
 
     pub fn deinit(self: *Coordinator) void {
         self.effect_system.deinit();
+        self.combat_log.deinit();
     }
 
     // Get the active view based on game state
@@ -77,7 +82,7 @@ pub const Coordinator = struct {
     }
 
     fn chromeView(self: *Coordinator) chrome.ChromeView {
-        return chrome.ChromeView.init(self.world);
+        return chrome.ChromeView.init(self.world, &self.combat_log);
     }
 
     // Handle SDL input event
@@ -138,6 +143,10 @@ pub const Coordinator = struct {
         for (self.world.events.current_events.items) |event| {
             if (EffectMapper.map(event)) |effect| {
                 try self.effect_system.push(effect);
+            }
+            // Format event for combat log
+            if (try combat_log.format(event, self.world, self.alloc)) |text| {
+                try self.combat_log.append(text);
             }
         }
         try self.effect_system.spawnAnimations(self.current_time);

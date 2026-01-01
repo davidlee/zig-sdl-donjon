@@ -65,10 +65,15 @@ pub const Sprite = struct {
     alpha: u8 = 255,
 };
 
+pub const FontSize = enum {
+    small, // 14pt - combat log, UI details
+    normal, // 24pt - general text
+};
+
 pub const Text = struct {
     content: []const u8,
     pos: Point,
-    size: f32 = 16,
+    font_size: FontSize = .normal,
     color: Color = .{ .r = 255, .g = 255, .b = 255, .a = 255 },
 };
 

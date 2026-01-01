@@ -154,21 +154,18 @@ pub const EventSystem = struct {
     current_events: std.ArrayList(Event),
     next_events: std.ArrayList(Event),
     alloc: std.mem.Allocator,
-    logger: EventLog,
 
     pub fn init(alloc: std.mem.Allocator) !EventSystem {
         return .{
             .current_events = try std.ArrayList(Event).initCapacity(alloc, 1000),
             .next_events = try std.ArrayList(Event).initCapacity(alloc, 1000),
             .alloc = alloc,
-            .logger = try EventLog.init(alloc),
         };
     }
 
     pub fn deinit(self: *EventSystem) void {
         self.current_events.deinit(self.alloc);
         self.next_events.deinit(self.alloc);
-        self.logger.deinit();
     }
 
     fn logQueueSize(self: *EventSystem, label: []const u8) void {
@@ -203,21 +200,5 @@ pub const EventSystem = struct {
         // 'next' becomes 'current' (to be read).
         // 'current' becomes 'next' (empty, ready to be written to).
         std.mem.swap(std.ArrayList(Event), &self.current_events, &self.next_events);
-    }
-};
-
-pub const EventLog = struct {
-    alloc: std.mem.Allocator,
-    entries: std.ArrayList([]const u8),
-
-    pub fn init(alloc: std.mem.Allocator) !@This() {
-        return @This(){
-            .alloc = alloc,
-            .entries = try std.ArrayList([]const u8).initCapacity(alloc, 1000),
-        };
-    }
-
-    pub fn deinit(self: *EventLog) void {
-        self.entries.deinit(self.alloc);
     }
 };
