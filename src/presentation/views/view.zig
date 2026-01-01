@@ -8,6 +8,7 @@ const s = @import("sdl3");
 const infra = @import("infra");
 const Command = infra.commands.Command;
 const World = @import("../../domain/world.zig").World;
+const combat_log = @import("../combat_log.zig");
 
 const splash = @import("splash.zig");
 const menu = @import("menu.zig");
@@ -49,6 +50,15 @@ pub const Renderable = union(enum) {
     text: Text,
     filled_rect: FilledRect,
     card: Card,
+    log_pane: LogPane,
+};
+
+/// Combat log pane - UX renders with texture caching
+pub const LogPane = struct {
+    entries: []const combat_log.Entry,
+    rect: Rect,
+    scroll_offset: usize, // cache invalidation key
+    entry_count: usize, // cache invalidation key
 };
 
 // Card renderable - UX will use CardRenderer to get/create texture

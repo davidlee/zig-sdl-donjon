@@ -5,9 +5,17 @@ const s = @import("sdl3");
 const rect = s.rect;
 const view = @import("views/view.zig");
 const card_renderer = @import("card_renderer.zig");
+const combat_log = @import("combat_log.zig");
 const AssetId = view.AssetId;
 const Renderable = view.Renderable;
 const CardRenderer = card_renderer.CardRenderer;
+
+/// Cached texture for combat log rendering
+const LogTextureCache = struct {
+    texture: s.render.Texture,
+    scroll_offset: usize,
+    entry_count: usize,
+};
 
 const normal_font_path = "assets/font/Caudex-Bold.ttf";
 const sans_font_path = "assets/font/NotoSans.ttf";
@@ -59,6 +67,7 @@ pub const UX = struct {
     cards: CardRenderer,
     font: s.ttf.Font,
     font_small: s.ttf.Font,
+    log_cache: ?LogTextureCache = null,
 
     const SpriteEntry = struct {
         filename: [:0]const u8,
@@ -138,6 +147,7 @@ pub const UX = struct {
     }
 
     pub fn deinit(self: *UX) void {
+        if (self.log_cache) |cache| cache.texture.deinit();
         self.cards.deinit();
         self.font.deinit();
         self.font_small.deinit();
@@ -176,6 +186,7 @@ pub const UX = struct {
                 .filled_rect => |fr| try self.renderFilledRect(fr),
                 .card => |card| try self.renderCard(card),
                 .text => |text| try self.renderText(text),
+                .log_pane => |pane| try self.renderLogPane(pane),
             }
         }
     }
@@ -202,6 +213,7 @@ pub const UX = struct {
                 .filled_rect => |fr| try self.renderFilledRect(fr),
                 .card => |card| try self.renderCard(card),
                 .text => |text| try self.renderText(text),
+                .log_pane => |pane| try self.renderLogPane(pane),
             }
         }
 
@@ -286,6 +298,107 @@ pub const UX = struct {
             .h = tex_h,
         };
         try self.renderer.renderTexture(tex, null, dst);
+    }
+
+    const line_height: i32 = 18;
+    const log_padding: i32 = 10;
+
+    fn renderLogPane(self: *UX, pane: view.LogPane) !void {
+        // Check cache validity
+        if (self.log_cache) |cache| {
+            if (cache.scroll_offset == pane.scroll_offset and
+                cache.entry_count == pane.entry_count)
+            {
+                // Cache valid - render cached texture
+                const tex_w, const tex_h = try cache.texture.getSize();
+                const dst = rect.FRect{
+                    .x = pane.rect.x,
+                    .y = pane.rect.y,
+                    .w = tex_w,
+                    .h = tex_h,
+                };
+                try self.renderer.renderTexture(cache.texture, null, dst);
+                return;
+            }
+            // Cache invalid - free old texture
+            cache.texture.deinit();
+            self.log_cache = null;
+        }
+
+        // Rebuild cache
+        const new_texture = try self.buildLogTexture(pane);
+        self.log_cache = .{
+            .texture = new_texture,
+            .scroll_offset = pane.scroll_offset,
+            .entry_count = pane.entry_count,
+        };
+
+        // Render the new texture
+        const tex_w, const tex_h = try new_texture.getSize();
+        const dst = rect.FRect{
+            .x = pane.rect.x,
+            .y = pane.rect.y,
+            .w = tex_w,
+            .h = tex_h,
+        };
+        try self.renderer.renderTexture(new_texture, null, dst);
+    }
+
+    fn buildLogTexture(self: *UX, pane: view.LogPane) !s.render.Texture {
+        const pane_w: usize = @intFromFloat(pane.rect.w);
+        const pane_h: usize = @intFromFloat(pane.rect.h);
+
+        // Create target surface with alpha
+        var log_surface = try s.surface.Surface.init(pane_w, pane_h, .packed_argb_8_8_8_8);
+        errdefer log_surface.deinit();
+
+        // Clear to transparent (Pixel is just a u32)
+        try log_surface.fillRect(null, .{ .value = 0 });
+
+        var y: i32 = log_padding;
+        const max_width: i32 = @intCast(pane_w - @as(usize, @intCast(log_padding * 2)));
+
+        for (pane.entries) |entry| {
+            var x: i32 = log_padding;
+
+            for (entry.spans) |span| {
+                if (span.text.len == 0) continue;
+
+                const color: s.ttf.Color = .{
+                    .r = span.color.r,
+                    .g = span.color.g,
+                    .b = span.color.b,
+                    .a = span.color.a,
+                };
+
+                const text_surface = self.font_small.renderTextBlended(span.text, color) catch continue;
+                defer text_surface.deinit();
+
+                const text_w: i32 = @intCast(text_surface.getWidth());
+                const text_h: i32 = @intCast(text_surface.getHeight());
+
+                // Wrap if needed
+                if (x > log_padding and x + text_w > max_width) {
+                    x = log_padding;
+                    y += line_height;
+                }
+
+                // Blit span to log surface
+                const src_rect = s.rect.IRect{ .x = 0, .y = 0, .w = text_w, .h = text_h };
+                const dst_point = s.rect.IPoint{ .x = x, .y = y };
+                try text_surface.blit(src_rect, log_surface, dst_point);
+
+                x += text_w;
+            }
+
+            y += line_height;
+
+            // Stop if we've exceeded the pane height
+            if (y > @as(i32, @intCast(pane_h))) break;
+        }
+
+        // Convert surface to texture
+        return try self.renderer.createTextureFromSurface(log_surface);
     }
 };
 
