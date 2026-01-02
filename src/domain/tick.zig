@@ -29,6 +29,9 @@ pub const CommittedAction = struct {
     stakes: Stakes,
     time_start: f32, // when this action begins (0.0-1.0 within tick)
     time_end: f32, // when this action ends (time_start + cost.time)
+    // From Play modifiers (set during commit phase)
+    damage_mult: f32 = 1.0,
+    advantage_override: ?combat.TechniqueAdvantage = null,
 
     /// Compare by time_start for sorting
     pub fn compareByTime(_: void, a: CommittedAction, b: CommittedAction) bool {
@@ -106,28 +109,39 @@ pub const TickResolver = struct {
         );
     }
 
-    /// Extract committed actions from player's in_play cards
-    pub fn commitPlayerCards(self: *TickResolver, player: *Agent) !void {
+    /// Extract committed actions from player's plays (with modifiers from commit phase)
+    pub fn commitPlayerCards(self: *TickResolver, player: *Agent, encounter: ?*combat.Encounter) !void {
         const pd = switch (player.cards) {
             .deck => |*d| d,
             .pool => return, // player shouldn't use pool
         };
 
+        // Get plays from AgentEncounterState (populated during commit phase)
+        const enc = encounter orelse return;
+        const enc_state = enc.stateFor(player.id) orelse return;
+        const plays = enc_state.current.plays();
+
         var time_cursor: f32 = 0.0;
 
-        for (pd.in_play.items) |card_instance| {
-            const template = card_instance.template;
+        for (plays) |play| {
+            // Get the card instance for this play
+            const card_instance = pd.entities.get(play.primary) orelse continue;
+            const template = card_instance.*.template;
             const tech_expr = template.getTechniqueWithExpression() orelse continue;
-            const time_cost = template.cost.time;
+
+            // Apply cost_mult to time
+            const time_cost = template.cost.time * play.cost_mult;
 
             try self.addAction(.{
                 .actor = player,
-                .card = card_instance,
+                .card = card_instance.*,
                 .technique = tech_expr.technique,
                 .expression = tech_expr.expression,
-                .stakes = .guarded, // TODO: get from card instance or UI
+                .stakes = play.effectiveStakes(),
                 .time_start = time_cursor,
                 .time_end = time_cursor + time_cost,
+                .damage_mult = play.damage_mult,
+                .advantage_override = play.advantage_override,
             });
 
             time_cursor += time_cost;

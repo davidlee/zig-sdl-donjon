@@ -26,6 +26,12 @@ pub const Command = union(enum) {
     end_turn: void,
     commit_turn: void,
 
+    // Combat - commit phase (Focus spending, 1F each)
+    commit_withdraw: ID, // remove card from play, refund stamina
+    commit_add: ID, // add card from hand as new play
+    commit_stack: struct { card_id: ID, target_play_index: usize }, // reinforce existing play
+    commit_done: void, // finish commit phase
+
     // Combat - targeting
     select_target: struct { target_id: ID },
     cancel_targeting: void,

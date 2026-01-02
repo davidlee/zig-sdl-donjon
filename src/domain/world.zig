@@ -55,7 +55,7 @@ pub const EntityMap = struct {
 pub const GameEvent = enum {
     start_encounter,
     begin_player_card_selection,
-    begin_commit_phask,
+    begin_commit_phase,
     begin_tick_resolution,
     // continue_tick_resolution,
     animate_resolution,
@@ -98,7 +98,7 @@ pub const World = struct {
         try fsm.addEventAndTransition(.start_encounter, .splash, .draw_hand);
 
         try fsm.addEventAndTransition(.begin_player_card_selection, .draw_hand, .player_card_selection);
-        try fsm.addEventAndTransition(.begin_commit_phask, .player_card_selection, .commit_phase);
+        try fsm.addEventAndTransition(.begin_commit_phase, .player_card_selection, .commit_phase);
         try fsm.addEventAndTransition(.begin_tick_resolution, .commit_phase, .tick_resolution);
         // try fsm.addEventAndTransition(.player_reaction_opportunity, .tick_resolution, .player_reaction);
         // try fsm.addEventAndTransition(.continue_tick_resolution, .player_reaction, .tick_resolution);
@@ -172,8 +172,9 @@ pub const World = struct {
         // Reset resolver for new tick
         self.tickResolver.reset();
 
-        // Commit player cards
-        try self.tickResolver.commitPlayerCards(self.player);
+        // Commit player cards (using plays from AgentEncounterState)
+        const enc_ptr: ?*combat.Encounter = if (self.encounter) |*e| e else null;
+        try self.tickResolver.commitPlayerCards(self.player, enc_ptr);
 
         // Commit mob actions
         if (self.encounter) |*enc| {

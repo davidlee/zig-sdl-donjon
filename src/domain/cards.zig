@@ -51,6 +51,7 @@ pub const Trigger = union(enum) {
     on_draw,
     on_tick,
     on_event: EventTag,
+    on_commit, // fires during commit phase (e.g., Feint)
 };
 
 pub const TagSet = packed struct {
@@ -128,6 +129,9 @@ pub const TargetQuery = union(enum) {
     self,
     body_part: body.PartTag,
     event_source,
+    // Play targeting for commit phase effects
+    my_play: Predicate, // actor's plays matching predicate
+    opponent_play: Predicate, // opponent's plays matching predicate
 };
 
 pub const Exclusivity = enum {
@@ -203,6 +207,13 @@ pub const Effect = union(enum) {
     return_exhausted_card: entity.ID,
     interrupt,
     emit_event: Event,
+    // Commit phase play manipulation
+    modify_play: struct {
+        cost_mult: ?f32 = null,
+        damage_mult: ?f32 = null,
+        replace_advantage: ?combat.TechniqueAdvantage = null,
+    },
+    cancel_play, // removes target play
 };
 
 pub const Expression = struct {

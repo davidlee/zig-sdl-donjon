@@ -31,6 +31,7 @@ const log = std.debug.print;
 pub const ValidationError = error{
     InsufficientStamina,
     InsufficientTime,
+    InsufficientFocus,
     InvalidGameState,
     CardNotInHand,
     PredicateFailed,
@@ -41,9 +42,12 @@ pub const CommandError = error{
     CommandInvalid,
     InsufficientStamina,
     InsufficientTime,
+    InsufficientFocus,
     InvalidGameState,
     BadInvariant,
     CardNotInHand,
+    CardNotInPlay,
+    TemplatesMismatch,
     PredicateFailed,
     NotImplemented,
 };
@@ -124,6 +128,18 @@ pub const CommandHandler = struct {
                 try self.world.transitionTo(.commit_phase);
             },
             .commit_turn => {},
+            .commit_withdraw => |id| {
+                try self.commitWithdraw(id);
+            },
+            .commit_add => |id| {
+                try self.commitAdd(id);
+            },
+            .commit_stack => |data| {
+                try self.commitStack(data.card_id, data.target_play_index);
+            },
+            .commit_done => {
+                try self.world.transitionTo(.tick_resolution);
+            },
             else => {
                 std.debug.print("UNHANDLED COMMAND: -- {any}", .{cmd});
             },
@@ -175,6 +191,160 @@ pub const CommandHandler = struct {
             return CommandError.CommandInvalid;
         }
     }
+
+    const FOCUS_COST: f32 = 1.0;
+
+    /// Commit phase: Withdraw a card from play (costs 1 Focus).
+    /// Returns card to hand, uncommits stamina, removes from plays.
+    pub fn commitWithdraw(self: *CommandHandler, card_id: entity.ID) !void {
+        const player = self.world.player;
+        if (self.world.fsm.currentState() != .commit_phase)
+            return CommandError.InvalidGameState;
+
+        // Spend focus
+        if (!player.focus.spend(FOCUS_COST))
+            return CommandError.InsufficientFocus;
+
+        const enc = &(self.world.encounter orelse return CommandError.BadInvariant);
+        const enc_state = enc.stateFor(player.id) orelse return CommandError.BadInvariant;
+
+        // Find the play
+        const play_index = enc_state.current.findPlayByCard(card_id) orelse {
+            // Refund focus if card not found
+            player.focus.current += FOCUS_COST;
+            player.focus.available += FOCUS_COST;
+            return CommandError.CardNotInPlay;
+        };
+
+        // Get card and refund stamina
+        const pd = switch (player.cards) {
+            .deck => |*d| d,
+            .pool => return CommandError.BadInvariant,
+        };
+        const card = try pd.find(card_id, .in_play);
+        player.stamina.uncommit(card.template.cost.stamina);
+        player.time_available += card.template.cost.time;
+
+        // Move card back to hand
+        try pd.move(card_id, .in_play, .hand);
+        try self.sink(Event{
+            .card_moved = .{ .instance = card.id, .from = .in_play, .to = .hand, .actor = .{ .id = player.id, .player = true } },
+        });
+
+        // Remove from plays
+        enc_state.current.removePlay(play_index);
+        enc_state.current.focus_spent += FOCUS_COST;
+    }
+
+    /// Commit phase: Add a new card from hand (costs 1 Focus).
+    /// Card is marked as added_in_commit (cannot be stacked).
+    pub fn commitAdd(self: *CommandHandler, card_id: entity.ID) !void {
+        const player = self.world.player;
+        if (self.world.fsm.currentState() != .commit_phase)
+            return CommandError.InvalidGameState;
+
+        // Spend focus
+        if (!player.focus.spend(FOCUS_COST))
+            return CommandError.InsufficientFocus;
+
+        const pd = switch (player.cards) {
+            .deck => |*d| d,
+            .pool => return CommandError.BadInvariant,
+        };
+
+        // Validate card can be played
+        const card = pd.find(card_id, .hand) catch {
+            // Refund focus if card not in hand
+            player.focus.current += FOCUS_COST;
+            player.focus.available += FOCUS_COST;
+            return CommandError.CardNotInHand;
+        };
+
+        if (!try validateCardSelection(player, card)) {
+            // Refund focus if validation fails
+            player.focus.current += FOCUS_COST;
+            player.focus.available += FOCUS_COST;
+            return CommandError.PredicateFailed;
+        }
+
+        // Play card (move to in_play, commit stamina)
+        try playValidCardReservingCosts(&self.world.events, player, card);
+
+        // Add to plays with added_in_commit flag
+        const enc = &(self.world.encounter orelse return CommandError.BadInvariant);
+        const enc_state = enc.stateFor(player.id) orelse return CommandError.BadInvariant;
+        try enc_state.current.addPlay(.{
+            .primary = card_id,
+            .added_in_commit = true, // Cannot be stacked this turn
+        });
+
+        enc_state.current.focus_spent += FOCUS_COST;
+    }
+
+    /// Commit phase: Stack a card onto an existing play (costs 1 Focus).
+    /// Card must match the primary card's template.
+    pub fn commitStack(self: *CommandHandler, card_id: entity.ID, target_play_index: usize) !void {
+        const player = self.world.player;
+        if (self.world.fsm.currentState() != .commit_phase)
+            return CommandError.InvalidGameState;
+
+        const enc = &(self.world.encounter orelse return CommandError.BadInvariant);
+        const enc_state = enc.stateFor(player.id) orelse return CommandError.BadInvariant;
+
+        if (target_play_index >= enc_state.current.plays_len)
+            return CommandError.CommandInvalid;
+
+        const target_play = &enc_state.current.playsMut()[target_play_index];
+
+        // Cannot stack on plays added this commit phase
+        if (!target_play.canStack())
+            return CommandError.CommandInvalid;
+
+        // Spend focus
+        if (!player.focus.spend(FOCUS_COST))
+            return CommandError.InsufficientFocus;
+
+        const pd = switch (player.cards) {
+            .deck => |*d| d,
+            .pool => return CommandError.BadInvariant,
+        };
+
+        // Get both cards
+        const stack_card = pd.find(card_id, .hand) catch {
+            // Refund focus
+            player.focus.current += FOCUS_COST;
+            player.focus.available += FOCUS_COST;
+            return CommandError.CardNotInHand;
+        };
+
+        const primary_card_ptr = pd.entities.get(target_play.primary) orelse {
+            // Refund focus
+            player.focus.current += FOCUS_COST;
+            player.focus.available += FOCUS_COST;
+            return CommandError.BadInvariant;
+        };
+
+        // Must be same template
+        if (stack_card.template.id != primary_card_ptr.*.template.id) {
+            // Refund focus
+            player.focus.current += FOCUS_COST;
+            player.focus.available += FOCUS_COST;
+            return CommandError.TemplatesMismatch;
+        }
+
+        // Add reinforcement
+        target_play.addReinforcement(card_id) catch {
+            // Refund focus
+            player.focus.current += FOCUS_COST;
+            player.focus.available += FOCUS_COST;
+            return CommandError.CommandInvalid;
+        };
+
+        // Move card to in_play, commit stamina
+        try playValidCardReservingCosts(&self.world.events, player, stack_card);
+
+        enc_state.current.focus_spent += FOCUS_COST;
+    }
 };
 
 //
@@ -223,6 +393,35 @@ pub const EventProcessor = struct {
         try self.world.events.push(event);
     }
 
+    /// Build Play structs from cards currently in in_play zone.
+    /// Called when entering commit_phase to bridge selection and resolution.
+    fn buildPlaysFromInPlayCards(self: *EventProcessor) !void {
+        const enc = &(self.world.encounter orelse return);
+
+        // Player
+        try self.buildPlaysForAgent(self.world.player, enc);
+
+        // Mobs
+        for (enc.enemies.items) |mob| {
+            try self.buildPlaysForAgent(mob, enc);
+        }
+    }
+
+    fn buildPlaysForAgent(self: *EventProcessor, agent: *Agent, enc: *combat.Encounter) !void {
+        _ = self;
+        const enc_state = enc.stateFor(agent.id) orelse return;
+        enc_state.current.clear();
+
+        const in_play_items = switch (agent.cards) {
+            .deck => |*d| d.in_play.items,
+            .pool => |*p| p.in_play.items,
+        };
+
+        for (in_play_items) |card| {
+            try enc_state.current.addPlay(.{ .primary = card.id });
+        }
+    }
+
     pub fn dispatchEvent(self: *EventProcessor, event_system: *EventSystem) !bool {
         const result = event_system.pop();
         if (result) |event| {
@@ -248,7 +447,18 @@ pub const EventProcessor = struct {
                             try self.allShuffleAndDraw(5);
                             try self.world.transitionTo(.player_card_selection);
                         },
-                        .commit_phase => {},
+                        .commit_phase => {
+                            try self.buildPlaysFromInPlayCards();
+                            // Execute on_commit rules for player
+                            try executeCommitPhaseRules(self.world, self.world.player);
+                            // Execute on_commit rules for mobs
+                            if (self.world.encounter) |*enc| {
+                                for (enc.enemies.items) |mob| {
+                                    try executeCommitPhaseRules(self.world, mob);
+                                }
+                            }
+                            try self.world.transitionTo(.tick_resolution);
+                        },
                         .tick_resolution => {
                             const res = try self.world.processTick();
                             std.debug.print("Tick Resolution: {any}\n", .{res});
@@ -295,6 +505,11 @@ pub fn validateCardSelection(actor: *Agent, card: *Instance) !bool {
     if (actor.stamina.available < template.cost.stamina) return ValidationError.InsufficientStamina;
 
     if (actor.time_available < template.cost.time) return ValidationError.InsufficientTime;
+
+    // Check Focus cost (for on_commit cards like Feint)
+    if (template.cost.focus > 0 and actor.focus.available < template.cost.focus) {
+        return ValidationError.InsufficientFocus;
+    }
 
     if (!deck.instanceInZone(card.id, .hand)) return ValidationError.CardNotInHand;
 
@@ -551,9 +766,166 @@ pub fn evaluateTargets(
         .body_part, .event_source => {
             // Not applicable for agent targeting
         },
+        .my_play, .opponent_play => {
+            // Not applicable for agent targeting - use evaluatePlayTargets
+        },
     }
 
     return targets;
+}
+
+// ============================================================================
+// Commit Phase Rule Execution
+// ============================================================================
+
+/// Target for a play-targeting effect
+pub const PlayTarget = struct {
+    agent: *Agent,
+    play_index: usize,
+};
+
+/// Check if a play matches a predicate (for my_play/opponent_play targeting)
+fn playMatchesPredicate(
+    play: *const combat.Play,
+    predicate: cards.Predicate,
+    agent: *const Agent,
+) bool {
+    // Get the card instance for this play - need mutable access for SlotMap.get
+    const mutable_agent = @constCast(agent);
+    const card_ptr: ?*Instance = switch (mutable_agent.cards) {
+        .deck => |*d| if (d.entities.get(play.primary)) |ptr| ptr.* else null,
+        .pool => |*p| if (p.entities.get(play.primary)) |ptr| ptr.* else null,
+    };
+    const card = card_ptr orelse return false;
+
+    // For play predicates, we only support tag checking for now
+    return switch (predicate) {
+        .always => true,
+        .has_tag => |tag| card.template.tags.hasTag(tag),
+        .not => |inner| !playMatchesPredicate(play, inner.*, agent),
+        .all => |preds| {
+            for (preds) |pred| {
+                if (!playMatchesPredicate(play, pred, agent)) return false;
+            }
+            return true;
+        },
+        .any => |preds| {
+            for (preds) |pred| {
+                if (playMatchesPredicate(play, pred, agent)) return true;
+            }
+            return false;
+        },
+        else => false, // Other predicates not applicable to plays
+    };
+}
+
+/// Evaluate play-targeting queries (my_play, opponent_play)
+pub fn evaluatePlayTargets(
+    alloc: std.mem.Allocator,
+    query: cards.TargetQuery,
+    actor: *Agent,
+    world: *World,
+) !std.ArrayList(PlayTarget) {
+    var targets = try std.ArrayList(PlayTarget).initCapacity(alloc, 4);
+    errdefer targets.deinit(alloc);
+
+    const enc = &(world.encounter orelse return targets);
+
+    switch (query) {
+        .my_play => |predicate| {
+            const enc_state = enc.stateFor(actor.id) orelse return targets;
+            for (enc_state.current.plays(), 0..) |play, i| {
+                if (playMatchesPredicate(&play, predicate, actor)) {
+                    try targets.append(alloc, .{ .agent = actor, .play_index = i });
+                }
+            }
+        },
+        .opponent_play => |predicate| {
+            // For player, iterate mob plays; for mobs, target player
+            if (actor.director == .player) {
+                for (enc.enemies.items) |mob| {
+                    const mob_state = enc.stateFor(mob.id) orelse continue;
+                    for (mob_state.current.plays(), 0..) |play, i| {
+                        if (playMatchesPredicate(&play, predicate, mob)) {
+                            try targets.append(alloc, .{ .agent = mob, .play_index = i });
+                        }
+                    }
+                }
+            } else {
+                const player_state = enc.stateFor(world.player.id) orelse return targets;
+                for (player_state.current.plays(), 0..) |play, i| {
+                    if (playMatchesPredicate(&play, predicate, world.player)) {
+                        try targets.append(alloc, .{ .agent = world.player, .play_index = i });
+                    }
+                }
+            }
+        },
+        else => {}, // Other queries don't return play targets
+    }
+
+    return targets;
+}
+
+/// Apply a commit phase effect to a play target
+pub fn applyCommitPhaseEffect(
+    effect: cards.Effect,
+    play_target: PlayTarget,
+    world: *World,
+) void {
+    const enc = &(world.encounter orelse return);
+    const enc_state = enc.stateFor(play_target.agent.id) orelse return;
+
+    switch (effect) {
+        .modify_play => |mod| {
+            if (play_target.play_index >= enc_state.current.plays_len) return;
+            var play = &enc_state.current.playsMut()[play_target.play_index];
+            if (mod.cost_mult) |m| play.cost_mult *= m;
+            if (mod.damage_mult) |m| play.damage_mult *= m;
+            if (mod.replace_advantage) |adv| play.advantage_override = adv;
+        },
+        .cancel_play => {
+            enc_state.current.removePlay(play_target.play_index);
+        },
+        else => {}, // Other effects not handled here
+    }
+}
+
+/// Execute all on_commit rules for cards in play
+pub fn executeCommitPhaseRules(world: *World, actor: *Agent) !void {
+    const enc = &(world.encounter orelse return);
+    _ = enc;
+
+    const in_play_items = switch (actor.cards) {
+        .deck => |*d| d.in_play.items,
+        .pool => return, // Pools don't have commit phase cards
+    };
+
+    for (in_play_items) |card| {
+        for (card.template.rules) |rule| {
+            if (rule.trigger != .on_commit) continue;
+
+            // Check rule validity predicate
+            if (!canUseCard(card.template, actor)) continue;
+
+            // Execute expressions
+            for (rule.expressions) |expr| {
+                // Check if this is a play-targeting expression
+                switch (expr.target) {
+                    .my_play, .opponent_play => {
+                        var targets = try evaluatePlayTargets(world.alloc, expr.target, actor, world);
+                        defer targets.deinit(world.alloc);
+
+                        for (targets.items) |target| {
+                            applyCommitPhaseEffect(expr.effect, target, world);
+                        }
+                    },
+                    else => {
+                        // Non-play targets handled elsewhere
+                    },
+                }
+            }
+        }
+    }
 }
 
 // ============================================================================

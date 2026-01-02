@@ -453,6 +453,29 @@ pub const TurnState = struct {
         self.plays_buf[self.plays_len] = play;
         self.plays_len += 1;
     }
+
+    /// Remove a play by index, shifting remaining plays down.
+    pub fn removePlay(self: *TurnState, index: usize) void {
+        if (index >= self.plays_len) return;
+        // Shift remaining plays down
+        var i = index;
+        while (i < self.plays_len - 1) : (i += 1) {
+            self.plays_buf[i] = self.plays_buf[i + 1];
+        }
+        self.plays_len -= 1;
+    }
+
+    /// Find a play by its primary card ID, returns index or null.
+    pub fn findPlayByCard(self: *const TurnState, card_id: entity.ID) ?usize {
+        for (self.plays(), 0..) |play, i| {
+            if (play.primary.index == card_id.index and
+                play.primary.generation == card_id.generation)
+            {
+                return i;
+            }
+        }
+        return null;
+    }
 };
 
 /// Ring buffer of recent turns for sequencing predicates.
@@ -891,4 +914,41 @@ test "AgentPair.canonical produces consistent key regardless of order" {
     try testing.expectEqual(pair_ab.b.index, pair_ba.b.index);
     try testing.expectEqual(@as(u32, 1), pair_ab.a.index);
     try testing.expectEqual(@as(u32, 5), pair_ab.b.index);
+}
+
+test "TurnState.removePlay shifts remaining plays" {
+    var state = TurnState{};
+
+    try state.addPlay(.{ .primary = testId(1) });
+    try state.addPlay(.{ .primary = testId(2) });
+    try state.addPlay(.{ .primary = testId(3) });
+    try testing.expectEqual(@as(usize, 3), state.plays_len);
+
+    // Remove middle play
+    state.removePlay(1);
+    try testing.expectEqual(@as(usize, 2), state.plays_len);
+    try testing.expectEqual(@as(u32, 1), state.plays()[0].primary.index);
+    try testing.expectEqual(@as(u32, 3), state.plays()[1].primary.index);
+}
+
+test "TurnState.removePlay handles out of bounds" {
+    var state = TurnState{};
+    try state.addPlay(.{ .primary = testId(1) });
+
+    // Should do nothing for invalid index
+    state.removePlay(5);
+    try testing.expectEqual(@as(usize, 1), state.plays_len);
+}
+
+test "TurnState.findPlayByCard returns correct index" {
+    var state = TurnState{};
+
+    try state.addPlay(.{ .primary = testId(10) });
+    try state.addPlay(.{ .primary = testId(20) });
+    try state.addPlay(.{ .primary = testId(30) });
+
+    try testing.expectEqual(@as(?usize, 0), state.findPlayByCard(testId(10)));
+    try testing.expectEqual(@as(?usize, 1), state.findPlayByCard(testId(20)));
+    try testing.expectEqual(@as(?usize, 2), state.findPlayByCard(testId(30)));
+    try testing.expectEqual(@as(?usize, null), state.findPlayByCard(testId(99)));
 }
