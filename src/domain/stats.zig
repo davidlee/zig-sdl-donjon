@@ -1,5 +1,70 @@
 const std = @import("std");
 const lib = @import("infra");
+
+/// A resource with commit/spend semantics for turn-based commitment flow.
+/// - `current`: actual resource value
+/// - `available`: uncommitted amount for this turn (≤ current)
+pub const Resource = struct {
+    current: f32,
+    available: f32,
+    default: f32,
+    max: f32,
+    per_turn: f32, // per-turn recovery
+
+    pub fn init(default: f32, max: f32, per_turn: f32) Resource {
+        return .{
+            .current = default,
+            .available = default,
+            .default = default,
+            .max = max,
+            .per_turn = per_turn,
+        };
+    }
+
+    /// Commit without spending (stamina on card selection).
+    /// Returns false if insufficient available.
+    pub fn commit(self: *Resource, amount: f32) bool {
+        if (self.available >= amount) {
+            self.available -= amount;
+            return true;
+        }
+        return false;
+    }
+
+    /// Reverse a commitment (card withdrawn during commit phase).
+    pub fn uncommit(self: *Resource, amount: f32) void {
+        self.available = @min(self.available + amount, self.current);
+    }
+
+    /// Spend immediately (Focus actions, or one-shot costs).
+    /// Returns false if insufficient available.
+    pub fn spend(self: *Resource, amount: f32) bool {
+        if (self.available >= amount) {
+            self.available -= amount;
+            self.current -= amount;
+            return true;
+        }
+        return false;
+    }
+
+    /// Finalize commitments - current catches down to available (stamina at resolution).
+    pub fn finalize(self: *Resource) void {
+        self.current = self.available;
+    }
+
+    /// End of turn refresh.
+    pub fn tick(self: *Resource) void {
+        self.current = @min(self.current + self.per_turn, self.max);
+        self.available = self.current;
+    }
+
+    /// Start of encounter reset.
+    pub fn reset(self: *Resource) void {
+        self.current = self.default;
+        self.available = self.default;
+    }
+};
+
 pub const Scaling = struct {
     stats: CheckSignature,
     ratio: f32 = 1.0,

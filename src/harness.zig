@@ -39,7 +39,8 @@ pub fn setupEncounter(world: *World) !void {
         combat.Strat{ .deck = mobdeck },
         stats.Block.splat(6),
         try body.Body.fromPlan(world.alloc, &body.HumanoidPlan),
-        10.0,
+        stats.Resource.init(10.0, 10.0, 2.0), // stamina
+        stats.Resource.init(3.0, 5.0, 3.0), // focus
         combat.Armament{ .single = buckler },
     );
 

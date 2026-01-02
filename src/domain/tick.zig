@@ -150,7 +150,7 @@ pub const TickResolver = struct {
                 const max_attempts = pool.instances.items.len * 2; // prevent infinite loop
                 while (time_cursor < 1.0 and attempts < max_attempts) {
                     attempts += 1;
-                    const instance = pool.selectNext(mob.stamina_available) orelse break;
+                    const instance = pool.selectNext(mob.stamina.available) orelse break;
 
                     // Check predicates (weapon requirements, etc.)
                     if (!apply.canUseCard(instance.template, mob)) continue;
@@ -169,7 +169,7 @@ pub const TickResolver = struct {
                     });
 
                     time_cursor += time_cost;
-                    mob.stamina_available -= instance.template.cost.stamina;
+                    _ = mob.stamina.commit(instance.template.cost.stamina);
                     attempts = 0; // reset attempts on success
                 }
             },
@@ -336,7 +336,8 @@ pub const TickResolver = struct {
         _ = self;
         for (agents) |agent| {
             agent.time_available = 1.0;
-            agent.stamina_available = agent.stamina;
+            agent.stamina.tick(); // refresh and reset available
+            agent.focus.tick();
 
             // Decrement cooldowns for pool-based
             switch (agent.cards) {
@@ -497,8 +498,8 @@ test "commitSingleMob fills tick with multiple pool techniques" {
         .armour = armour.Stack.init(alloc),
         .weapons = undefined,
         .engagement = Engagement{},
-        .stamina = 10.0,
-        .stamina_available = 10.0,
+        .stamina = stats.Resource.init(10.0, 10.0, 2.0),
+        .focus = stats.Resource.init(3.0, 5.0, 3.0),
         .conditions = try std.ArrayList(@import("damage.zig").ActiveCondition).initCapacity(alloc, 1),
         .resistances = try std.ArrayList(@import("damage.zig").Resistance).initCapacity(alloc, 1),
         .immunities = try std.ArrayList(@import("damage.zig").Immunity).initCapacity(alloc, 1),
@@ -571,8 +572,8 @@ test "commitSingleMob stops when stamina exhausted" {
         .armour = armour.Stack.init(alloc),
         .weapons = undefined,
         .engagement = Engagement{},
-        .stamina = 10.0,
-        .stamina_available = 10.0, // Only enough for 2 techniques (8 stamina)
+        .stamina = stats.Resource.init(10.0, 10.0, 2.0), // Only enough for 2 techniques (8 stamina)
+        .focus = stats.Resource.init(3.0, 5.0, 3.0),
         .conditions = try std.ArrayList(@import("damage.zig").ActiveCondition).initCapacity(alloc, 1),
         .resistances = try std.ArrayList(@import("damage.zig").Resistance).initCapacity(alloc, 1),
         .immunities = try std.ArrayList(@import("damage.zig").Immunity).initCapacity(alloc, 1),

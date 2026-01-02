@@ -531,35 +531,253 @@ pub const TurnHistory = struct {
 - **Engagement formation/dissolution**: Dynamic engage/disengage mechanics
 - **Attention limits**: Max simultaneous engagements per agent
 - **Allied AI**: Friendly NPCs with their own turn states
+- AI Focus spending heuristics
 
 ## Implementation Phases
 
+Each phase builds on the previous. Complete all steps in a phase before moving to the next.
+
 ### Phase 1: Foundation
-1. **Resource struct** - Add to stats.zig, update Agent
-2. **Encounter state migration** - Move engagement off Agent, add agent_state map
-3. **TurnState/TurnHistory/Play** - Add structs, wire into encounter
+
+**1.1 Resource struct** (`src/domain/stats.zig`)
+
+Add `Resource` struct as defined in "Resource Model" section above:
+- Fields: `current`, `available`, `default`, `max`, `refresh`
+- Methods: `commit()`, `uncommit()`, `spend()`, `finalize()`, `refresh()`, `reset()`
+
+**1.2 Update Agent** (`src/domain/combat.zig`)
+
+Replace existing stamina fields on `Agent`:
+```zig
+// Remove:
+stamina: f32,
+stamina_available: f32,
+
+// Add:
+stamina: stats.Resource,
+focus: stats.Resource,
+```
+
+Update `Agent.init()` to initialize both resources. Update all call sites that access `agent.stamina` (search for usages).
+
+**1.3 Cost struct extension** (`src/domain/cards.zig`)
+
+Add `focus` field to `Cost`:
+```zig
+pub const Cost = struct {
+    stamina: f32,
+    time: f32 = 0.3,
+    focus: f32 = 0,
+    exhausts: bool = false,
+};
+```
+
+**1.4 Encounter state migration** (`src/domain/combat.zig`)
+
+Remove `engagement` field from `Agent`. Add to `Encounter`:
+```zig
+pub const Encounter = struct {
+    combatants: ArrayList(*Agent),  // rename from enemies
+    engagements: std.AutoHashMap(AgentPair, Engagement),
+    agent_state: std.AutoHashMap(entity.ID, AgentEncounterState),
+    // ...
+};
+```
+
+Add `AgentPair` struct with `canonical()` method.
+Add `AgentEncounterState` struct (see "Encounter State Model" section).
+Add API methods: `getEngagement()`, `engagementsFor()`, `stateFor()`.
+
+Update all code that accesses `agent.engagement` to use `encounter.getEngagement(player_id, agent.id)`.
+
+**1.5 TurnState/TurnHistory/Play structs** (`src/domain/combat.zig` or new file)
+
+Add structs as defined in "Turn State" and "Turn History" sections:
+- `Play` with fields: `primary`, `reinforcements`, `stakes`, `added_in_commit`, `cost_mult`, `damage_mult`, `advantage_override`
+- `TurnState` with fields: `plays`, `focus_spent`
+- `TurnHistory` with methods: `push()`, `lastTurn()`, `turnsAgo()`
+
+Wire `AgentEncounterState.current` and `.history` to use these.
+
+**Acceptance criteria Phase 1:**
+- `zig build test` passes
+- Game runs without crash
+- Stamina/Focus display correctly (if UI exists)
+- Engagement lookups work via `encounter.getEngagement()`
+
+---
 
 ### Phase 2: Draw System
-4. **TagSet extension** - Add `manoeuvre` tag
-5. **Draw filtering** - Add iterator/count helpers to Deck
+
+**2.1 TagSet extension** (`src/domain/cards.zig`)
+
+Add `manoeuvre` tag to `TagSet`:
+```zig
+pub const TagSet = packed struct {
+    // existing...
+    manoeuvre: bool = false,
+};
+```
+
+Update the bitcast size if needed (currently `u12`, may need `u13`+).
+
+**2.2 Draw filtering** (`src/domain/deck.zig`)
+
+Add methods to `Deck`:
+```zig
+pub fn countByTag(self: *Deck, tag_mask: TagSet) usize
+pub fn drawableByTag(self: *Deck, tag_mask: TagSet) TagIterator
+```
+
+`TagIterator` iterates `draw` pile, yielding only cards where `card.template.tags.hasAnyTag(tag_mask)`.
+
+**Acceptance criteria Phase 2:**
+- Can query draw pile by category (offensive/defensive/manoeuvre/meta)
+- Counts match expected values in tests
+
+---
 
 ### Phase 3: Commit Phase
-6. **on_commit trigger** - New trigger type, execution during commit phase
-7. **Play-targeting queries** - `my_play`, `opponent_play` with predicates
-8. **modify_play effect** - cost_mult, damage_mult, replace_advantage
-9. **Focus spending** - Commit phase actions (withdraw, add, stack)
+
+**3.1 on_commit trigger** (`src/domain/cards.zig`)
+
+Add to `Trigger` union:
+```zig
+pub const Trigger = union(enum) {
+    on_play,
+    on_draw,
+    on_tick,
+    on_event: EventTag,
+    on_commit,  // NEW
+};
+```
+
+**3.2 Trigger validation** (`src/domain/apply.zig`)
+
+Update `CommandHandler.playActionCard()` (or equivalent) to:
+- Check card's trigger against current FSM state
+- `on_play` cards only valid in `player_card_selection` state
+- `on_commit` cards only valid in `commit_phase` state
+- Reject with appropriate error if trigger doesn't match
+
+**3.3 Focus cost validation** (`src/domain/apply.zig`)
+
+Update cost checking to include Focus:
+- Check `card.cost.focus <= agent.focus.available`
+- Call `agent.focus.spend(card.cost.focus)` when card is played
+- Stamina uses `commit()` during selection, Focus uses `spend()` immediately
+
+**3.4 Play-targeting queries** (`src/domain/cards.zig`)
+
+Add to `TargetQuery`:
+```zig
+my_play: Predicate,
+opponent_play: Predicate,
+```
+
+Update target resolution logic to iterate `TurnState.plays` and filter by predicate.
+
+**3.5 modify_play effect** (`src/domain/cards.zig`, `src/domain/apply.zig`)
+
+Add to `Effect`:
+```zig
+modify_play: struct {
+    cost_mult: ?f32 = null,
+    damage_mult: ?f32 = null,
+    replace_advantage: ?TechniqueAdvantage = null,
+},
+```
+
+Implement effect execution: find targeted Play, apply multipliers and override.
+
+**3.6 Focus actions as commands** (`src/commands.zig`, `src/domain/apply.zig`)
+
+Add commands for commit phase actions:
+```zig
+pub const Command = union(enum) {
+    // existing...
+    withdraw_play: entity.ID,     // remove play from TurnState
+    add_play: entity.ID,          // add card from hand as new play
+    stack_play: struct { play: entity.ID, cards: []const entity.ID },
+};
+```
+
+Implement handlers that:
+- Validate Focus cost (1F for withdraw/add, 1F for stack regardless of count)
+- Update `TurnState.plays` accordingly
+- Set `added_in_commit = true` for added plays
+
+**Acceptance criteria Phase 3:**
+- `on_commit` cards rejected during selection phase
+- `on_play` cards rejected during commit phase
+- Focus cost deducted when playing on_commit cards
+- `modify_play` effect correctly modifies Play fields
+- Withdraw/add/stack commands work and cost Focus
+
+---
 
 ### Phase 4: Draw Decision
-10. **Draw-as-decision** - Interactive drawing by category
+
+**4.1 Draw phase FSM state** (`src/domain/world.zig`)
+
+Review FSM states. May need to split `draw_hand` into interactive draw if not already.
+
+**4.2 Draw commands** (`src/commands.zig`)
+
+Add command for drawing by category:
+```zig
+draw_card: struct { category: TagSet },  // or specific enum
+```
+
+**4.3 Draw logic** (`src/domain/apply.zig`)
+
+Implement draw:
+- Validate Focus available
+- Find random card in draw pile matching category
+- Move to hand
+- Decrement Focus (or track draws for replenishment)
+
+**4.4 Focus replenishment**
+
+After draw phase completes, replenish Focus 1:1 (Focus = number of cards drawn).
+
+**Acceptance criteria Phase 4:**
+- Player can choose category when drawing
+- Drawing costs/consumes Focus appropriately
+- Focus replenished after draw phase
+
+---
 
 ### Phase 5: Transform Cards
-11. **Feint card** - First transform using modify_play primitives
-12. **Tactical wheel balancing** - Tune advantage profiles for rock-paper-scissors
+
+**5.1 Feint card** (`src/domain/card_list.zig`)
+
+Add feint template as defined in "Feint as a composed card" section:
+- `trigger = .on_commit`
+- `cost = .{ .focus = 1.0, ... }`
+- `modify_play` effect with advantage override
+
+**5.2 Integration test**
+
+Create test that:
+- Sets up combat with player having offensive card + feint
+- Plays offensive card in selection
+- Plays feint in commit phase
+- Verifies Play has `damage_mult = 0` and advantage override
+
+**5.3 Tactical wheel balancing**
+
+Review/tune advantage profiles on existing techniques for rock-paper-scissors dynamics.
+
+**Acceptance criteria Phase 5:**
+- Feint card can be played during commit phase
+- Feint modifies offensive play as expected
+- Resolution uses modified advantage profile
+
+---
 
 ## Open Questions
 
-- Whether some Focus actions cost more than 1F
-- AI Focus spending heuristics
-- Conditional swap predicates - needed now or later?
-- Stack limit (cap at 3? unlimited?)
 - Turn history depth (4 turns enough?)
+- Exact values for tactical wheel advantage profiles
+- UI for commit phase Focus actions

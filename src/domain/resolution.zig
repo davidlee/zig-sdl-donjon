@@ -670,7 +670,8 @@ fn makeTestAgent(
         combat.Strat{ .deck = agent_deck },
         agent_stats,
         agent_body,
-        10.0,
+        stats.Resource.init(10.0, 10.0, 2.0), // stamina
+        stats.Resource.init(3.0, 5.0, 3.0), // focus
         undefined, // armament is annoying to make
     );
 

@@ -91,6 +91,7 @@ pub const Comparator = enum {
 pub const Cost = struct {
     stamina: f32,
     time: f32 = 0.3,
+    focus: f32 = 0,
     exhausts: bool = false,
 };
 

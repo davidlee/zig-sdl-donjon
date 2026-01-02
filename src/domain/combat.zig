@@ -217,8 +217,8 @@ pub const Agent = struct {
 
     // state (wounds kept in body)
     balance: f32 = 1.0, // 0-1, intrinsic stability
-    stamina: f32 = 0.0,
-    stamina_available: f32 = 0.0,
+    stamina: stats.Resource,
+    focus: stats.Resource,
     time_available: f32 = 1.0,
     //
     conditions: std.ArrayList(damage.ActiveCondition),
@@ -233,10 +233,10 @@ pub const Agent = struct {
         cs: Strat,
         sb: stats.Block,
         bd: body.Body,
-        stamina: f32,
+        stamina: stats.Resource,
+        focus: stats.Resource,
         armament: Armament,
     ) !*Agent {
-        // const agent = initEmpty(alloc, slot_map);
         const agent = try alloc.create(combat.Agent);
         agent.* = .{
             .id = undefined,
@@ -244,13 +244,12 @@ pub const Agent = struct {
             .director = dr,
             .cards = cs,
             .stats = sb,
-            // .state = State.init(alloc, stamina),
             .body = bd,
             .armour = armour.Stack.init(alloc),
             .weapons = armament,
             .engagement = (if (dr == .ai) Engagement{} else null),
             .stamina = stamina,
-            .stamina_available = stamina,
+            .focus = focus,
 
             .conditions = try std.ArrayList(damage.ActiveCondition).initCapacity(alloc, 5),
             .resistances = try std.ArrayList(damage.Resistance).initCapacity(alloc, 5),

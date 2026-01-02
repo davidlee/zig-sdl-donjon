@@ -149,7 +149,7 @@ pub const CommandHandler = struct {
             .card_moved = .{ .instance = card.id, .from = .in_play, .to = .hand, .actor = .{ .id = player.id, .player = true } },
         });
 
-        player.stamina_available += card.template.cost.stamina;
+        player.stamina.uncommit(card.template.cost.stamina);
         player.time_available += card.template.cost.time;
 
         try self.sink(
@@ -292,7 +292,7 @@ pub fn validateCardSelection(actor: *Agent, card: *Instance) !bool {
     const deck = &actor.cards.deck;
     const template = card.template;
 
-    if (actor.stamina_available < template.cost.stamina) return ValidationError.InsufficientStamina;
+    if (actor.stamina.available < template.cost.stamina) return ValidationError.InsufficientStamina;
 
     if (actor.time_available < template.cost.time) return ValidationError.InsufficientTime;
 
@@ -325,7 +325,7 @@ pub fn playValidCardReservingCosts(evs: *EventSystem, actor: *Agent, card: *Inst
     });
 
     // put a hold on the time & stamina costs for the UI to display / player state
-    actor.stamina_available -= card.template.cost.stamina;
+    _ = actor.stamina.commit(card.template.cost.stamina);
     actor.time_available -= card.template.cost.time;
 
     try evs.push(Event{
@@ -582,16 +582,15 @@ pub fn applyCommittedCosts(
         };
         const actor_meta: events.AgentMeta = .{ .id = agent.id, .player = is_player };
 
-        // Deduct actual stamina cost
+        // Finalize stamina commitment (current catches down to available)
         const stamina_cost = card.template.cost.stamina;
-        const old_stamina = agent.stamina;
-        agent.stamina = @max(0, agent.stamina - stamina_cost);
+        agent.stamina.finalize();
 
         try event_system.push(.{
             .stamina_deducted = .{
                 .agent_id = agent.id,
                 .amount = stamina_cost,
-                .new_value = agent.stamina,
+                .new_value = agent.stamina.current,
             },
         });
 
@@ -625,8 +624,6 @@ pub fn applyCommittedCosts(
                 });
             },
         }
-
-        _ = old_stamina; // suppress unused warning for now
     }
 }
 
@@ -654,6 +651,8 @@ fn makeTestAgent(armament: combat.Armament) Agent {
         .body = undefined, // not used by canUseCard
         .armour = undefined, // not used by canUseCard
         .weapons = armament,
+        .stamina = stats.Resource.init(10.0, 10.0, 2.0),
+        .focus = stats.Resource.init(3.0, 5.0, 3.0),
         .conditions = undefined, // not used by canUseCard
         .immunities = undefined, // not used by canUseCard
         .resistances = undefined, // not used by canUseCard

@@ -14,12 +14,16 @@ const ViewState = view.ViewState;
 pub const StatusBarView = struct {
     stamina: f32,
     stamina_available: f32,
+    focus: f32,
+    focus_available: f32,
     time_available: f32,
 
     pub fn init(player: *combat.Agent) StatusBarView {
         return StatusBarView{
-            .stamina = player.stamina,
-            .stamina_available = player.stamina_available,
+            .stamina = player.stamina.current,
+            .stamina_available = player.stamina.available,
+            .focus = player.focus.current,
+            .focus_available = player.focus.available,
             .time_available = player.time_available,
         };
     }
