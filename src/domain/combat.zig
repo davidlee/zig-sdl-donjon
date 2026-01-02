@@ -434,6 +434,7 @@ pub const TurnState = struct {
     plays_buf: [max_plays]Play = undefined,
     plays_len: usize = 0,
     focus_spent: f32 = 0,
+    stack_focus_paid: bool = false, // 1F covers all stacking for the turn
 
     pub fn plays(self: *const TurnState) []const Play {
         return self.plays_buf[0..self.plays_len];
@@ -446,6 +447,7 @@ pub const TurnState = struct {
     pub fn clear(self: *TurnState) void {
         self.plays_len = 0;
         self.focus_spent = 0;
+        self.stack_focus_paid = false;
     }
 
     pub fn addPlay(self: *TurnState, play: Play) error{Overflow}!void {
@@ -952,3 +954,9 @@ test "TurnState.findPlayByCard returns correct index" {
     try testing.expectEqual(@as(?usize, 2), state.findPlayByCard(testId(30)));
     try testing.expectEqual(@as(?usize, null), state.findPlayByCard(testId(99)));
 }
+
+// TODO: Integration tests for commit phase commands (requires full World setup):
+// - commit_withdraw: refunds stamina, removes from plays, returns card to hand
+// - commit_add: validates phase flags, marks added_in_commit, creates new play
+// - commit_stack: first stack costs 1F, subsequent free; template matching; can't stack added_in_commit
+// - executeCommitPhaseRules: fires on_commit rules, applies play modifications

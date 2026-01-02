@@ -68,17 +68,30 @@ pub const TagSet = packed struct {
     skill: bool = false,
     meta: bool = false,
     manoeuvre: bool = false,
+    // Playability phase flags
+    phase_selection: bool = false, // playable during card selection (default for most)
+    phase_commit: bool = false, // playable during commit phase (Focus cards)
 
     pub fn hasTag(self: *const TagSet, required: TagSet) bool {
-        const me: u13 = @bitCast(self.*);
-        const req: u13 = @bitCast(required);
+        const me: u15 = @bitCast(self.*);
+        const req: u15 = @bitCast(required);
         return (me & req) == req; // all required bits present
     }
 
     pub fn hasAnyTag(self: *const TagSet, mask: TagSet) bool {
-        const me: u13 = @bitCast(self.*);
-        const bm: u13 = @bitCast(mask);
+        const me: u15 = @bitCast(self.*);
+        const bm: u15 = @bitCast(mask);
         return (me & bm) != 0; // at least one bit matches
+    }
+
+    /// Check if card can be played in given phase.
+    pub fn canPlayInPhase(self: *const TagSet, phase: @import("world.zig").GameState) bool {
+        return switch (phase) {
+            .player_card_selection => self.phase_selection,
+            .commit_phase => self.phase_commit,
+            // TODO: reaction window checks .reaction
+            else => false,
+        };
     }
 };
 

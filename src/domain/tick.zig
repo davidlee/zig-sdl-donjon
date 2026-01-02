@@ -167,7 +167,7 @@ pub const TickResolver = struct {
                     const instance = pool.selectNext(mob.stamina.available) orelse break;
 
                     // Check predicates (weapon requirements, etc.)
-                    if (!apply.canUseCard(instance.template, mob)) continue;
+                    if (!apply.rulePredicatesSatisfied(instance.template, mob)) continue;
 
                     const tech_expr = instance.template.getTechniqueWithExpression() orelse continue;
                     const time_cost = instance.template.cost.time;

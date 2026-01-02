@@ -33,6 +33,7 @@ pub const ValidationError = error{
     InsufficientTime,
     InsufficientFocus,
     InvalidGameState,
+    WrongPhase,
     CardNotInHand,
     PredicateFailed,
     NotImplemented,
@@ -44,6 +45,7 @@ pub const CommandError = error{
     InsufficientTime,
     InsufficientFocus,
     InvalidGameState,
+    WrongPhase,
     BadInvariant,
     CardNotInHand,
     CardNotInPlay,
@@ -185,7 +187,7 @@ pub const CommandHandler = struct {
         if (game_state != .player_card_selection)
             return CommandError.InvalidGameState;
 
-        if (try validateCardSelection(player, card)) {
+        if (try validateCardSelection(player, card, game_state)) {
             try playValidCardReservingCosts(&self.world.events, player, card);
         } else {
             return CommandError.CommandInvalid;
@@ -260,7 +262,7 @@ pub const CommandHandler = struct {
             return CommandError.CardNotInHand;
         };
 
-        if (!try validateCardSelection(player, card)) {
+        if (!try validateCardSelection(player, card, .commit_phase)) {
             // Refund focus if validation fails
             player.focus.current += FOCUS_COST;
             player.focus.available += FOCUS_COST;
@@ -281,7 +283,8 @@ pub const CommandHandler = struct {
         enc_state.current.focus_spent += FOCUS_COST;
     }
 
-    /// Commit phase: Stack a card onto an existing play (costs 1 Focus).
+    /// Commit phase: Stack a card onto an existing play.
+    /// First stack costs 1 Focus; subsequent stacks this turn are free.
     /// Card must match the primary card's template.
     pub fn commitStack(self: *CommandHandler, card_id: entity.ID, target_play_index: usize) !void {
         const player = self.world.player;
@@ -300,9 +303,12 @@ pub const CommandHandler = struct {
         if (!target_play.canStack())
             return CommandError.CommandInvalid;
 
-        // Spend focus
-        if (!player.focus.spend(FOCUS_COST))
-            return CommandError.InsufficientFocus;
+        // Spend focus only on first stack this turn
+        const needs_focus = !enc_state.current.stack_focus_paid;
+        if (needs_focus) {
+            if (!player.focus.spend(FOCUS_COST))
+                return CommandError.InsufficientFocus;
+        }
 
         const pd = switch (player.cards) {
             .deck => |*d| d,
@@ -311,39 +317,47 @@ pub const CommandHandler = struct {
 
         // Get both cards
         const stack_card = pd.find(card_id, .hand) catch {
-            // Refund focus
-            player.focus.current += FOCUS_COST;
-            player.focus.available += FOCUS_COST;
+            if (needs_focus) {
+                player.focus.current += FOCUS_COST;
+                player.focus.available += FOCUS_COST;
+            }
             return CommandError.CardNotInHand;
         };
 
         const primary_card_ptr = pd.entities.get(target_play.primary) orelse {
-            // Refund focus
-            player.focus.current += FOCUS_COST;
-            player.focus.available += FOCUS_COST;
+            if (needs_focus) {
+                player.focus.current += FOCUS_COST;
+                player.focus.available += FOCUS_COST;
+            }
             return CommandError.BadInvariant;
         };
 
         // Must be same template
         if (stack_card.template.id != primary_card_ptr.*.template.id) {
-            // Refund focus
-            player.focus.current += FOCUS_COST;
-            player.focus.available += FOCUS_COST;
+            if (needs_focus) {
+                player.focus.current += FOCUS_COST;
+                player.focus.available += FOCUS_COST;
+            }
             return CommandError.TemplatesMismatch;
         }
 
         // Add reinforcement
         target_play.addReinforcement(card_id) catch {
-            // Refund focus
-            player.focus.current += FOCUS_COST;
-            player.focus.available += FOCUS_COST;
+            if (needs_focus) {
+                player.focus.current += FOCUS_COST;
+                player.focus.available += FOCUS_COST;
+            }
             return CommandError.CommandInvalid;
         };
 
         // Move card to in_play, commit stamina
         try playValidCardReservingCosts(&self.world.events, player, stack_card);
 
-        enc_state.current.focus_spent += FOCUS_COST;
+        // Mark that we've paid for stacking this turn
+        if (needs_focus) {
+            enc_state.current.stack_focus_paid = true;
+            enc_state.current.focus_spent += FOCUS_COST;
+        }
     }
 };
 
@@ -457,7 +471,7 @@ pub const EventProcessor = struct {
                                     try executeCommitPhaseRules(self.world, mob);
                                 }
                             }
-                            try self.world.transitionTo(.tick_resolution);
+                            // Player must explicitly call commit_done to transition
                         },
                         .tick_resolution => {
                             const res = try self.world.processTick();
@@ -490,23 +504,38 @@ pub const EventProcessor = struct {
 // High level interfaces - validate moves & play cards
 // ============================================================================
 
-/// is it valid to play?
-pub fn isCardSelectionValid(actor: *Agent, card: *Instance) bool {
-    return validateCardSelection(actor, card) catch false;
+/// Check if player can play a card in the current game phase.
+/// For UI validation (greying out unplayable cards, etc.)
+pub fn canPlayerPlayCard(world: *World, card_id: entity.ID) bool {
+    const phase = world.fsm.currentState();
+    const player = world.player;
+    const pd = switch (player.cards) {
+        .deck => |*d| d,
+        .pool => return false,
+    };
+    const card = pd.entities.get(card_id) orelse return false;
+    return validateCardSelection(player, card.*, phase) catch false;
 }
 
-/// Check if its rules are valid AND actor can afford the cost
-///
-/// NOTE - does not validate game state, effect triggers, etc
-pub fn validateCardSelection(actor: *Agent, card: *Instance) !bool {
+/// Is it valid to play this card in the selection phase?
+/// Convenience wrapper for AI directors that always play during selection.
+pub fn isCardSelectionValid(actor: *Agent, card: *Instance) bool {
+    return validateCardSelection(actor, card, .player_card_selection) catch false;
+}
+
+/// Check if card can be played: phase flags, costs, zone, and rule predicates.
+pub fn validateCardSelection(actor: *Agent, card: *Instance, phase: w.GameState) !bool {
     const deck = &actor.cards.deck;
     const template = card.template;
+
+    // Check if card can be played in this phase
+    if (!template.tags.canPlayInPhase(phase)) return ValidationError.WrongPhase;
 
     if (actor.stamina.available < template.cost.stamina) return ValidationError.InsufficientStamina;
 
     if (actor.time_available < template.cost.time) return ValidationError.InsufficientTime;
 
-    // Check Focus cost (for on_commit cards like Feint)
+    // Check Focus cost (for commit-phase cards)
     if (template.cost.focus > 0 and actor.focus.available < template.cost.focus) {
         return ValidationError.InsufficientFocus;
     }
@@ -514,7 +543,7 @@ pub fn validateCardSelection(actor: *Agent, card: *Instance) !bool {
     if (!deck.instanceInZone(card.id, .hand)) return ValidationError.CardNotInHand;
 
     // check rule.valid predicates (weapon requirements, etc.)
-    if (!canUseCard(template, actor)) return ValidationError.PredicateFailed;
+    if (!rulePredicatesSatisfied(template, actor)) return ValidationError.PredicateFailed;
 
     return true;
 }
@@ -552,8 +581,9 @@ pub fn playValidCardReservingCosts(evs: *EventSystem, actor: *Agent, card: *Inst
 // Card Validity (rule.valid predicates - can this card be used by this actor?)
 // ============================================================================
 
-/// Check if a card template can be used by an actor (all rule.valid predicates pass)
-pub fn canUseCard(template: *const cards.Template, actor: *const Agent) bool {
+/// Check if all rule.valid predicates pass for this actor.
+/// Does NOT check costs, phase, or zone - only weapon/equipment requirements.
+pub fn rulePredicatesSatisfied(template: *const cards.Template, actor: *const Agent) bool {
     for (template.rules) |rule| {
         if (!evaluateValidityPredicate(rule.valid, template, actor)) return false;
     }
@@ -890,7 +920,11 @@ pub fn applyCommitPhaseEffect(
     }
 }
 
-/// Execute all on_commit rules for cards in play
+/// Execute all on_commit rules for cards already in play.
+/// Note: This is for cards with rules that TRIGGER during commit phase
+/// (e.g., "when you commit, if you have an offensive play, gain control").
+/// This is NOT for cards that are PLAYABLE during commit phase (use .phase_commit tag).
+/// Cards here already had costs validated when played during selection.
 pub fn executeCommitPhaseRules(world: *World, actor: *Agent) !void {
     const enc = &(world.encounter orelse return);
     _ = enc;
@@ -904,8 +938,8 @@ pub fn executeCommitPhaseRules(world: *World, actor: *Agent) !void {
         for (card.template.rules) |rule| {
             if (rule.trigger != .on_commit) continue;
 
-            // Check rule validity predicate
-            if (!canUseCard(card.template, actor)) continue;
+            // Check rule validity predicate (weapon requirements, etc.)
+            if (!rulePredicatesSatisfied(card.template, actor)) continue;
 
             // Execute expressions
             for (rule.expressions) |expr| {
@@ -1010,47 +1044,47 @@ fn testId(index: u32) entity.ID {
 fn makeTestAgent(armament: combat.Armament) Agent {
     return Agent{
         .id = testId(99),
-        .alloc = undefined, // not used by canUseCard
+        .alloc = undefined,
         .director = ai.noop(),
-        .cards = .{ .pool = undefined }, // not used by canUseCard
-        .stats = undefined, // not used by canUseCard
-        .body = undefined, // not used by canUseCard
-        .armour = undefined, // not used by canUseCard
+        .cards = .{ .pool = undefined },
+        .stats = undefined,
+        .body = undefined,
+        .armour = undefined,
         .weapons = armament,
         .stamina = stats.Resource.init(10.0, 10.0, 2.0),
         .focus = stats.Resource.init(3.0, 5.0, 3.0),
-        .conditions = undefined, // not used by canUseCard
-        .immunities = undefined, // not used by canUseCard
-        .resistances = undefined, // not used by canUseCard
-        .vulnerabilities = undefined, // not used by canUseCard
+        .conditions = undefined,
+        .immunities = undefined,
+        .resistances = undefined,
+        .vulnerabilities = undefined,
     };
 }
 
-test "canUseCard allows card with always predicate" {
+test "rulePredicatesSatisfied allows card with always predicate" {
     const thrust_template = card_list.byName("thrust");
     var sword_instance = weapon.Instance{ .id = testId(0), .template = &weapon_list.knights_sword };
     const agent = makeTestAgent(.{ .single = &sword_instance });
 
-    try testing.expect(canUseCard(thrust_template, &agent));
+    try testing.expect(rulePredicatesSatisfied(thrust_template, &agent));
 }
 
-test "canUseCard allows shield block with shield equipped" {
+test "rulePredicatesSatisfied allows shield block with shield equipped" {
     const shield_block = card_list.byName("shield block");
     var buckler_instance = weapon.Instance{ .id = testId(0), .template = &weapon_list.buckler };
     const agent = makeTestAgent(.{ .single = &buckler_instance });
 
-    try testing.expect(canUseCard(shield_block, &agent));
+    try testing.expect(rulePredicatesSatisfied(shield_block, &agent));
 }
 
-test "canUseCard denies shield block without shield" {
+test "rulePredicatesSatisfied denies shield block without shield" {
     const shield_block = card_list.byName("shield block");
     var sword_instance = weapon.Instance{ .id = testId(0), .template = &weapon_list.knights_sword };
     const agent = makeTestAgent(.{ .single = &sword_instance });
 
-    try testing.expect(!canUseCard(shield_block, &agent));
+    try testing.expect(!rulePredicatesSatisfied(shield_block, &agent));
 }
 
-test "canUseCard allows shield block with sword and shield dual wield" {
+test "rulePredicatesSatisfied allows shield block with sword and shield dual wield" {
     const shield_block = card_list.byName("shield block");
     var sword_instance = weapon.Instance{ .id = testId(0), .template = &weapon_list.knights_sword };
     var buckler_instance = weapon.Instance{ .id = testId(1), .template = &weapon_list.buckler };
@@ -1059,7 +1093,7 @@ test "canUseCard allows shield block with sword and shield dual wield" {
         .secondary = &buckler_instance,
     } });
 
-    try testing.expect(canUseCard(shield_block, &agent));
+    try testing.expect(rulePredicatesSatisfied(shield_block, &agent));
 }
 
 // ============================================================================

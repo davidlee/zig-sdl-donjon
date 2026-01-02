@@ -240,7 +240,7 @@ const t_thrust = Template{
     .description = "hit them with the pokey bit",
     .rarity = .common,
     .cost = .{ .stamina = 3.0, .time = 0.2 },
-    .tags = .{ .melee = true, .offensive = true },
+    .tags = .{ .melee = true, .offensive = true, .phase_selection = true },
     .rules = &.{
         .{
             .trigger = .on_play,
@@ -263,7 +263,7 @@ const t_slash = Template{
     .description = "slash them like a pirate",
     .rarity = .common,
     .cost = .{ .stamina = 3.0, .time = 0.3 },
-    .tags = .{ .melee = true, .offensive = true },
+    .tags = .{ .melee = true, .offensive = true, .phase_selection = true },
     .rules = &.{
         .{
             .trigger = .on_play,
@@ -286,7 +286,7 @@ const t_shield_block = Template{
     .description = "shields were made to be splintered",
     .rarity = .common,
     .cost = .{ .stamina = 2.0, .time = 0.3 },
-    .tags = .{ .melee = true, .defensive = true },
+    .tags = .{ .melee = true, .defensive = true, .phase_selection = true },
     .rules = &.{
         .{
             .trigger = .on_play,
@@ -309,7 +309,7 @@ const t_riposte = Template{
     .description = "seize the opening",
     .rarity = .uncommon,
     .cost = .{ .stamina = 3.0, .time = 0.25 }, // fast, but costs stamina
-    .tags = .{ .melee = true, .offensive = true },
+    .tags = .{ .melee = true, .offensive = true, .phase_selection = true },
     .rules = &.{
         .{
             .trigger = .on_play,

@@ -1,5 +1,122 @@
 # Handover Notes
 
+## 2026-01-03: Phase 3 Fixes Applied
+
+### Completed
+
+**Auto-transition bug fixed**
+- Removed auto-transition from commit_phase to tick_resolution in `apply.zig`
+- Player must now explicitly call `commit_done` to proceed
+
+**TagSet phase flags added**
+- Added `.phase_selection` and `.phase_commit` flags to TagSet
+- Added `TagSet.canPlayInPhase(phase)` method
+- Updated bitcast size from u13 to u15
+
+**Phase validation wired into card selection**
+- `validateCardSelection()` now takes a `phase` parameter
+- Checks `template.tags.canPlayInPhase(phase)` before other validations
+- Added `ValidationError.WrongPhase` and `CommandError.WrongPhase`
+- `isCardSelectionValid()` wrapper assumes selection phase (for AI directors)
+
+**Renamed canUseCard → rulePredicatesSatisfied**
+- Clarifies that function only checks rule.valid predicates (weapon requirements)
+- Updated all call sites and tests
+
+**Stacking cost fixed (1F total)**
+- Added `TurnState.stack_focus_paid: bool` flag
+- `commitStack` only charges Focus on first stack; subsequent stacks free
+- Updated command comments in `commands.zig`
+
+**executeCommitPhaseRules clarified**
+- Added docstring explaining trigger vs playability distinction
+- Cards in_play already had costs validated during selection
+- Phase flags (`.phase_commit`) prevent wrong-phase plays
+
+**TODO added for integration tests**
+- `combat.zig` now has TODO comment listing missing test coverage
+
+### Files Changed
+- `apply.zig` - validation, error types, renamed function, stacking cost fix, docstrings
+- `cards.zig` - TagSet phase flags and canPlayInPhase method
+- `combat.zig` - stack_focus_paid flag, TODO for tests
+- `tick.zig` - updated function call
+- `commands.zig` - updated comments
+
+---
+
+## 2026-01-02: Phase 3 Review - Issues Identified
+
+### Bugs
+
+**Auto-transition in commit_phase (blocking)**
+- `apply.zig:455-459`: EventProcessor immediately transitions to tick_resolution after executing on_commit rules
+- Player never gets opportunity to use Focus spending commands (withdraw/add/stack)
+- `commit_done` command is unreachable
+- **Fix**: Remove auto-transition; let player explicitly call `commit_done`
+
+### Design Issues
+
+**`on_commit` trigger misinterpretation**
+- Current code interprets `on_commit` as "fire this rule's effects when entering commit phase"
+- Design intent for Feint: "this card can only be PLAYED during commit phase"
+- These are orthogonal concepts:
+  1. Playability window (when can card enter play?)
+  2. Effect trigger (when do card's rules fire?)
+- **Fix**: Add TagSet flags for playability phases; Feint uses `.phase_commit` + standard `.on_play` trigger
+- Note: `executeCommitPhaseRules` is still valid for cards with actual `on_commit` triggered effects
+
+**Stacking cost calculation**
+- Design doc: "You can stack any number of matching cards for 1F"
+- Implementation: `commitStack()` charges 1F per card
+- **Clarify**: Which is intended?
+
+### Validation Gaps
+
+**Focus cost not checked in executeCommitPhaseRules**
+- `validateCardSelection()` checks Focus cost
+- `executeCommitPhaseRules()` uses `canUseCard()` which only checks weapon predicates
+- Cards with Focus cost could bypass validation
+
+### Naming
+
+**`canUseCard` is misleading**
+- Only checks rule validity predicates (weapon requirements)
+- Does not check stamina, time, focus, or zone
+- **Rename**: `cardRulePredicatesSatisfied` or similar
+
+### Missing Test Coverage
+
+- Focus spending commands (withdraw/add/stack) integration tests
+- `commit_withdraw` stamina refund
+- `commit_add` sets `added_in_commit` flag
+- `commit_stack` template matching enforcement
+- `executeCommitPhaseRules` with actual on_commit triggered cards
+
+### TagSet Extension Required
+
+Add playability phase flags:
+```zig
+pub const TagSet = packed struct {
+    // ...existing...
+    phase_selection: bool = false,  // playable during selection (default for most)
+    phase_commit: bool = false,     // playable during commit (Focus cards)
+};
+```
+
+Wire into validation:
+```zig
+fn canPlayInPhase(tags: TagSet, phase: GameState) bool {
+    return switch (phase) {
+        .player_card_selection => tags.phase_selection,
+        .commit_phase => tags.phase_commit,
+        else => false,
+    };
+}
+```
+
+---
+
 ## 2026-01-02: Focus System Phase 3 Complete
 
 ### Implemented

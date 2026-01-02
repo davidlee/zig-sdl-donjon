@@ -560,3 +560,242 @@ pub const TurnHistory = struct {
 ## Open Questions
 
 - Turn history depth (4 turns enough?)
+
+---
+
+# Design Evolution: Technique Pool + Modifier Cards (Model B)
+
+*Added 2026-01-02 after review of Phase 3 implementation*
+
+## Problem Statement
+
+The current design conflates two orthogonal concepts:
+
+1. **Playability window**: When can this card enter play?
+2. **Effect trigger**: When do the card's rules fire?
+
+The `on_commit` trigger was intended to mean "this card can only be played during commit phase" (Feint), but the implementation interpreted it as "fire this rule's effects when entering commit phase". Both interpretations are valid for different cards, but they need separate representation.
+
+More fundamentally: should fundamental techniques (thrust, swing, block, feint) be dealt randomly? Or should they always be available, with randomness governing *how* you execute them?
+
+## Model B: Techniques Always Available
+
+### Core Concept
+
+| Layer | Source | Examples |
+|-------|--------|----------|
+| Techniques | Always available (pool) | thrust, swing, block, parry, feint |
+| Tactical modifiers | Dealt from deck | high/mid/low, committed/guarded, press/withdraw |
+
+A turn becomes: choose technique(s) + pair with available modifiers.
+
+You can always thrust, but *how* you thrust depends on what tactical cards you drew.
+
+### What Changes
+
+**Hand contents shift from "what moves you know" to "how you fight":**
+
+- Not: "I drew Thrust, Thrust, Block"
+- But: "I drew High, Low, Guarded"
+
+**Draw categories reframe:**
+
+| Old Category | New Category |
+|--------------|--------------|
+| Offensive technique | Aggressive modifier (Committed, Press, Reckless) |
+| Defensive technique | Cautious modifier (Guarded, Withdraw, Patient) |
+| Manoeuvre | Positional modifier (High/Mid/Low, Flank, Close) |
+| Meta/Special | Resource modifier (Focus recovery, Stamina boost) |
+
+### Modifier Taxonomy (Draft)
+
+**Height modifiers** (target selection):
+- `High` - targets head, harder to hit, more damage
+- `Mid` - targets torso, baseline
+- `Low` - targets legs, easier to hit, less damage
+
+**Commitment modifiers** (risk/reward):
+- `Guarded` - defensive posture, reduced damage, bonus on success (reveal enemy card?)
+- `Committed` - full commitment, bonus damage, vulnerable on miss
+- `Reckless` - maximum commitment, stakes escalation
+
+**Tempo modifiers** (initiative):
+- `Press` - maintain pressure, faster execution
+- `Withdraw` - create distance, slower but safer
+- `Feint` - fake attack, converts to advantage play (this becomes a modifier, not a technique!)
+
+### Technique × Modifier Interaction
+
+**Baseline (no modifier):** Technique executes at default values.
+
+**Single modifier:** Applies its effect to the technique.
+
+**Stacked modifiers:** Combine effects, potentially unlock special interactions.
+
+| Technique | + Modifier | Effect |
+|-----------|------------|--------|
+| Thrust | +High | Head thrust, accuracy penalty, damage bonus |
+| Thrust | +High +Committed | Reckless head thrust, major damage, exposed |
+| Block | +Low | Leg block, protects against low attacks |
+| Block | +Guarded | Defensive block, reveals enemy card on success |
+| Swing | +Press | Fast swing, maintains initiative |
+| Thrust | +Feint | Fake thrust, zero damage, advantage on "hit" |
+
+### Stacking Same Modifier
+
+Multiple copies of the same modifier intensify the effect:
+
+| Stack | Effect |
+|-------|--------|
+| High + High | Improved accuracy OR harder to parry |
+| Committed + Committed | Reckless stakes (existing mechanic) |
+| Guarded + Guarded | Reveal 2 cards? Extended defensive window? |
+
+This complements the existing reinforcement mechanic (stacking same technique), not replaces it.
+
+### Play Construction
+
+A Play becomes:
+```zig
+pub const Play = struct {
+    technique: entity.ID,              // from pool (always available)
+    modifiers: [4]?entity.ID,          // from hand (dealt cards)
+    modifier_count: u8 = 0,
+
+    // existing fields...
+    stakes: Stakes = .guarded,
+    cost_mult: f32 = 1.0,
+    damage_mult: f32 = 1.0,
+    advantage_override: ?TechniqueAdvantage = null,
+};
+```
+
+### Storage Model
+
+**Techniques:**
+- Live in agent's Pool (always available)
+- Can be duplicated on-demand as Play instances
+- Not in deck/hand/discard cycle
+
+**Modifiers:**
+- Live in agent's Deck (draw/hand/discard cycle)
+- Dealt based on Focus
+- Consumed when played (go to discard)
+
+This reuses existing `.deck` vs `.pool` infrastructure on `Agent.cards`.
+
+## Playability Phases (Orthogonal Fix)
+
+Regardless of Model B adoption, playability needs separation from triggers.
+
+### TagSet Extension
+
+```zig
+pub const TagSet = packed struct {
+    // ...existing...
+    reaction: bool = false,       // already exists
+
+    // playability phases
+    phase_selection: bool = false,  // playable during card selection
+    phase_commit: bool = false,     // playable during commit phase
+};
+```
+
+### Validation
+
+```zig
+fn canPlayInPhase(tags: TagSet, phase: GameState) bool {
+    return switch (phase) {
+        .player_card_selection => tags.phase_selection,
+        .commit_phase => tags.phase_commit,
+        // reaction window checks .reaction
+        else => false,
+    };
+}
+```
+
+### Default Handling
+
+Most cards: `.phase_selection = true` (set via template helper)
+
+Commit-phase cards (like current Feint design): `.phase_commit = true`
+
+## Feint Reconsidered
+
+Under Model B, Feint becomes a **modifier**, not a technique:
+
+```zig
+const feint_modifier = Template{
+    .kind = .modifier,  // new kind
+    .name = "feint",
+    .tags = .{ .phase_selection = true },  // played during selection
+    .cost = .{ .stamina = 0.5 },  // low stamina, no focus cost
+    .rules = &.{
+        .{
+            .trigger = .on_play,
+            .effect = .{ .modify_play = .{
+                .damage_mult = 0,
+                .cost_mult = 0.33,
+                .replace_advantage = .{ /* feint advantage profile */ },
+            }},
+            .target = .self_play,  // modifies the play it's attached to
+        },
+    },
+};
+```
+
+When you play Thrust + Feint, the Feint modifier converts your thrust into a zero-damage probe with favorable advantage outcomes.
+
+## Mastery Progression (Hybrid, Roadmap)
+
+| Mastery Level | Availability |
+|---------------|--------------|
+| Unlearned | Not available |
+| Learned | In deck (dealt randomly) |
+| Mastered | In pool (always available) |
+
+**Progression arc:**
+1. Find/unlock a new technique (e.g., Mordhau)
+2. It enters your deck as a learnable card
+3. Use it successfully → gain mastery XP
+4. At mastery threshold → becomes metaprogression card
+5. Metaprogression card = always in pool
+
+**Classes as starting metaprogression:**
+- Swordsman: starts with Thrust, Swing, Block, Feint mastered
+- Shieldbearer: starts with Block, Shield Bash, Guard mastered
+- etc.
+
+## Impact on Current Implementation
+
+### Likely Preserved
+
+- `Resource` struct (Focus/Stamina) ✓
+- `Encounter` state model (engagements, agent_state) ✓
+- `Play` struct (with modifications) ✓
+- `TurnState`, `TurnHistory` ✓
+- `modify_play`, `cancel_play` effects ✓
+- Focus spending commands (withdraw/add/stack) - with semantic shift
+- `on_commit` trigger - for actual commit-phase-triggered effects
+
+### Needs Modification
+
+- `Play` struct gains `technique` + `modifiers` fields
+- Draw system draws modifiers, not techniques
+- Validation checks playability phase flags
+- Template gains `.kind = .modifier` variant
+- Pool usage for techniques (currently mobs only)
+
+### Needs Removal/Rework
+
+- Technique cards in deck (move to pool)
+- Draw categories as technique filters (become modifier filters)
+- Feint as technique (becomes modifier)
+
+### Open Questions
+
+- Can techniques be played without any modifier? (Baseline version - yes, probably)
+- Maximum modifiers per play? (4 seems reasonable)
+- Do modifiers stack with reinforcement, or replace it?
+- How do multi-technique plays work (if at all)?
+- Modifier discard timing (on play? on resolution?)
