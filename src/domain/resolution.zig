@@ -688,11 +688,11 @@ test "resolveTechniqueVsDefense emits technique_resolved event" {
     // Create attacker (player) and defender (mob)
     const attacker = w.player;
     const defender = try makeTestAgent(alloc, w.entities.agents, ai.noop());
-    defer defender.deinit();
+    // Add to encounter (creates engagement)
+    try w.encounter.?.addEnemy(defender);
 
-    // Set up engagement on defender
-    defender.engagement = Engagement{};
-    const engagement = &defender.engagement.?;
+    // Get engagement from encounter
+    const engagement = w.encounter.?.getPlayerEngagement(defender.id).?;
 
     // Get thrust technique
     const technique = &cards.Technique.byID(.thrust);
@@ -749,10 +749,9 @@ test "resolveTechniqueVsDefense emits advantage_changed events on hit" {
 
     const attacker = w.player;
     const defender = try makeTestAgent(alloc, w.entities.agents, ai.noop());
-    defer defender.deinit();
+    try w.encounter.?.addEnemy(defender);
 
-    defender.engagement = Engagement{};
-    const engagement = &defender.engagement.?;
+    const engagement = w.encounter.?.getPlayerEngagement(defender.id).?;
 
     const technique = &cards.Technique.byID(.swing);
 
@@ -817,10 +816,9 @@ test "resolveTechniqueVsDefense applies damage on hit" {
 
     const attacker = w.player;
     const defender = try makeTestAgent(alloc, w.entities.agents, ai.noop());
-    defer defender.deinit();
+    try w.encounter.?.addEnemy(defender);
 
-    defender.engagement = Engagement{};
-    const engagement = &defender.engagement.?;
+    const engagement = w.encounter.?.getPlayerEngagement(defender.id).?;
 
     const technique = &cards.Technique.byID(.thrust);
 

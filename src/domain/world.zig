@@ -118,7 +118,7 @@ pub const World = struct {
         self.* = .{
             .alloc = alloc,
             .events = try EventSystem.init(alloc),
-            .encounter = try combat.Encounter.init(alloc),
+            .encounter = null, // created after player
             .random = random.RandomStreamDict.init(),
             .entities = try EntityMap.init(alloc),
             .player = undefined, // set after entities exist
@@ -128,6 +128,7 @@ pub const World = struct {
             .commandHandler = undefined,
         };
         self.player = try player.newPlayer(alloc, self, playerDeck, playerStats, playerBody);
+        self.encounter = try combat.Encounter.init(alloc, self.player.id);
         return self;
     }
 
@@ -142,7 +143,7 @@ pub const World = struct {
 
         // Deinit encounter enemies (removes from entities.agents)
         if (self.encounter) |*encounter| {
-            encounter.deinit(self.alloc, self.entities.agents);
+            encounter.deinit(self.entities.agents);
         }
 
         // Deinit player explicitly

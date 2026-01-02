@@ -219,8 +219,9 @@ pub const TickResolver = struct {
                 // Find defender's active defense (if any)
                 const defense_tech = self.findDefensiveAction(defender, action.time_start, action.time_end);
 
-                // Get engagement (stored on mob)
-                const engagement = self.getEngagement(action.actor, defender) orelse continue;
+                // Get engagement from encounter
+                const encounter: ?*combat.Encounter = if (w.encounter) |*e| e else null;
+                const engagement = self.getEngagement(encounter, action.actor, defender) orelse continue;
 
                 // Check expression filter predicate
                 if (action.card) |card| {
@@ -309,14 +310,10 @@ pub const TickResolver = struct {
         return null; // passive defense
     }
 
-    fn getEngagement(self: *TickResolver, attacker: *Agent, defender: *Agent) ?*Engagement {
+    fn getEngagement(self: *TickResolver, encounter: ?*combat.Encounter, attacker: *Agent, defender: *Agent) ?*Engagement {
         _ = self;
-        // Engagement is stored on the mob (non-player)
-        if (attacker.director == .player) {
-            return if (defender.engagement) |*e| e else null;
-        } else {
-            return if (attacker.engagement) |*e| e else null;
-        }
+        const enc = encounter orelse return null;
+        return enc.getEngagement(attacker.id, defender.id);
     }
 
     fn getWeaponTemplate(self: *TickResolver, agent: *Agent) *const weapon.Template {
@@ -497,7 +494,6 @@ test "commitSingleMob fills tick with multiple pool techniques" {
         .body = test_body,
         .armour = armour.Stack.init(alloc),
         .weapons = undefined,
-        .engagement = Engagement{},
         .stamina = stats.Resource.init(10.0, 10.0, 2.0),
         .focus = stats.Resource.init(3.0, 5.0, 3.0),
         .conditions = try std.ArrayList(@import("damage.zig").ActiveCondition).initCapacity(alloc, 1),
@@ -571,7 +567,6 @@ test "commitSingleMob stops when stamina exhausted" {
         .body = test_body,
         .armour = armour.Stack.init(alloc),
         .weapons = undefined,
-        .engagement = Engagement{},
         .stamina = stats.Resource.init(10.0, 10.0, 2.0), // Only enough for 2 techniques (8 stamina)
         .focus = stats.Resource.init(3.0, 5.0, 3.0),
         .conditions = try std.ArrayList(@import("damage.zig").ActiveCondition).initCapacity(alloc, 1),

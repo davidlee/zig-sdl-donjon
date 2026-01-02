@@ -167,24 +167,63 @@ pub const TechniquePool = struct {
     }
 };
 
+/// Canonical pairing of two agents for engagement lookup.
+/// Ordering ensures (a,b) and (b,a) map to the same key.
+pub const AgentPair = struct {
+    a: entity.ID, // lower index
+    b: entity.ID, // higher index
+
+    pub fn canonical(x: entity.ID, y: entity.ID) AgentPair {
+        return if (x.index < y.index)
+            .{ .a = x, .b = y }
+        else
+            .{ .a = y, .b = x };
+    }
+};
+
 pub const Encounter = struct {
+    alloc: std.mem.Allocator,
     enemies: std.ArrayList(*combat.Agent),
-    //
-    // environment ...
-    // loot ...
-    //
-    pub fn init(alloc: std.mem.Allocator) !Encounter {
+    player_id: entity.ID,
+    engagements: std.AutoHashMap(AgentPair, Engagement),
+
+    pub fn init(alloc: std.mem.Allocator, player_id: entity.ID) !Encounter {
         return Encounter{
+            .alloc = alloc,
             .enemies = try std.ArrayList(*combat.Agent).initCapacity(alloc, 5),
+            .player_id = player_id,
+            .engagements = std.AutoHashMap(AgentPair, Engagement).init(alloc),
         };
     }
 
-    pub fn deinit(self: *Encounter, alloc: std.mem.Allocator, agents: *SlotMap(*Agent)) void {
+    pub fn deinit(self: *Encounter, agents: *SlotMap(*Agent)) void {
         for (self.enemies.items) |enemy| {
             agents.remove(enemy.id);
             enemy.deinit();
         }
-        self.enemies.deinit(alloc);
+        self.enemies.deinit(self.alloc);
+        self.engagements.deinit();
+    }
+
+    /// Get engagement between two agents (order doesn't matter).
+    pub fn getEngagement(self: *Encounter, a: entity.ID, b: entity.ID) ?*Engagement {
+        return self.engagements.getPtr(AgentPair.canonical(a, b));
+    }
+
+    /// Get engagement between player and a mob.
+    pub fn getPlayerEngagement(self: *Encounter, mob_id: entity.ID) ?*Engagement {
+        return self.getEngagement(self.player_id, mob_id);
+    }
+
+    /// Set or create engagement between two agents.
+    pub fn setEngagement(self: *Encounter, a: entity.ID, b: entity.ID, eng: Engagement) !void {
+        try self.engagements.put(AgentPair.canonical(a, b), eng);
+    }
+
+    /// Add enemy and create default engagement with player.
+    pub fn addEnemy(self: *Encounter, enemy: *Agent) !void {
+        try self.enemies.append(self.alloc, enemy);
+        try self.setEngagement(self.player_id, enemy.id, Engagement{});
     }
 };
 // const ScriptedAction = struct {};
@@ -207,7 +246,6 @@ pub const Agent = struct {
     director: Director,
     cards: Strat,
     stats: stats.Block,
-    engagement: ?combat.Engagement, // for NPCs only (relative to player)
     // may be humanoid, or not
     body: body.Body,
     // sourced from cards.equipped
@@ -247,7 +285,6 @@ pub const Agent = struct {
             .body = bd,
             .armour = armour.Stack.init(alloc),
             .weapons = armament,
-            .engagement = (if (dr == .ai) Engagement{} else null),
             .stamina = stamina,
             .focus = focus,
 
@@ -291,10 +328,10 @@ pub const Agent = struct {
     }
 
     /// Returns an iterator over all active conditions (stored + computed).
-    /// For relational conditions (pressured, weapon_bound), uses self.engagement
-    /// if present (mob perspective: high values = disadvantage for self).
-    pub fn activeConditions(self: *const Agent) ConditionIterator {
-        return ConditionIterator.init(self);
+    /// For relational conditions (pressured, weapon_bound), pass the engagement
+    /// if in an encounter (high values = disadvantage for self).
+    pub fn activeConditions(self: *const Agent, engagement: ?*const Engagement) ConditionIterator {
+        return ConditionIterator.init(self, engagement);
     }
 };
 
@@ -333,13 +370,14 @@ pub const Engagement = struct {
 /// Iterates stored conditions, then yields computed conditions based on thresholds.
 pub const ConditionIterator = struct {
     agent: *const Agent,
+    engagement: ?*const Engagement,
     stored_index: usize = 0,
     computed_phase: u2 = 0, // 0=unbalanced, 1=pressured, 2=weapon_bound, 3=done
 
     const Expiration = damage.ActiveCondition.Expiration;
 
-    pub fn init(agent: *const Agent) ConditionIterator {
-        return .{ .agent = agent };
+    pub fn init(agent: *const Agent, engagement: ?*const Engagement) ConditionIterator {
+        return .{ .agent = agent, .engagement = engagement };
     }
 
     pub fn next(self: *ConditionIterator) ?damage.ActiveCondition {
@@ -359,12 +397,12 @@ pub const ConditionIterator = struct {
                 0 => if (self.agent.balance < 0.2) {
                     return .{ .condition = .unbalanced, .expiration = .dynamic };
                 },
-                1 => if (self.agent.engagement) |eng| {
+                1 => if (self.engagement) |eng| {
                     if (eng.pressure > 0.8) {
                         return .{ .condition = .pressured, .expiration = .dynamic };
                     }
                 },
-                2 => if (self.agent.engagement) |eng| {
+                2 => if (self.engagement) |eng| {
                     if (eng.control > 0.8) {
                         return .{ .condition = .weapon_bound, .expiration = .dynamic };
                     }

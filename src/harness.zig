@@ -44,5 +44,5 @@ pub fn setupEncounter(world: *World) !void {
         combat.Armament{ .single = buckler },
     );
 
-    try world.encounter.?.enemies.append(world.alloc, mob);
+    try world.encounter.?.addEnemy(mob);
 }

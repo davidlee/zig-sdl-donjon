@@ -476,7 +476,8 @@ pub fn cardHasValidTargets(
             // Get potential targets
             const targets = getTargetsForQuery(expr.target, actor, world);
             for (targets) |target| {
-                const engagement = getEngagementBetween(actor, target);
+                const encounter: ?*combat.Encounter = if (world.encounter) |*e| e else null;
+                const engagement = getEngagementBetween(encounter, actor, target);
                 if (expressionAppliesToTarget(&expr, card, actor, target, engagement)) {
                     return true;
                 }
@@ -504,15 +505,9 @@ fn getTargetsForQuery(query: cards.TargetQuery, actor: *const Agent, world: *con
     };
 }
 
-fn getEngagementBetween(actor: *const Agent, target: *const Agent) ?*const combat.Engagement {
-    // Engagement is stored on the mob (non-player), relative to player
-    if (actor.director == .player) {
-        // Actor is player, target is mob — engagement stored on mob
-        return if (target.engagement) |*e| e else null;
-    } else {
-        // Actor is mob, target is player — engagement stored on actor
-        return if (actor.engagement) |*e| e else null;
-    }
+fn getEngagementBetween(encounter: ?*combat.Encounter, actor: *const Agent, target: *const Agent) ?*const combat.Engagement {
+    const enc = encounter orelse return null;
+    return enc.getEngagement(actor.id, target.id);
 }
 
 // ============================================================================
@@ -647,7 +642,6 @@ fn makeTestAgent(armament: combat.Armament) Agent {
         .director = ai.noop(),
         .cards = .{ .pool = undefined }, // not used by canUseCard
         .stats = undefined, // not used by canUseCard
-        .engagement = null,
         .body = undefined, // not used by canUseCard
         .armour = undefined, // not used by canUseCard
         .weapons = armament,
