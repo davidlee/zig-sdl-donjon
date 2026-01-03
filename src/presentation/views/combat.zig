@@ -14,6 +14,7 @@ const combat = @import("../../domain/combat.zig");
 const s = @import("sdl3");
 const entity = infra.entity;
 const chrome = @import("chrome.zig");
+const apply = @import("../../domain/apply.zig");
 const StatusBarView = @import("status_bar_view.zig").StatusBarView;
 
 const Renderable = view.Renderable;
@@ -27,6 +28,7 @@ const CombatState = view.CombatState;
 const DragState = view.DragState;
 const InputResult = view.InputResult;
 const Command = infra.commands.Command;
+const Agent = combat.Agent;
 const ID = infra.commands.ID;
 const Keycode = s.keycode.Keycode;
 const card_renderer = @import("../card_renderer.zig");
@@ -163,16 +165,38 @@ const CardZoneView = struct {
         };
     }
 
-    fn appendRenderables(self: CardZoneView, alloc: std.mem.Allocator, vs: ViewState, list: *std.ArrayList(Renderable), last: *?Renderable) !void {
+    fn appendIndicatePlayable(
+        self: CardZoneView,
+        alloc: std.mem.Allocator,
+        vs: ViewState,
+        list: *std.ArrayList(Renderable),
+        last: *?Renderable,
+        player: *Agent,
+        phase: w.GameState,
+    ) !void {
         for (0..self.card_list.len) |i| {
             const cr = self.cardWithRect(vs, i);
-            const card_vm = CardViewModel.fromInstance(cr.card, .{});
+            var card = cr.card;
+            const playable = apply.validateCardSelection(player, &card, phase) catch false;
+            const card_vm = CardViewModel.fromInstance(cr.card, .{
+                .disabled = !playable,
+            });
+
             const item: Renderable = .{ .card = .{ .model = card_vm, .dst = cr.rect } };
             if (cr.state == .normal) {
                 try list.append(alloc, item);
             } else {
                 last.* = item;
             }
+        }
+    }
+
+    fn appendEnemyRenderables(self: CardZoneView, alloc: std.mem.Allocator, vs: ViewState, list: *std.ArrayList(Renderable)) !void {
+        for (0..self.card_list.len) |i| {
+            const cr = self.cardWithRect(vs, i);
+            const card_vm = CardViewModel.fromInstance(cr.card, .{});
+            const item: Renderable = .{ .card = .{ .model = card_vm, .dst = cr.rect } };
+            try list.append(alloc, item);
         }
     }
 };
@@ -295,12 +319,16 @@ pub const CombatView = struct {
         return self.world.player.cards.deck.in_play.items;
     }
 
-    pub fn enemyInPlay(self: *const CombatView) []const *cards.Instance {
-        if (self.combat_phase != .commit_phase) return &.{};
-        const es = self.world.encounter.?.enemies;
-        if (es.items.len != 1) unreachable; // FIXME: only works with single mobs
+    // FIXME: hardcoded to single enemy
+    pub fn enemy(self: *const CombatView) *Agent {
+        const es = self.world.encounter.?.enemies.items;
+        if (es.len != 1) unreachable; // FIXME: only works with single mobs
+        return es[0];
+    }
 
-        return es.items[0].cards.deck.in_play.items;
+    // FIXME: hardcoded to single enemy
+    pub fn enemyInPlay(self: *const CombatView) []const *cards.Instance {
+        return self.enemy().cards.deck.in_play.items;
     }
 
     // Input handling - returns command + optional view state update
@@ -423,12 +451,12 @@ pub const CombatView = struct {
 
         // Player cards - render in_play first (behind), then hand (in front)
         var last: ?Renderable = null;
-        try self.inPlayZone().appendRenderables(alloc, vs, &list, &last);
-        try self.handZone().appendRenderables(alloc, vs, &list, &last);
+        try self.inPlayZone().appendIndicatePlayable(alloc, vs, &list, &last, self.world.player, self.combat_phase);
+        try self.handZone().appendIndicatePlayable(alloc, vs, &list, &last, self.world.player, self.combat_phase);
 
         // enemy cards
         if (self.combat_phase == .commit_phase) {
-            try self.enemyInPlayZone().appendRenderables(alloc, vs, &list, &last);
+            try self.enemyInPlayZone().appendEnemyRenderables(alloc, vs, &list);
         }
 
         // Render hovered/dragged card last (on top)

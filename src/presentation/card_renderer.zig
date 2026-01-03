@@ -65,7 +65,7 @@ fn rarityBorderColor(rarity: CardRarity) Color {
 }
 
 fn stateOverlayColor(state: CardState) ?Color {
-    if (state.disabled) return .{ .r = 60, .g = 60, .b = 60, .a = 180 };
+    if (state.disabled) return .{ .r = 33, .g = 33, .b = 33, .a = 180 };
     if (state.exhausted) return .{ .r = 40, .g = 40, .b = 50, .a = 150 };
     return null;
 }

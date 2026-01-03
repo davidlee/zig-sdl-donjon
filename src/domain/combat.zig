@@ -11,8 +11,8 @@ const deck = @import("deck.zig");
 const cards = @import("cards.zig");
 const apply = @import("apply.zig");
 const ai = @import("ai.zig");
-
 const e = @import("events.zig");
+const world = @import("world.zig");
 const EventSystem = e.EventSystem;
 const Event = e.Event;
 
@@ -239,6 +239,7 @@ pub const Encounter = struct {
         return self.agent_state.getPtr(agent_id);
     }
 };
+
 // const ScriptedAction = struct {};
 //
 // // Creature: pure behavior script, no "cards" at all
@@ -338,6 +339,10 @@ pub const Agent = struct {
 
     fn isDominantSide(dominant: body.Side, side: body.Side) bool {
         return dominant == .center or dominant.? == side;
+    }
+
+    fn canPlayCardInPhase(self: *Agent, card: *Instance, phase: world.GameState) bool {
+        return apply.validateCardSelection(self, card, phase) catch false;
     }
 
     /// Returns an iterator over all active conditions (stored + computed).

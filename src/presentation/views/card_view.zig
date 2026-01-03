@@ -30,7 +30,7 @@ pub const CardState = packed struct {
     exhausted: bool = false,
     selected: bool = false,
     highlighted: bool = false,
-    disabled: bool = false,
+    disabled: bool = false, // !playable by player - potentially expensive to compute
 };
 
 /// All data the renderer needs to draw a card
