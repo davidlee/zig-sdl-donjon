@@ -46,6 +46,22 @@ pub const Zone = enum {
     // active_reactions,
 };
 
+/// Specifies which containers a card can be played from.
+/// Multiple sources can be enabled (e.g., a technique might be
+/// playable from techniques_known OR hand if dealt as a bonus).
+pub const PlayableFrom = packed struct {
+    hand: bool = false, // Dealt cards in hand (CombatState.hand)
+    techniques_known: bool = false, // Always-available techniques
+    spells_known: bool = false, // Always-available spells (if mana)
+    equipped: bool = false, // Draw/throw/swap equipped items
+    inventory: bool = false, // Use consumables
+    environment: bool = false, // Pick up rubble/thrown items
+
+    pub const hand_only: PlayableFrom = .{ .hand = true };
+    pub const technique: PlayableFrom = .{ .techniques_known = true };
+    pub const spell: PlayableFrom = .{ .spells_known = true };
+};
+
 pub const Trigger = union(enum) {
     on_play,
     on_draw,
@@ -260,6 +276,10 @@ pub const Template = struct {
     tags: TagSet,
     rules: []const Rule,
     cost: Cost,
+
+    // Playability metadata
+    playable_from: PlayableFrom = PlayableFrom.hand_only, // Default: dealt cards only
+    combat_playable: bool = true, // false = out-of-combat only (e.g., don plate armor)
 
     /// Extract combat technique from rules (first combat_technique effect found)
     pub fn getTechnique(self: *const Template) ?*const Technique {

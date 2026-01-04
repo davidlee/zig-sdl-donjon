@@ -504,13 +504,11 @@ pub const CombatView = struct {
 
 fn cardViewState(cs: ?CombatState, card: *const cards.Instance) CardViewState {
     const c = cs orelse CombatState{};
-    if (c.drag != null and c.drag.?.id.index == card.id.index) {
+    if (c.drag != null and c.drag.?.id.eql(card.id)) {
         return .drag;
     } else {
         switch (c.hover) {
-            .card => |data| if (data.index == card.id.index) {
-                return .hover;
-            },
+            .card => |data| if (data.eql(card.id)) return .hover,
             else => return .normal,
         }
     }

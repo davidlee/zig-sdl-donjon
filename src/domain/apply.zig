@@ -34,7 +34,9 @@ pub const ValidationError = error{
     InsufficientFocus,
     InvalidGameState,
     WrongPhase,
-    CardNotInHand,
+    CardNotInHand, // Legacy: kept for compatibility
+    InvalidPlaySource, // Card not in any source allowed by playable_from
+    NotCombatPlayable, // Card has combat_playable=false
     PredicateFailed,
     NotImplemented,
 };
@@ -478,7 +480,7 @@ pub const EventProcessor = struct {
                             for (self.world.encounter.?.enemies.items) |agent| {
                                 switch (agent.director) {
                                     .ai => |*director| {
-                                        try director.playCards(agent, self.world.player, event_system);
+                                        try director.playCards(agent, self.world);
                                     },
                                     else => unreachable,
                                 }
@@ -556,10 +558,14 @@ pub fn isCardSelectionValid(actor: *Agent, card: *Instance) bool {
     return validateCardSelection(actor, card, .player_card_selection) catch false;
 }
 
-/// Check if card can be played: phase flags, costs, zone, and rule predicates.
+/// Check if card can be played: combat_playable, phase flags, source location,
+/// costs, and rule predicates.
 pub fn validateCardSelection(actor: *Agent, card: *Instance, phase: w.GameState) !bool {
     const cs = actor.combat_state orelse return ValidationError.InvalidGameState;
     const template = card.template;
+
+    // Check if card is playable in combat at all
+    if (!template.combat_playable) return ValidationError.NotCombatPlayable;
 
     // Check if card can be played in this phase
     if (!template.tags.canPlayInPhase(phase)) return ValidationError.WrongPhase;
@@ -573,12 +579,48 @@ pub fn validateCardSelection(actor: *Agent, card: *Instance, phase: w.GameState)
         return ValidationError.InsufficientFocus;
     }
 
-    if (!cs.isInZone(card.id, .hand)) return ValidationError.CardNotInHand;
+    // Check if card is in an allowed source based on playable_from
+    if (!isInPlayableSource(actor, cs, card.id, template.playable_from)) {
+        return ValidationError.InvalidPlaySource;
+    }
 
     // check rule.valid predicates (weapon requirements, etc.)
     if (!rulePredicatesSatisfied(template, actor)) return ValidationError.PredicateFailed;
 
     return true;
+}
+
+/// Check if card_id is in any container allowed by playable_from.
+/// Note: equipped and environment require World access (not yet implemented).
+fn isInPlayableSource(actor: *const Agent, cs: *const combat.CombatState, card_id: entity.ID, pf: cards.PlayableFrom) bool {
+    // Check CombatState.hand
+    if (pf.hand and cs.isInZone(card_id, .hand)) return true;
+
+    // Check techniques_known
+    if (pf.techniques_known) {
+        for (actor.techniques_known.items) |id| {
+            if (id.eql(card_id)) return true;
+        }
+    }
+
+    // Check spells_known
+    if (pf.spells_known) {
+        for (actor.spells_known.items) |id| {
+            if (id.eql(card_id)) return true;
+        }
+    }
+
+    // Check inventory
+    if (pf.inventory) {
+        for (actor.inventory.items) |id| {
+            if (id.eql(card_id)) return true;
+        }
+    }
+
+    // TODO: equipped requires checking Armament/equipment (needs World access)
+    // TODO: environment requires checking Encounter.environment (needs World access)
+
+    return false;
 }
 
 /// Doesn't perform validation. Just moves card, reserves costs, emits events.

@@ -156,9 +156,7 @@ pub const CombatState = struct {
             .exhaust => &self.exhaust,
         };
         for (list.items) |card_id| {
-            if (card_id.index == id.index and card_id.generation == id.generation) {
-                return true;
-            }
+            if (card_id.eql(id)) return true;
         }
         return false;
     }
@@ -166,9 +164,7 @@ pub const CombatState = struct {
     /// Find index of card in zone, or null if not found.
     fn findIndex(list: *const std.ArrayList(entity.ID), id: entity.ID) ?usize {
         for (list.items, 0..) |card_id, i| {
-            if (card_id.index == id.index and card_id.generation == id.generation) {
-                return i;
-            }
+            if (card_id.eql(id)) return i;
         }
         return null;
     }
@@ -665,11 +661,7 @@ pub const TurnState = struct {
     /// Find a play by its primary card ID, returns index or null.
     pub fn findPlayByCard(self: *const TurnState, card_id: entity.ID) ?usize {
         for (self.plays(), 0..) |play, i| {
-            if (play.primary.index == card_id.index and
-                play.primary.generation == card_id.generation)
-            {
-                return i;
-            }
+            if (play.primary.eql(card_id)) return i;
         }
         return null;
     }

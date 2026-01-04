@@ -45,14 +45,11 @@ const AIError = error{
 /// AI strategy "interface"
 pub const Director = struct {
     ptr: *anyopaque,
-    // agent: *Agent,
-    // player: *Agent,
 
-    playCardsFn: *const fn (ptr: *anyopaque, agent: *Agent, player: *Agent, events: *EventSystem) anyerror!void,
+    playCardsFn: *const fn (ptr: *anyopaque, agent: *Agent, w: *World) anyerror!void,
 
-    // delegate to the supplied function
-    pub fn playCards(self: *Director, agent: *Agent, player: *Agent, events: *EventSystem) !void {
-        return self.playCardsFn(self.ptr, agent, player, events);
+    pub fn playCards(self: *Director, agent: *Agent, w: *World) !void {
+        return self.playCardsFn(self.ptr, agent, w);
     }
 };
 
@@ -65,13 +62,13 @@ pub const NullDirector = struct {
         };
     }
 
-    pub fn playCards(ptr: *anyopaque, agent: *Agent, player: *Agent, events: *EventSystem) !void {
-        _ = .{ ptr, agent, player, events };
+    pub fn playCards(ptr: *anyopaque, agent: *Agent, w: *World) !void {
+        _ = .{ ptr, agent, w };
     }
 };
 
 /// Just spams the first playable card whenever it can
-/// requires a deck
+/// requires combat_state (deck-based agent)
 pub const SimpleDeckDirector = struct {
     pub fn director(self: *SimpleDeckDirector) Director {
         return Director{
@@ -80,19 +77,21 @@ pub const SimpleDeckDirector = struct {
         };
     }
 
-    // TODO: ensure events differentiate player and mob actions
-    pub fn playCards(ptr: *anyopaque, agent: *Agent, player: *Agent, events: *EventSystem) !void {
-        const self: *SimpleDeckDirector = @ptrCast(@alignCast(ptr));
-        _ = .{ player, self };
-
-        const dk = &agent.cards.deck;
+    pub fn playCards(ptr: *anyopaque, agent: *Agent, w: *World) !void {
+        _ = ptr;
+        const cs = agent.combat_state orelse return;
         var to_play: usize = 3;
         var hand_index: usize = 0;
-        while (to_play > 0 and hand_index < dk.hand.items.len) : (hand_index += 1) {
-            const card = dk.hand.items[hand_index];
+        while (to_play > 0 and hand_index < cs.hand.items.len) : (hand_index += 1) {
+            const card_id = cs.hand.items[hand_index];
+            const card = w.card_registry.get(card_id) orelse continue;
             if (apply.isCardSelectionValid(agent, card)) {
-                try apply.playValidCardReservingCosts(events, agent, card);
-                try events.push(e.Event{ .played_action_card = .{ .instance = card.id, .template = card.template.id, .actor = .{ .id = agent.id, .player = false } } });
+                try apply.playValidCardReservingCosts(&w.events, agent, card);
+                try w.events.push(e.Event{ .played_action_card = .{
+                    .instance = card.id,
+                    .template = card.template.id,
+                    .actor = .{ .id = agent.id, .player = false },
+                } });
                 to_play -= 1;
             }
         }

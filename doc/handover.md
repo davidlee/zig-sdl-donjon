@@ -1,6 +1,6 @@
 # Handover Notes
 
-## 2026-01-04: Card Storage Architecture - Phases 1-5 Complete
+## 2026-01-04: Card Storage Architecture - Phases 1-6 Complete
 
 ### Context
 Implementing new card storage architecture per `doc/card_storage_design.md`. Goal: unified card registry at World level, with Agent containers for techniques_known, deck_cards, etc.
@@ -52,19 +52,53 @@ Implementing new card storage architecture per `doc/card_storage_design.md`. Goa
   - `commitSingleMob()` in tick.zig uses `combat_state.in_play` for deck-based mobs
 - Key pattern: zone operations use CombatState (stores IDs), instance lookups use `card_registry.get(id)`
 
+**Phase 6: Template Playability Metadata** (`cards.zig`, `apply.zig`)
+- Added `PlayableFrom` packed struct with source flags: hand, techniques_known, spells_known, equipped, inventory, environment
+- Added convenience constants: `PlayableFrom.hand_only`, `.technique`, `.spell`
+- Added `Template.playable_from: PlayableFrom` (default: `.hand_only`)
+- Added `Template.combat_playable: bool` (default: `true`)
+- Added `ValidationError.NotCombatPlayable` and `ValidationError.InvalidPlaySource`
+- Added `isInPlayableSource()` helper to check card location against playable_from flags
+- Updated `validateCardSelection()` to check `combat_playable` and `playable_from`
+- Note: equipped and environment source checks require World access (TODO)
+
 ### Remaining Phases
-6. Add `PlayableFrom` and `combat_playable` to Template
 7. Remove legacy `Deck.entities` and zone ArrayLists
 8. Add `cleanupCombatState()` call at combat end (when combat termination is implemented)
 
-### Next Task: Phase 6 - Template Playability Metadata
+### Decisions & Notes from Phase 5
 
-**Goal:** Add metadata to card templates for playability rules.
+**Optional World in commitSingleMob:**
+- `commitSingleMob(mob, w: ?*World)` - World is optional because pool-based mobs don't need registry access
+- Existing tests use `null` for pool-based mob tests (no World setup needed)
+- Deck-based mobs require World for `card_registry.get()` lookups
 
-**What needs to happen:**
-1. Add `PlayableFrom` enum to cards.zig (hand, equipped, inventory, environment)
-2. Add `combat_playable: bool` to Template (some cards only usable in combat)
-3. Update validation to check playability sources
+**cleanupCombatState not yet called:**
+- No "combat ends" state in current FSM - cleanup will need wiring when combat termination is implemented
+- For now, combat_state persists until agent is deallocated
+
+**Deck still has redundant zone ArrayLists:**
+- `Deck.draw`, `Deck.hand`, `Deck.discard`, etc. are now unused during combat (CombatState handles zones)
+- Can be removed in Phase 7 after verifying no remaining references
+
+**CombatZone vs cards.Zone:**
+- `combat.CombatZone` enum has 5 values: draw, hand, in_play, discard, exhaust
+- `cards.Zone` has 7 values: adds equipped, inventory
+- Events still use `cards.Zone` for `.card_moved` - values match for common zones
+
+### Next Task: Phase 7 - Remove Legacy Deck Storage
+
+**Goal:** Remove now-redundant storage from Deck since CombatState handles zones and CardRegistry handles instances.
+
+**What to remove:**
+1. `Deck.entities: SlotMap(*Instance)` - instances now in World.card_registry
+2. `Deck.draw`, `Deck.hand`, `Deck.discard`, `Deck.in_play`, `Deck.exhaust` - zones now in CombatState
+3. Potentially simplify or remove `Strat` union if TechniquePool is no longer used
+
+**Before removing, verify:**
+- No remaining references to Deck zone fields
+- All card lookups use `world.card_registry.get(id)`
+- All zone operations use `combat_state` methods
 
 ### Key Files
 - `doc/card_storage_design.md` - full architecture design

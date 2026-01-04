@@ -86,10 +86,8 @@ pub const Deck = struct {
     }
 
     fn findInternal(id: entity.ID, pile: *std.ArrayList(*Instance)) !usize {
-        var i: usize = 0;
-        while (i < pile.items.len) : (i += 1) {
-            const card = pile.items[i];
-            if (card.id.index == id.index and card.id.generation == id.generation) return i;
+        for (pile.items, 0..) |card, i| {
+            if (card.id.eql(id)) return i;
         }
         return DeckError.NotFound;
     }

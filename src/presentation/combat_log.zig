@@ -256,8 +256,7 @@ fn actorName(is_player: bool) []const u8 {
 }
 
 fn agentName(id: entity.ID, world: *const World) []const u8 {
-    const player_id = world.player.id;
-    return if (player_id.index == id.index and player_id.generation == id.generation) "You" else "Enemy";
+    return if (world.player.id.eql(id)) "You" else "Enemy";
 }
 
 // Tests
