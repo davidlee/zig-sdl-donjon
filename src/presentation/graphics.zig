@@ -174,9 +174,25 @@ pub const UX = struct {
     }
 
     pub fn renderWithViewport(self: *UX, renderables: []const Renderable, vp: s.rect.IRect) !void {
+        // Pre-warm card textures before setting viewport to avoid
+        // render target artifacts from mid-frame texture creation
+        try self.prewarmCardTextures(renderables);
+
         try self.renderer.setViewport(vp);
         try self.renderList(renderables);
         try self.renderer.setViewport(null);
+    }
+
+    /// Ensure all card textures are cached before rendering begins.
+    /// This prevents texture creation during viewport rendering which
+    /// causes ghost artifacts at viewport origin.
+    fn prewarmCardTextures(self: *UX, renderables: []const Renderable) !void {
+        for (renderables) |r| {
+            switch (r) {
+                .card => |card| _ = try self.cards.getCardTexture(card.model),
+                else => {},
+            }
+        }
     }
 
     pub fn renderList(self: *UX, renderables: []const Renderable) !void {
