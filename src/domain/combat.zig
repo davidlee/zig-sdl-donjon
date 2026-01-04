@@ -238,6 +238,11 @@ pub const Encounter = struct {
     engagements: std.AutoHashMap(AgentPair, Engagement),
     agent_state: std.AutoHashMap(entity.ID, AgentEncounterState),
 
+    // Environmental cards (rubble, thrown items, lootable)
+    environment: std.ArrayList(entity.ID),
+    // Card ownership tracking for thrown items (card_id -> original_owner_id)
+    thrown_by: std.AutoHashMap(entity.ID, entity.ID),
+
     pub fn init(alloc: std.mem.Allocator, player_id: entity.ID) !Encounter {
         var enc = Encounter{
             .alloc = alloc,
@@ -245,6 +250,8 @@ pub const Encounter = struct {
             .player_id = player_id,
             .engagements = std.AutoHashMap(AgentPair, Engagement).init(alloc),
             .agent_state = std.AutoHashMap(entity.ID, AgentEncounterState).init(alloc),
+            .environment = try std.ArrayList(entity.ID).initCapacity(alloc, 10),
+            .thrown_by = std.AutoHashMap(entity.ID, entity.ID).init(alloc),
         };
         // Initialize player's encounter state
         try enc.agent_state.put(player_id, .{});
@@ -259,6 +266,8 @@ pub const Encounter = struct {
         self.enemies.deinit(self.alloc);
         self.engagements.deinit();
         self.agent_state.deinit();
+        self.environment.deinit(self.alloc);
+        self.thrown_by.deinit();
     }
 
     /// Get engagement between two agents (order doesn't matter).

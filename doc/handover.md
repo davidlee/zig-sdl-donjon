@@ -1,6 +1,6 @@
 # Handover Notes
 
-## 2026-01-04: Card Storage Architecture - Phases 1-2 Complete
+## 2026-01-04: Card Storage Architecture - Phases 1-3 Complete
 
 ### Context
 Implementing new card storage architecture per `doc/card_storage_design.md`. Goal: unified card registry at World level, with Agent containers for techniques_known, deck_cards, etc.
@@ -18,8 +18,12 @@ Implementing new card storage architecture per `doc/card_storage_design.md`. Goa
 - Removed EquipmentSlots (weapons via Armament, armor via armour.Stack already)
 - Fields have defaults for test compatibility
 
+**Phase 3: Encounter environment added** (`combat.zig`)
+- `Encounter.environment: ArrayList(entity.ID)` - holds thrown items, rubble, lootable cards
+- `Encounter.thrown_by: AutoHashMap(entity.ID, entity.ID)` - maps card → original owner for recovery
+- Both initialized in `Encounter.init()`, deinitialized in `Encounter.deinit()`
+
 ### Remaining Phases
-3. Add `Encounter.environment` for thrown items, rubble
 4. Update card operations to use registry (migrate from Deck.entities)
 5. Add `PlayableFrom` and `combat_playable` to Template
 6. Remove legacy `Deck.entities`
@@ -27,7 +31,7 @@ Implementing new card storage architecture per `doc/card_storage_design.md`. Goa
 ### Key Files
 - `doc/card_storage_design.md` - full architecture design
 - `src/domain/world.zig` - CardRegistry
-- `src/domain/combat.zig` - CombatState, Agent containers
+- `src/domain/combat.zig` - CombatState, Agent containers, Encounter.environment
 
 ---
 
