@@ -158,7 +158,7 @@ const EndTurnButton = struct {
             .asset_id = AssetId.end_turn,
             .rect = Rect{
                 .x = 50,
-                .y = 550,
+                .y = 650,
                 .w = 120,
                 .h = 40,
             },

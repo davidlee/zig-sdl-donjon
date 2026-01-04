@@ -33,6 +33,7 @@ const Command = infra.commands.Command;
 
 pub const Coordinator = struct {
     alloc: std.mem.Allocator,
+    frame_arena: std.heap.ArenaAllocator,
     world: *World,
     ux: *UX,
     effect_system: EffectSystem,
@@ -43,6 +44,7 @@ pub const Coordinator = struct {
     pub fn init(alloc: std.mem.Allocator, world: *World, ux: *UX) !Coordinator {
         return .{
             .alloc = alloc,
+            .frame_arena = std.heap.ArenaAllocator.init(alloc),
             .world = world,
             .ux = ux,
             .effect_system = try EffectSystem.init(alloc),
@@ -53,8 +55,14 @@ pub const Coordinator = struct {
     }
 
     pub fn deinit(self: *Coordinator) void {
+        self.frame_arena.deinit();
         self.effect_system.deinit();
         self.combat_log.deinit();
+    }
+
+    /// Per-frame allocator - reset at end of each render cycle
+    fn frameAlloc(self: *Coordinator) std.mem.Allocator {
+        return self.frame_arena.allocator();
     }
 
     // Get the active view based on game state
@@ -71,7 +79,7 @@ pub const Coordinator = struct {
             .tick_resolution,
             .player_reaction,
             .animating,
-            => View{ .combat = combat.CombatView.init(self.world, self.alloc) },
+            => View{ .combat = combat.CombatView.init(self.world, self.frameAlloc()) },
         };
     }
 
@@ -162,12 +170,13 @@ pub const Coordinator = struct {
 
     // Render current state
     pub fn render(self: *Coordinator) !void {
+        const frame_alloc = self.frameAlloc();
+
         try self.ux.renderClear();
 
         var v = self.activeView();
         // LAYER 1: Game / Active View
-        var renderables = try v.renderables(self.alloc, self.vs);
-        defer renderables.deinit(self.alloc);
+        var renderables = try v.renderables(frame_alloc, self.vs);
 
         if (self.isChromeActive()) {
             const c = self.chromeView();
@@ -176,7 +185,7 @@ pub const Coordinator = struct {
             try self.ux.renderWithViewport(renderables.items, chrome.viewport);
 
             // LAYER 2: Chrome
-            renderables = try c.renderables(self.alloc, self.vs);
+            renderables = try c.renderables(frame_alloc, self.vs);
         }
 
         try self.ux.renderList(renderables.items); // either game view or chrome
@@ -190,5 +199,8 @@ pub const Coordinator = struct {
 
         // Cleanup textures invalidated during this frame
         self.ux.endFrame();
+
+        // Reset frame arena - frees all transient allocations from this frame
+        _ = self.frame_arena.reset(.retain_capacity);
     }
 };

@@ -19,6 +19,8 @@ const EventProcessor = apply.EventProcessor;
 const Event = events.Event;
 const SlotMap = @import("slot_map.zig").SlotMap;
 const BeginnerDeck = card_list.BeginnerDeck;
+const BaseTechniques = card_list.BaseTechniques;
+const StarterModifiers = card_list.StarterModifiers;
 const TickResolver = tick.TickResolver;
 
 const WorldError = error{
@@ -94,6 +96,28 @@ pub const CardRegistry = struct {
         errdefer ids.deinit(self.alloc);
 
         for (templates) |*template| {
+            for (0..copies_per_template) |_| {
+                const instance = try self.create(template);
+                try ids.append(self.alloc, instance.id);
+            }
+        }
+        return ids;
+    }
+
+    /// Create cards from template pointers and return their IDs.
+    /// Used for BaseTechniques/StarterModifiers arrays.
+    pub fn createFromTemplatePtrs(
+        self: *CardRegistry,
+        templates: []const *const cards.Template,
+        copies_per_template: usize,
+    ) !std.ArrayList(lib.entity.ID) {
+        var ids = try std.ArrayList(lib.entity.ID).initCapacity(
+            self.alloc,
+            templates.len * copies_per_template,
+        );
+        errdefer ids.deinit(self.alloc);
+
+        for (templates) |template| {
             for (0..copies_per_template) |_| {
                 const instance = try self.create(template);
                 try ids.append(self.alloc, instance.id);
@@ -207,11 +231,20 @@ pub const World = struct {
             .commandHandler = undefined,
         };
 
-        // Create player and populate deck_cards from card registry
+        // Create player
         self.player = try player.newPlayer(alloc, self, playerStats, playerBody);
-        var card_ids = try self.card_registry.createFromTemplates(&BeginnerDeck, 5);
-        defer card_ids.deinit(alloc);
-        for (card_ids.items) |id| {
+
+        // Populate always_available with techniques (1 copy each)
+        var technique_ids = try self.card_registry.createFromTemplatePtrs(&BaseTechniques, 1);
+        defer technique_ids.deinit(alloc);
+        for (technique_ids.items) |id| {
+            try self.player.always_available.append(alloc, id);
+        }
+
+        // Populate deck_cards with modifiers (StarterModifiers already has duplicates)
+        var modifier_ids = try self.card_registry.createFromTemplatePtrs(&StarterModifiers, 1);
+        defer modifier_ids.deinit(alloc);
+        for (modifier_ids.items) |id| {
             try self.player.deck_cards.append(alloc, id);
         }
 
