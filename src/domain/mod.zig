@@ -13,7 +13,6 @@ pub const entity = lib.entity;
 pub const slot_map = @import("slot_map.zig");
 pub const cards = @import("cards.zig");
 pub const card_list = @import("card_list.zig");
-pub const deck = @import("deck.zig");
 pub const combat = @import("combat.zig");
 pub const body = @import("body.zig");
 pub const damage = @import("damage.zig");

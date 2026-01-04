@@ -18,7 +18,6 @@ const CommandHandler = apply.CommandHandler;
 const EventProcessor = apply.EventProcessor;
 const Event = events.Event;
 const SlotMap = @import("slot_map.zig").SlotMap;
-const Deck = @import("deck.zig").Deck;
 const BeginnerDeck = card_list.BeginnerDeck;
 const TickResolver = tick.TickResolver;
 
@@ -205,12 +204,14 @@ pub const World = struct {
             .commandHandler = undefined,
         };
 
-        // Create player deck using card_registry (new system)
-        var playerDeck = try Deck.initWithRegistry(alloc, &self.card_registry, &BeginnerDeck);
-        self.player = try player.newPlayer(alloc, self, playerDeck, playerStats, playerBody);
+        // Create player and populate deck_cards from card registry
+        self.player = try player.newPlayer(alloc, self, playerStats, playerBody);
+        var card_ids = try self.card_registry.createFromTemplates(&BeginnerDeck, 5);
+        defer card_ids.deinit(alloc);
+        for (card_ids.items) |id| {
+            try self.player.deck_cards.append(alloc, id);
+        }
 
-        // Populate deck_cards from the deck (for new card storage system)
-        try playerDeck.copyCardIdsTo(alloc, &self.player.deck_cards);
         self.encounter = try combat.Encounter.init(alloc, self.player.id);
         return self;
     }

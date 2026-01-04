@@ -3,7 +3,6 @@ const lib = @import("infra");
 const entity = lib.entity;
 const RandomStreamID = @import("random.zig").RandomStreamID;
 const Slot = void; // TODO what's this look like?
-const deck = @import("deck.zig");
 const cards = @import("cards.zig");
 const world = @import("world.zig");
 const body = @import("body.zig");

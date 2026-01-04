@@ -9,7 +9,6 @@ const infra = @import("infra");
 const w = @import("../../domain/world.zig");
 const World = w.World;
 const cards = @import("../../domain/cards.zig");
-const deck = @import("../../domain/deck.zig");
 const combat = @import("../../domain/combat.zig");
 const s = @import("sdl3");
 const entity = infra.entity;

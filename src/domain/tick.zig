@@ -151,61 +151,29 @@ pub const TickResolver = struct {
     }
 
     fn commitSingleMob(self: *TickResolver, mob: *Agent, w: ?*World) !void {
-        switch (mob.cards) {
-            .pool => |*pool| {
-                // Fill tick with techniques from pool (round-robin, respects stamina + predicates)
-                var time_cursor: f32 = 0.0;
-                var attempts: usize = 0;
-                const max_attempts = pool.instances.items.len * 2; // prevent infinite loop
-                while (time_cursor < 1.0 and attempts < max_attempts) {
-                    attempts += 1;
-                    const instance = pool.selectNext(mob.stamina.available) orelse break;
+        // All draw styles now use combat_state.in_play
+        // The AI director is responsible for populating in_play appropriately
+        const registry = if (w) |world_ref| &world_ref.card_registry else return;
+        const cs = mob.combat_state orelse return;
+        var time_cursor: f32 = 0.0;
 
-                    // Check predicates (weapon requirements, etc.)
-                    if (!apply.rulePredicatesSatisfied(instance.template, mob)) continue;
+        for (cs.in_play.items) |card_id| {
+            const card_instance = registry.get(card_id) orelse continue;
+            const template = card_instance.template;
+            const tech_expr = template.getTechniqueWithExpression() orelse continue;
+            const time_cost = template.cost.time;
 
-                    const tech_expr = instance.template.getTechniqueWithExpression() orelse continue;
-                    const time_cost = instance.template.cost.time;
+            try self.addAction(.{
+                .actor = mob,
+                .card = card_instance,
+                .technique = tech_expr.technique,
+                .expression = tech_expr.expression,
+                .stakes = .guarded,
+                .time_start = time_cursor,
+                .time_end = time_cursor + time_cost,
+            });
 
-                    try self.addAction(.{
-                        .actor = mob,
-                        .card = instance,
-                        .technique = tech_expr.technique,
-                        .expression = tech_expr.expression,
-                        .stakes = .guarded, // TODO: behavior-based stakes
-                        .time_start = time_cursor,
-                        .time_end = time_cursor + time_cost,
-                    });
-
-                    time_cursor += time_cost;
-                    _ = mob.stamina.commit(instance.template.cost.stamina);
-                    attempts = 0; // reset attempts on success
-                }
-            },
-            .deck => {
-                // Deck-based mob: use combat_state.in_play (stores IDs)
-                const registry = if (w) |world_ref| &world_ref.card_registry else return;
-                const cs = mob.combat_state orelse return;
-                var time_cursor: f32 = 0.0;
-                for (cs.in_play.items) |card_id| {
-                    const card_instance = registry.get(card_id) orelse continue;
-                    const template = card_instance.template;
-                    const tech_expr = template.getTechniqueWithExpression() orelse continue;
-                    const time_cost = template.cost.time;
-
-                    try self.addAction(.{
-                        .actor = mob,
-                        .card = card_instance,
-                        .technique = tech_expr.technique,
-                        .expression = tech_expr.expression,
-                        .stakes = .guarded,
-                        .time_start = time_cursor,
-                        .time_end = time_cursor + time_cost,
-                    });
-
-                    time_cursor += time_cost;
-                }
-            },
+            time_cursor += time_cost;
         }
     }
 
@@ -347,12 +315,7 @@ pub const TickResolver = struct {
             agent.time_available = 1.0;
             agent.stamina.tick(); // refresh and reset available
             agent.focus.tick();
-
-            // Decrement cooldowns for pool-based
-            switch (agent.cards) {
-                .pool => |*pool| pool.tickCooldowns(),
-                .deck => {},
-            }
+            // TODO: decrement cooldowns for always_available draw_style
         }
     }
 };
@@ -448,153 +411,6 @@ test "TickResolver.reset clears committed actions" {
     try std.testing.expectEqual(@as(usize, 0), resolver.committed.items.len);
 }
 
-test "commitSingleMob fills tick with multiple pool techniques" {
-    const alloc = std.testing.allocator;
-    const slot_map = @import("slot_map.zig");
-    const stats = @import("stats.zig");
-    const armour = @import("armour.zig");
-
-    // Create test templates (0.3s each, 2.0 stamina each)
-    const test_technique = Technique.byID(.swing);
-    const test_rule: cards.Rule = .{
-        .trigger = .on_play,
-        .valid = .always,
-        .expressions = &.{.{
-            .effect = .{ .combat_technique = test_technique },
-            .filter = null,
-            .target = .all_enemies,
-        }},
-    };
-    const template1: cards.Template = .{
-        .id = 1,
-        .kind = .action,
-        .name = "t1",
-        .description = "",
-        .rarity = .common,
-        .cost = .{ .stamina = 2.0, .time = 0.3 },
-        .tags = .{ .offensive = true },
-        .rules = &.{test_rule},
-    };
-    const template2: cards.Template = .{
-        .id = 2,
-        .kind = .action,
-        .name = "t2",
-        .description = "",
-        .rarity = .common,
-        .cost = .{ .stamina = 2.0, .time = 0.3 },
-        .tags = .{ .defensive = true },
-        .rules = &.{test_rule},
-    };
-
-    // Create pool with both templates
-    const templates = &[_]*const cards.Template{ &template1, &template2 };
-    const pool = try combat.TechniquePool.init(alloc, templates);
-    // Note: pool ownership transfers to mob, mob.deinit() handles cleanup
-
-    // Create agent with pool
-    var agents = try slot_map.SlotMap(*Agent).init(alloc);
-    defer agents.deinit();
-
-    const test_body = try body.Body.fromPlan(alloc, &body.HumanoidPlan);
-    var mob = try alloc.create(Agent);
-    mob.* = .{
-        .id = undefined,
-        .alloc = alloc,
-        .director = ai.noop(),
-        .cards = .{ .pool = pool },
-        .stats = stats.Block.splat(5),
-        .body = test_body,
-        .armour = armour.Stack.init(alloc),
-        .weapons = undefined,
-        .stamina = stats.Resource.init(10.0, 10.0, 2.0),
-        .focus = stats.Resource.init(3.0, 5.0, 3.0),
-        .conditions = try std.ArrayList(@import("damage.zig").ActiveCondition).initCapacity(alloc, 1),
-        .resistances = try std.ArrayList(@import("damage.zig").Resistance).initCapacity(alloc, 1),
-        .immunities = try std.ArrayList(@import("damage.zig").Immunity).initCapacity(alloc, 1),
-        .vulnerabilities = try std.ArrayList(@import("damage.zig").Vulnerability).initCapacity(alloc, 1),
-    };
-    const id = try agents.insert(mob);
-    mob.id = id;
-    defer mob.deinit();
-
-    // Create resolver and commit
-    var resolver = try TickResolver.init(alloc);
-    defer resolver.deinit();
-
-    try resolver.commitSingleMob(mob, null);
-
-    // With 10 stamina and 2.0 per technique, should fit 3-4 techniques
-    // With 0.3s per technique, should fit 3 techniques before time exceeds 1.0
-    // (0.0-0.3, 0.3-0.6, 0.6-0.9 = 3 techniques, 0.9s total)
-    try std.testing.expect(resolver.committed.items.len >= 3);
-
-    // Verify time sequencing
-    try std.testing.expectApproxEqAbs(@as(f32, 0.0), resolver.committed.items[0].time_start, 0.001);
-    try std.testing.expectApproxEqAbs(@as(f32, 0.3), resolver.committed.items[1].time_start, 0.001);
-    try std.testing.expectApproxEqAbs(@as(f32, 0.6), resolver.committed.items[2].time_start, 0.001);
-}
-
-test "commitSingleMob stops when stamina exhausted" {
-    const alloc = std.testing.allocator;
-    const slot_map = @import("slot_map.zig");
-    const stats = @import("stats.zig");
-    const armour = @import("armour.zig");
-
-    const test_technique = Technique.byID(.swing);
-    const test_rule: cards.Rule = .{
-        .trigger = .on_play,
-        .valid = .always,
-        .expressions = &.{.{
-            .effect = .{ .combat_technique = test_technique },
-            .filter = null,
-            .target = .all_enemies,
-        }},
-    };
-    const template1: cards.Template = .{
-        .id = 1,
-        .kind = .action,
-        .name = "t1",
-        .description = "",
-        .rarity = .common,
-        .cost = .{ .stamina = 4.0, .time = 0.2 }, // 4 stamina each
-        .tags = .{ .offensive = true },
-        .rules = &.{test_rule},
-    };
-
-    const templates = &[_]*const cards.Template{&template1};
-    const pool = try combat.TechniquePool.init(alloc, templates);
-    // Note: pool ownership transfers to mob, mob.deinit() handles cleanup
-
-    var agents = try slot_map.SlotMap(*Agent).init(alloc);
-    defer agents.deinit();
-
-    const test_body = try body.Body.fromPlan(alloc, &body.HumanoidPlan);
-    var mob = try alloc.create(Agent);
-    mob.* = .{
-        .id = undefined,
-        .alloc = alloc,
-        .director = ai.noop(),
-        .cards = .{ .pool = pool },
-        .stats = stats.Block.splat(5),
-        .body = test_body,
-        .armour = armour.Stack.init(alloc),
-        .weapons = undefined,
-        .stamina = stats.Resource.init(10.0, 10.0, 2.0), // Only enough for 2 techniques (8 stamina)
-        .focus = stats.Resource.init(3.0, 5.0, 3.0),
-        .conditions = try std.ArrayList(@import("damage.zig").ActiveCondition).initCapacity(alloc, 1),
-        .resistances = try std.ArrayList(@import("damage.zig").Resistance).initCapacity(alloc, 1),
-        .immunities = try std.ArrayList(@import("damage.zig").Immunity).initCapacity(alloc, 1),
-        .vulnerabilities = try std.ArrayList(@import("damage.zig").Vulnerability).initCapacity(alloc, 1),
-    };
-    const id = try agents.insert(mob);
-    mob.id = id;
-    defer mob.deinit();
-
-    var resolver = try TickResolver.init(alloc);
-    defer resolver.deinit();
-
-    try resolver.commitSingleMob(mob, null);
-
-    // With 10 stamina and 4.0 per technique, should only fit 2 techniques
-    try std.testing.expectEqual(@as(usize, 2), resolver.committed.items.len);
-}
+// NOTE: Tests for TechniquePool-based mob behavior removed during Phase 7 migration.
+// The new unified draw_style system uses combat_state.in_play for all agent types.
+// Add new tests when always_available/scripted draw styles are fully implemented.

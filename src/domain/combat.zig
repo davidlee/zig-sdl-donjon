@@ -7,7 +7,6 @@ const combat = @import("combat.zig");
 const damage = @import("damage.zig");
 const stats = @import("stats.zig");
 const body = @import("body.zig");
-const deck = @import("deck.zig");
 const cards = @import("cards.zig");
 const apply = @import("apply.zig");
 const ai = @import("ai.zig");
@@ -17,8 +16,6 @@ const EventSystem = e.EventSystem;
 const Event = e.Event;
 
 const SlotMap = @import("slot_map.zig").SlotMap;
-const Instance = cards.Instance;
-const Template = cards.Template;
 
 pub const Director = union(enum) {
     player,
@@ -77,10 +74,11 @@ pub const Armament = union(enum) {
     }
 };
 
-pub const Strat = union(enum) {
-    deck: deck.Deck,
-    // script: BehaviourScript,
-    pool: TechniquePool,
+/// How an agent acquires cards during combat.
+pub const DrawStyle = enum {
+    shuffled_deck, // cards cycle through draw/hand/discard
+    always_available, // cards in techniques_known, cooldown-based (stub)
+    scripted, // behaviour tree selects from available cards (stub)
 };
 
 // ============================================================================
@@ -209,90 +207,6 @@ pub const CombatState = struct {
 // When items become cards, we may need to track card IDs that correspond
 // to equipped weapon/armor instances for card effect targeting.
 
-// Humanoid AI: simplified pool with card instances
-pub const TechniquePool = struct {
-    alloc: std.mem.Allocator,
-    entities: SlotMap(*Instance), // entity ID provider for instances
-    instances: std.ArrayList(*Instance), // technique instances (one per template)
-    in_play: std.ArrayList(*Instance), // committed this tick
-    cooldowns: std.AutoHashMap(cards.ID, u8), // template.id -> ticks remaining
-    next_index: usize = 0, // for round-robin selection
-
-    pub fn init(alloc: std.mem.Allocator, templates: []const *const Template) !TechniquePool {
-        var pool = TechniquePool{
-            .alloc = alloc,
-            .entities = try SlotMap(*Instance).init(alloc),
-            .instances = try std.ArrayList(*Instance).initCapacity(alloc, templates.len),
-            .in_play = try std.ArrayList(*Instance).initCapacity(alloc, 4),
-            .cooldowns = std.AutoHashMap(cards.ID, u8).init(alloc),
-        };
-        errdefer pool.deinit();
-
-        // Create one instance per template
-        for (templates) |template| {
-            const instance = try pool.createInstance(template);
-            try pool.instances.append(alloc, instance);
-        }
-
-        return pool;
-    }
-
-    fn createInstance(self: *TechniquePool, template: *const Template) !*Instance {
-        const instance = try self.alloc.create(Instance);
-        instance.* = .{
-            .id = undefined,
-            .template = template,
-        };
-        const id = try self.entities.insert(instance);
-        instance.id = id;
-        return instance;
-    }
-
-    pub fn deinit(self: *TechniquePool) void {
-        for (self.entities.items.items) |instance| {
-            self.alloc.destroy(instance);
-        }
-        self.entities.deinit();
-        self.instances.deinit(self.alloc);
-        self.in_play.deinit(self.alloc);
-        self.cooldowns.deinit();
-    }
-
-    pub fn canUse(self: *const TechniquePool, instance: *const Instance) bool {
-        return (self.cooldowns.get(instance.template.id) orelse 0) == 0;
-    }
-
-    /// Select next available technique instance (round-robin, skips cooldowns and unaffordable)
-    pub fn selectNext(self: *TechniquePool, available_stamina: f32) ?*Instance {
-        if (self.instances.items.len == 0) return null;
-
-        var attempts: usize = 0;
-        while (attempts < self.instances.items.len) : (attempts += 1) {
-            const instance = self.instances.items[self.next_index];
-            self.next_index = (self.next_index + 1) % self.instances.items.len;
-            if (self.canUse(instance) and instance.template.cost.stamina <= available_stamina) {
-                return instance;
-            }
-        }
-        return null; // all on cooldown or unaffordable
-    }
-
-    /// Apply cooldown to a technique (by template ID)
-    pub fn applyCooldown(self: *TechniquePool, template_id: cards.ID, ticks: u8) !void {
-        try self.cooldowns.put(template_id, ticks);
-    }
-
-    /// Decrement all cooldowns by 1
-    pub fn tickCooldowns(self: *TechniquePool) void {
-        var it = self.cooldowns.iterator();
-        while (it.next()) |entry| {
-            if (entry.value_ptr.* > 0) {
-                entry.value_ptr.* -= 1;
-            }
-        }
-    }
-};
-
 /// Canonical pairing of two agents for engagement lookup.
 /// Ordering ensures (a,b) and (b,a) map to the same key.
 pub const AgentPair = struct {
@@ -393,7 +307,7 @@ pub const Agent = struct {
     id: entity.ID,
     alloc: std.mem.Allocator,
     director: Director,
-    cards: Strat, // Legacy: TODO remove after migration to new containers
+    draw_style: DrawStyle = .shuffled_deck,
     stats: stats.Block,
     // may be humanoid, or not
     body: body.Body,
@@ -427,7 +341,7 @@ pub const Agent = struct {
         alloc: std.mem.Allocator,
         slot_map: *SlotMap(*Agent),
         dr: Director,
-        cs: Strat,
+        ds: DrawStyle,
         sb: stats.Block,
         bd: body.Body,
         stamina: stats.Resource,
@@ -439,7 +353,7 @@ pub const Agent = struct {
             .id = undefined,
             .alloc = alloc,
             .director = dr,
-            .cards = cs,
+            .draw_style = ds,
             .stats = sb,
             .body = bd,
             .armour = armour.Stack.init(alloc),
@@ -468,12 +382,7 @@ pub const Agent = struct {
     pub fn deinit(self: *Agent) void {
         const alloc = self.alloc;
 
-        switch (self.cards) {
-            .deck => |*dk| dk.deinit(),
-            .pool => |*pl| pl.deinit(),
-        }
-
-        // Deinit new card containers
+        // Deinit card containers
         self.techniques_known.deinit(alloc);
         self.spells_known.deinit(alloc);
         self.deck_cards.deinit(alloc);
@@ -503,7 +412,7 @@ pub const Agent = struct {
         return dominant == .center or dominant.? == side;
     }
 
-    fn canPlayCardInPhase(self: *Agent, card: *Instance, phase: world.GameState) bool {
+    fn canPlayCardInPhase(self: *Agent, card: *cards.Instance, phase: world.GameState) bool {
         return apply.validateCardSelection(self, card, phase) catch false;
     }
 
@@ -868,65 +777,8 @@ pub const TechniqueAdvantage = struct {
 
 const testing = std.testing;
 
-const TestTemplates = struct {
-    const expensive: cards.Template = .{
-        .id = 1,
-        .kind = .action,
-        .name = "expensive",
-        .description = "",
-        .rarity = .common,
-        .cost = .{ .stamina = 5.0, .time = 0.3 },
-        .tags = .{},
-        .rules = &.{},
-    };
-    const cheap: cards.Template = .{
-        .id = 2,
-        .kind = .action,
-        .name = "cheap",
-        .description = "",
-        .rarity = .common,
-        .cost = .{ .stamina = 2.0, .time = 0.2 },
-        .tags = .{},
-        .rules = &.{},
-    };
-};
-
-test "TechniquePool.selectNext respects stamina constraint" {
-    const alloc = testing.allocator;
-
-    const templates = &[_]*const cards.Template{&TestTemplates.expensive};
-    var pool = try TechniquePool.init(alloc, templates);
-    defer pool.deinit();
-
-    // With enough stamina, should return technique
-    const selected = pool.selectNext(10.0);
-    try testing.expect(selected != null);
-    try testing.expectEqual(@as(cards.ID, 1), selected.?.template.id);
-
-    // Reset index for next test
-    pool.next_index = 0;
-
-    // With insufficient stamina, should return null
-    const not_selected = pool.selectNext(3.0);
-    try testing.expect(not_selected == null);
-}
-
-test "TechniquePool.selectNext skips unaffordable, picks affordable" {
-    const alloc = testing.allocator;
-
-    const templates = &[_]*const cards.Template{
-        &TestTemplates.expensive, // 5.0 stamina
-        &TestTemplates.cheap, // 2.0 stamina
-    };
-    var pool = try TechniquePool.init(alloc, templates);
-    defer pool.deinit();
-
-    // With 3.0 stamina: expensive (5.0) unaffordable, cheap (2.0) affordable
-    // Should skip expensive, return cheap
-    const selected = pool.selectNext(3.0);
-    try testing.expect(selected != null);
-    try testing.expectEqual(@as(cards.ID, 2), selected.?.template.id);
-}
+// NOTE: TechniquePool tests removed during Phase 7 migration.
+// TechniquePool was removed in favor of unified draw_style system.
 
 fn testId(index: u32) entity.ID {
     return .{ .index = index, .generation = 0 };

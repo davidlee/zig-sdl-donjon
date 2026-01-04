@@ -1,5 +1,38 @@
 # Handover Notes
 
+## 2026-01-04: Phase 7 - Remove Legacy Deck Storage (IN PROGRESS)
+
+### Design Direction
+
+**Unify all agents under CombatState + CardRegistry.** The `Strat` union and `TechniquePool` are removed. Different agent types (deck-based, pool-based, scripted) become configuration rather than separate data structures.
+
+```zig
+pub const DrawStyle = enum {
+    shuffled_deck,    // cards cycle through draw/hand/discard
+    always_available, // cards in techniques_known, cooldown-based
+    scripted,         // behaviour tree selects from available cards
+};
+```
+
+- `shuffled_deck`: populate draw from `deck_cards`, shuffle, draw to hand
+- `always_available`: cards live in `techniques_known`, cooldown timer instead of discard
+- `scripted`: AI picks from available cards based on behaviour rules (stub for now)
+
+### Implementation Plan
+
+1. Remove `Strat` union from `combat.zig`
+2. Add `Agent.draw_style: DrawStyle` (default `.shuffled_deck`)
+3. Remove `Deck` struct — use `CardRegistry.createFromTemplates` directly
+4. Update switch sites (`apply.zig`, `tick.zig`) to check `draw_style`
+5. Remove `TechniquePool` (or leave as stub if needed for tests)
+6. Leave `always_available` / `scripted` implementations as stubs
+
+### Rationale
+
+Pool/script mobs are still "playing cards" — just with different availability rules. Unifying storage eliminates the `Strat` union, `TechniquePool`, and `Deck` structs, reducing code complexity significantly.
+
+---
+
 ## 2026-01-04: Card Hover Rendering Bug (RESOLVED)
 
 ### Symptoms

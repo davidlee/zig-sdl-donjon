@@ -403,11 +403,8 @@ pub const EventProcessor = struct {
 
     /// Shuffle draw pile and draw cards to hands - uses CombatState
     fn shuffleAndDraw(self: *EventProcessor, agent: *Agent, count: usize) !void {
-        // Pools don't draw
-        switch (agent.cards) {
-            .pool => return,
-            .deck => {},
-        }
+        // Only shuffled_deck draws cards; other styles have always-available techniques
+        if (agent.draw_style != .shuffled_deck) return;
 
         const cs = agent.combat_state orelse return; // No combat state = can't draw
 
@@ -450,20 +447,9 @@ pub const EventProcessor = struct {
         const enc_state = enc.stateFor(agent.id) orelse return;
         enc_state.current.clear();
 
-        switch (agent.cards) {
-            .deck => {
-                // Deck-based: use combat_state (stores IDs)
-                const cs = agent.combat_state orelse return;
-                for (cs.in_play.items) |card_id| {
-                    try enc_state.current.addPlay(.{ .primary = card_id });
-                }
-            },
-            .pool => |*p| {
-                // Pool-based: use pool.in_play (stores *Instance)
-                for (p.in_play.items) |card| {
-                    try enc_state.current.addPlay(.{ .primary = card.id });
-                }
-            },
+        const cs = agent.combat_state orelse return;
+        for (cs.in_play.items) |card_id| {
+            try enc_state.current.addPlay(.{ .primary = card_id });
         }
     }
 
@@ -996,12 +982,6 @@ pub fn applyCommitPhaseEffect(
 /// This is NOT for cards that are PLAYABLE during commit phase (use .phase_commit tag).
 /// Cards here already had costs validated when played during selection.
 pub fn executeCommitPhaseRules(world: *World, actor: *Agent) !void {
-    // Pools don't have commit phase cards
-    switch (actor.cards) {
-        .pool => return,
-        .deck => {},
-    }
-
     const cs = actor.combat_state orelse return;
 
     // Iterate over card IDs in play, look up instances via registry
@@ -1068,10 +1048,11 @@ pub fn applyCommittedCosts(
             },
         });
 
-        // Move card to discard or exhaust (deck-based only)
-        switch (agent.cards) {
-            .deck => {
-                const cs = agent.combat_state orelse continue;
+        // Move card to appropriate zone after use
+        const cs = agent.combat_state orelse continue;
+        switch (agent.draw_style) {
+            .shuffled_deck => {
+                // Deck-based: move to discard or exhaust
                 const dest_zone: combat.CombatZone = if (card.template.cost.exhausts)
                     .exhaust
                 else
@@ -1087,16 +1068,10 @@ pub fn applyCommittedCosts(
                     },
                 });
             },
-            .pool => |*pool| {
-                // Apply cooldown to technique
-                try pool.applyCooldown(card.template.id, DEFAULT_COOLDOWN_TICKS);
-                try event_system.push(.{
-                    .cooldown_applied = .{
-                        .agent_id = agent.id,
-                        .template_id = card.template.id,
-                        .ticks = DEFAULT_COOLDOWN_TICKS,
-                    },
-                });
+            .always_available, .scripted => {
+                // TODO: implement cooldown tracking on CombatState
+                // For now, just move back to techniques_known (stub)
+                cs.moveCard(card.id, .in_play, .discard) catch continue;
             },
         }
     }
@@ -1120,7 +1095,7 @@ fn makeTestAgent(armament: combat.Armament) Agent {
         .id = testId(99),
         .alloc = undefined,
         .director = ai.noop(),
-        .cards = .{ .pool = undefined },
+        .draw_style = .shuffled_deck,
         .stats = undefined,
         .body = undefined,
         .armour = undefined,

@@ -656,10 +656,6 @@ fn makeTestAgent(
     agents: *@import("slot_map.zig").SlotMap(*Agent),
     director: @import("combat.zig").Director,
 ) !*Agent {
-    const deck_mod = @import("deck.zig");
-    const card_list = @import("card_list.zig");
-
-    const agent_deck = try deck_mod.Deck.init(alloc, &card_list.BeginnerDeck);
     const agent_stats = stats.Block.splat(5);
     const agent_body = try body.Body.fromPlan(alloc, &body.HumanoidPlan);
 
@@ -667,7 +663,7 @@ fn makeTestAgent(
         alloc,
         agents,
         director,
-        combat.Strat{ .deck = agent_deck },
+        .shuffled_deck,
         agent_stats,
         agent_body,
         stats.Resource.init(10.0, 10.0, 2.0), // stamina
