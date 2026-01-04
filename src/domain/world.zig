@@ -74,6 +74,28 @@ pub const CardRegistry = struct {
     pub fn remove(self: *CardRegistry, id: lib.entity.ID) void {
         self.entities.remove(id);
     }
+
+    /// Create cards from templates and return their IDs.
+    /// Used to populate Agent.deck_cards.
+    pub fn createFromTemplates(
+        self: *CardRegistry,
+        templates: []const cards.Template,
+        copies_per_template: usize,
+    ) !std.ArrayList(lib.entity.ID) {
+        var ids = try std.ArrayList(lib.entity.ID).initCapacity(
+            self.alloc,
+            templates.len * copies_per_template,
+        );
+        errdefer ids.deinit(self.alloc);
+
+        for (templates) |*template| {
+            for (0..copies_per_template) |_| {
+                const instance = try self.create(template);
+                try ids.append(self.alloc, instance.id);
+            }
+        }
+        return ids;
+    }
 };
 
 pub const EntityMap = struct {
@@ -158,7 +180,6 @@ pub const World = struct {
         try fsm.addEventAndTransition(.show_loot, .animating, .encounter_summary);
         try fsm.addEventAndTransition(.redraw, .animating, .draw_hand);
 
-        const playerDeck = try Deck.init(alloc, &BeginnerDeck);
         const playerStats = stats.Block.splat(5);
         const playerBody = try body.Body.fromPlan(alloc, &body.HumanoidPlan);
 
@@ -177,7 +198,13 @@ pub const World = struct {
             .eventProcessor = undefined,
             .commandHandler = undefined,
         };
+
+        // Create player deck using card_registry (new system)
+        var playerDeck = try Deck.initWithRegistry(alloc, &self.card_registry, &BeginnerDeck);
         self.player = try player.newPlayer(alloc, self, playerDeck, playerStats, playerBody);
+
+        // Populate deck_cards from the deck (for new card storage system)
+        try playerDeck.copyCardIdsTo(alloc, &self.player.deck_cards);
         self.encounter = try combat.Encounter.init(alloc, self.player.id);
         return self;
     }
@@ -226,8 +253,7 @@ pub const World = struct {
         self.tickResolver.reset();
 
         // Commit player cards (using plays from AgentEncounterState)
-        const enc_ptr: ?*combat.Encounter = if (self.encounter) |*e| e else null;
-        try self.tickResolver.commitPlayerCards(self.player, enc_ptr);
+        try self.tickResolver.commitPlayerCards(self.player, self);
 
         // Commit mob actions
         if (self.encounter) |*enc| {

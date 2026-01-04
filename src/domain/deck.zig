@@ -8,7 +8,9 @@ const slot_map = @import("slot_map.zig");
 const events = @import("events.zig");
 
 const entity = lib.entity;
-const World = @import("world.zig").World;
+const world_mod = @import("world.zig");
+const World = world_mod.World;
+const CardRegistry = world_mod.CardRegistry;
 const Instance = cards.Instance;
 const Event = events.Event;
 const EventTag = std.meta.Tag(Event);
@@ -50,7 +52,8 @@ pub const TagIterator = struct {
 
 pub const Deck = struct {
     alloc: std.mem.Allocator,
-    entities: SlotMap(*Instance), // entity.ID provider
+    registry: ?*CardRegistry, // External registry for instance storage (null = legacy mode)
+    entities: SlotMap(*Instance), // Legacy: entity.ID provider (only used if registry is null)
 
     // card piles
     draw: std.ArrayList(*Instance),
@@ -92,18 +95,45 @@ pub const Deck = struct {
     }
 
     fn createInstance(self: *Deck, template: *const Template) !*Instance {
-        var instance = try self.alloc.create(Instance);
-        // std.debug.print("insert: {s}", .{template.name});
-        instance.template = template;
-        // std.debug.print(" -- insert: {s}\n", .{instance.template.name});
-        const id: entity.ID = try self.entities.insert(instance);
-        instance.id = id;
-        return instance;
+        if (self.registry) |reg| {
+            // Use external registry (new system)
+            return reg.create(template);
+        } else {
+            // Legacy: use internal SlotMap
+            const instance = try self.alloc.create(Instance);
+            instance.template = template;
+            const id: entity.ID = try self.entities.insert(instance);
+            instance.id = id;
+            return instance;
+        }
     }
 
+    /// Initialize with external CardRegistry (new system).
+    /// Instances are owned by the registry, not this Deck.
+    pub fn initWithRegistry(alloc: std.mem.Allocator, registry: *CardRegistry, templates: []const Template) !@This() {
+        var self = @This(){
+            .alloc = alloc,
+            .registry = registry,
+            .entities = try SlotMap(*Instance).init(alloc), // unused but required for struct
+            .draw = try std.ArrayList(*Instance).initCapacity(alloc, 20),
+            .hand = try std.ArrayList(*Instance).initCapacity(alloc, 10),
+            .discard = try std.ArrayList(*Instance).initCapacity(alloc, 10),
+            .in_play = try std.ArrayList(*Instance).initCapacity(alloc, 10),
+            .equipped = try std.ArrayList(*Instance).initCapacity(alloc, 10),
+            .inventory = try std.ArrayList(*Instance).initCapacity(alloc, 10),
+            .exhaust = try std.ArrayList(*Instance).initCapacity(alloc, 10),
+            .techniques = std.StringHashMap(*const cards.Technique).init(alloc),
+        };
+
+        try self.populateFromTemplates(templates);
+        return self;
+    }
+
+    /// Legacy init without registry (instances owned by this Deck).
     pub fn init(alloc: std.mem.Allocator, templates: []const Template) !@This() {
         var self = @This(){
             .alloc = alloc,
+            .registry = null,
             .entities = try SlotMap(*Instance).init(alloc),
             .draw = try std.ArrayList(*Instance).initCapacity(alloc, 20),
             .hand = try std.ArrayList(*Instance).initCapacity(alloc, 10),
@@ -112,11 +142,14 @@ pub const Deck = struct {
             .equipped = try std.ArrayList(*Instance).initCapacity(alloc, 10),
             .inventory = try std.ArrayList(*Instance).initCapacity(alloc, 10),
             .exhaust = try std.ArrayList(*Instance).initCapacity(alloc, 10),
-
-            // FIXME: this is a shitty place to store this. move it to cards and make it comptime.
             .techniques = std.StringHashMap(*const cards.Technique).init(alloc),
         };
 
+        try self.populateFromTemplates(templates);
+        return self;
+    }
+
+    fn populateFromTemplates(self: *Deck, templates: []const Template) !void {
         for (templates) |*t| {
             for (t.rules) |rule| {
                 for (rule.expressions) |expr| {
@@ -133,23 +166,60 @@ pub const Deck = struct {
 
             for (0..5) |_| {
                 const instance = try self.createInstance(t);
-                // we put these straight in the discard pile
-                // this simplifies shuffling logic: when the draw pile is empty,
-                // move the discard pile to the draw pile, and shuffle.
-                try self.discard.append(alloc, instance);
+                try self.discard.append(self.alloc, instance);
             }
         }
-        return self;
     }
 
     pub fn allInstances(self: *Deck) []*Instance {
+        if (self.registry) |_| {
+            // When using registry, we don't have a local list of all instances
+            // This is a legacy method - callers should use registry directly
+            return &.{};
+        }
         return self.entities.items.items;
     }
 
+    /// Get all card IDs from the discard pile (where cards start).
+    /// Used to populate Agent.deck_cards for the new card storage system.
+    pub fn allCardIds(self: *const Deck) []const entity.ID {
+        // Cards start in discard pile after Deck.init
+        // Return their IDs as a slice (caller must copy if needed)
+        const instances = self.discard.items;
+        // We need to extract IDs - but we can't return a slice of IDs easily
+        // without allocating. For now, return empty and let caller iterate.
+        _ = instances;
+        return &.{};
+    }
+
+    /// Copy all card IDs from the deck to a target ArrayList.
+    /// Used to populate Agent.deck_cards.
+    pub fn copyCardIdsTo(self: *const Deck, alloc: std.mem.Allocator, target: *std.ArrayList(entity.ID)) !void {
+        // Cards in discard (where they start after init)
+        for (self.discard.items) |instance| {
+            try target.append(alloc, instance.id);
+        }
+        // Also include cards in other zones (in case deck was modified)
+        for (self.draw.items) |instance| {
+            try target.append(alloc, instance.id);
+        }
+        for (self.hand.items) |instance| {
+            try target.append(alloc, instance.id);
+        }
+        for (self.in_play.items) |instance| {
+            try target.append(alloc, instance.id);
+        }
+        for (self.exhaust.items) |instance| {
+            try target.append(alloc, instance.id);
+        }
+    }
+
     pub fn deinit(self: *Deck) void {
-        // Free all allocated instances
-        for (self.entities.items.items) |instance| {
-            self.alloc.destroy(instance);
+        // Only free instances if we own them (legacy mode)
+        if (self.registry == null) {
+            for (self.entities.items.items) |instance| {
+                self.alloc.destroy(instance);
+            }
         }
         self.entities.deinit();
         self.draw.deinit(self.alloc);

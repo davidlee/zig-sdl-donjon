@@ -87,6 +87,15 @@ pub const Strat = union(enum) {
 // Card Containers (new architecture - see doc/card_storage_design.md)
 // ============================================================================
 
+/// Combat-specific zones (subset of cards.Zone for transient combat state).
+pub const CombatZone = enum {
+    draw,
+    hand,
+    in_play,
+    discard,
+    exhaust,
+};
+
 /// Transient combat state - created per encounter, holds draw/hand/discard cycle.
 /// Card IDs reference World.card_registry.
 pub const CombatState = struct {
@@ -96,6 +105,8 @@ pub const CombatState = struct {
     discard: std.ArrayList(entity.ID),
     in_play: std.ArrayList(entity.ID),
     exhaust: std.ArrayList(entity.ID),
+
+    pub const ZoneError = error{NotFound};
 
     pub fn init(alloc: std.mem.Allocator) !CombatState {
         return .{
@@ -122,6 +133,76 @@ pub const CombatState = struct {
         self.discard.clearRetainingCapacity();
         self.in_play.clearRetainingCapacity();
         self.exhaust.clearRetainingCapacity();
+    }
+
+    /// Get the ArrayList for a zone.
+    pub fn zoneList(self: *CombatState, zone: CombatZone) *std.ArrayList(entity.ID) {
+        return switch (zone) {
+            .draw => &self.draw,
+            .hand => &self.hand,
+            .in_play => &self.in_play,
+            .discard => &self.discard,
+            .exhaust => &self.exhaust,
+        };
+    }
+
+    /// Check if a card ID is in a specific zone.
+    pub fn isInZone(self: *const CombatState, id: entity.ID, zone: CombatZone) bool {
+        const list = switch (zone) {
+            .draw => &self.draw,
+            .hand => &self.hand,
+            .in_play => &self.in_play,
+            .discard => &self.discard,
+            .exhaust => &self.exhaust,
+        };
+        for (list.items) |card_id| {
+            if (card_id.index == id.index and card_id.generation == id.generation) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// Find index of card in zone, or null if not found.
+    fn findIndex(list: *const std.ArrayList(entity.ID), id: entity.ID) ?usize {
+        for (list.items, 0..) |card_id, i| {
+            if (card_id.index == id.index and card_id.generation == id.generation) {
+                return i;
+            }
+        }
+        return null;
+    }
+
+    /// Move a card from one zone to another.
+    pub fn moveCard(self: *CombatState, id: entity.ID, from: CombatZone, to: CombatZone) !void {
+        const from_list = self.zoneList(from);
+        const to_list = self.zoneList(to);
+
+        const idx = findIndex(from_list, id) orelse return ZoneError.NotFound;
+        _ = from_list.orderedRemove(idx);
+        try to_list.append(self.alloc, id);
+    }
+
+    /// Fisher-Yates shuffle of the draw pile.
+    pub fn shuffleDraw(self: *CombatState, rand: anytype) !void {
+        const items = self.draw.items;
+        var i = items.len;
+        while (i > 1) {
+            i -= 1;
+            const r = try rand.drawRandom();
+            const j: usize = @intFromFloat(r * @as(f32, @floatFromInt(i + 1)));
+            std.mem.swap(entity.ID, &items[i], &items[j]);
+        }
+    }
+
+    /// Populate discard pile from deck_cards (called at combat start).
+    /// Cards start in discard to simplify shuffle logic: when draw is empty,
+    /// move discard to draw and shuffle.
+    pub fn populateFromDeckCards(self: *CombatState, deck_cards: []const entity.ID) !void {
+        self.clear();
+        for (deck_cards) |card_id| {
+            try self.discard.append(self.alloc, card_id);
+        }
     }
 };
 
@@ -428,6 +509,30 @@ pub const Agent = struct {
 
     fn canPlayCardInPhase(self: *Agent, card: *Instance, phase: world.GameState) bool {
         return apply.validateCardSelection(self, card, phase) catch false;
+    }
+
+    /// Initialize combat state from deck_cards (called at combat start).
+    pub fn initCombatState(self: *Agent) !void {
+        if (self.combat_state != null) return; // already initialized
+
+        const cs = try self.alloc.create(CombatState);
+        cs.* = try CombatState.init(self.alloc);
+        errdefer {
+            cs.deinit();
+            self.alloc.destroy(cs);
+        }
+
+        try cs.populateFromDeckCards(self.deck_cards.items);
+        self.combat_state = cs;
+    }
+
+    /// Clean up combat state (called at combat end).
+    pub fn cleanupCombatState(self: *Agent) void {
+        if (self.combat_state) |cs| {
+            cs.deinit();
+            self.alloc.destroy(cs);
+            self.combat_state = null;
+        }
     }
 
     /// Returns an iterator over all active conditions (stored + computed).

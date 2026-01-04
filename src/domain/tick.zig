@@ -110,23 +110,18 @@ pub const TickResolver = struct {
     }
 
     /// Extract committed actions from player's plays (with modifiers from commit phase)
-    pub fn commitPlayerCards(self: *TickResolver, player: *Agent, encounter: ?*combat.Encounter) !void {
-        const pd = switch (player.cards) {
-            .deck => |*d| d,
-            .pool => return, // player shouldn't use pool
-        };
-
+    pub fn commitPlayerCards(self: *TickResolver, player: *Agent, w: *World) !void {
         // Get plays from AgentEncounterState (populated during commit phase)
-        const enc = encounter orelse return;
+        const enc = &(w.encounter orelse return);
         const enc_state = enc.stateFor(player.id) orelse return;
         const plays = enc_state.current.plays();
 
         var time_cursor: f32 = 0.0;
 
         for (plays) |play| {
-            // Get the card instance for this play
-            const card_instance = pd.entities.get(play.primary) orelse continue;
-            const template = card_instance.*.template;
+            // Look up card via card_registry (new system)
+            const card_instance = w.card_registry.get(play.primary) orelse continue;
+            const template = card_instance.template;
             const tech_expr = template.getTechniqueWithExpression() orelse continue;
 
             // Apply cost_mult to time
@@ -134,7 +129,7 @@ pub const TickResolver = struct {
 
             try self.addAction(.{
                 .actor = player,
-                .card = card_instance.*,
+                .card = card_instance,
                 .technique = tech_expr.technique,
                 .expression = tech_expr.expression,
                 .stakes = play.effectiveStakes(),

@@ -1,6 +1,6 @@
 # Handover Notes
 
-## 2026-01-04: Card Storage Architecture - Phases 1-3 Complete
+## 2026-01-04: Card Storage Architecture - Phases 1-4 Complete
 
 ### Context
 Implementing new card storage architecture per `doc/card_storage_design.md`. Goal: unified card registry at World level, with Agent containers for techniques_known, deck_cards, etc.
@@ -8,7 +8,7 @@ Implementing new card storage architecture per `doc/card_storage_design.md`. Goa
 ### Completed
 
 **Phase 1: CardRegistry added to World** (`world.zig`)
-- `CardRegistry` struct: `create()`, `get()`, `remove()` methods
+- `CardRegistry` struct: `create()`, `get()`, `remove()`, `createFromTemplates()` methods
 - `World.card_registry` field initialized/deinitialized
 - Note: `remove()` invalidates ID but doesn't free memory (freed on deinit)
 
@@ -23,15 +23,52 @@ Implementing new card storage architecture per `doc/card_storage_design.md`. Goa
 - `Encounter.thrown_by: AutoHashMap(entity.ID, entity.ID)` - maps card → original owner for recovery
 - Both initialized in `Encounter.init()`, deinitialized in `Encounter.deinit()`
 
+**Phase 4: Card lookups migrated to CardRegistry** (`apply.zig`, `tick.zig`, `deck.zig`)
+- `Deck.initWithRegistry()` creates instances via CardRegistry (IDs come from registry)
+- `Deck.copyCardIdsTo()` populates Agent.deck_cards from Deck instances
+- World.init uses `initWithRegistry`, populates player.deck_cards
+- Card lookups use `world.card_registry.get(id)` instead of `deck.entities.get(id)`:
+  - `commitStack()` - look up primary card for template matching
+  - `canPlayerPlayCard()` - UI validation
+  - `playMatchesPredicate()` - play targeting (now takes *World)
+  - `commitPlayerCards()` in tick.zig (now takes *World)
+- CombatState zone helpers added: `CombatZone`, `zoneList()`, `isInZone()`, `moveCard()`, `shuffleDraw()`, `populateFromDeckCards()`
+- Agent helpers: `initCombatState()`, `cleanupCombatState()`
+
+**Note:** Deck still manages zone operations (move, find) using *Instance pointers. CombatState is ready but not yet wired into the main flow. This enables incremental migration - card IDs now come from registry, but zone ops still use legacy Deck.
+
 ### Remaining Phases
-4. Update card operations to use registry (migrate from Deck.entities)
-5. Add `PlayableFrom` and `combat_playable` to Template
-6. Remove legacy `Deck.entities`
+5. Wire CombatState into combat flow (replace Deck zone operations)
+6. Add `PlayableFrom` and `combat_playable` to Template
+7. Remove legacy `Deck.entities`
+
+### Next Task: Phase 5 - Wire CombatState into Combat Flow
+
+**Goal:** Replace Deck zone operations with CombatState during combat.
+
+**Current state:**
+- Card instances owned by `World.card_registry` (IDs shared with Deck)
+- `Agent.deck_cards` populated with card IDs
+- `Agent.combat_state` has helpers but is null (never initialized)
+- Deck still manages zones via `*Instance` pointers in `draw/hand/discard/in_play/exhaust`
+
+**What needs to happen:**
+1. Call `agent.initCombatState()` when combat starts (in `draw_hand` state transition?)
+2. Update `shuffleAndDraw()` in apply.zig to use `combat_state.moveCard()` and `combat_state.shuffleDraw()`
+3. Update `playValidCardReservingCosts()` to use `combat_state.moveCard(.hand, .in_play)`
+4. Update `commitWithdraw()` to use `combat_state.moveCard(.in_play, .hand)`
+5. Update `validateCardSelection()` to use `combat_state.isInZone(id, .hand)`
+6. Call `agent.cleanupCombatState()` when combat ends
+
+**Key insight:** CombatState holds `entity.ID`, Deck holds `*Instance`. During transition, look up instances via `card_registry.get(id)` when needed.
 
 ### Key Files
 - `doc/card_storage_design.md` - full architecture design
-- `src/domain/world.zig` - CardRegistry
-- `src/domain/combat.zig` - CombatState, Agent containers, Encounter.environment
+- `src/domain/world.zig` - CardRegistry, World.init uses initWithRegistry
+- `src/domain/combat.zig` - CombatState, CombatZone, Agent containers, Encounter.environment
+- `src/domain/deck.zig` - initWithRegistry, copyCardIdsTo
+- `src/domain/apply.zig` - card lookups use card_registry
+- `src/domain/tick.zig` - commitPlayerCards uses card_registry
 
 ---
 

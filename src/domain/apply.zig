@@ -324,7 +324,8 @@ pub const CommandHandler = struct {
             return CommandError.CardNotInHand;
         };
 
-        const primary_card_ptr = pd.entities.get(target_play.primary) orelse {
+        // Look up primary card via card_registry (new system)
+        const primary_card = self.world.card_registry.get(target_play.primary) orelse {
             if (needs_focus) {
                 player.focus.current += FOCUS_COST;
                 player.focus.available += FOCUS_COST;
@@ -333,7 +334,7 @@ pub const CommandHandler = struct {
         };
 
         // Must be same template
-        if (stack_card.template.id != primary_card_ptr.*.template.id) {
+        if (stack_card.template.id != primary_card.template.id) {
             if (needs_focus) {
                 player.focus.current += FOCUS_COST;
                 player.focus.available += FOCUS_COST;
@@ -509,12 +510,10 @@ pub const EventProcessor = struct {
 pub fn canPlayerPlayCard(world: *World, card_id: entity.ID) bool {
     const phase = world.fsm.currentState();
     const player = world.player;
-    const pd = switch (player.cards) {
-        .deck => |*d| d,
-        .pool => return false,
-    };
-    const card = pd.entities.get(card_id) orelse return false;
-    return validateCardSelection(player, card.*, phase) catch false;
+
+    // Look up card via card_registry (new system)
+    const card = world.card_registry.get(card_id) orelse return false;
+    return validateCardSelection(player, card, phase) catch false;
 }
 
 /// Is it valid to play this card in the selection phase?
@@ -818,30 +817,25 @@ pub const PlayTarget = struct {
 fn playMatchesPredicate(
     play: *const combat.Play,
     predicate: cards.Predicate,
-    agent: *const Agent,
+    world: *World,
 ) bool {
-    // Get the card instance for this play - need mutable access for SlotMap.get
-    const mutable_agent = @constCast(agent);
-    const card_ptr: ?*Instance = switch (mutable_agent.cards) {
-        .deck => |*d| if (d.entities.get(play.primary)) |ptr| ptr.* else null,
-        .pool => |*p| if (p.entities.get(play.primary)) |ptr| ptr.* else null,
-    };
-    const card = card_ptr orelse return false;
+    // Look up card via card_registry (new system)
+    const card = world.card_registry.get(play.primary) orelse return false;
 
     // For play predicates, we only support tag checking for now
     return switch (predicate) {
         .always => true,
         .has_tag => |tag| card.template.tags.hasTag(tag),
-        .not => |inner| !playMatchesPredicate(play, inner.*, agent),
+        .not => |inner| !playMatchesPredicate(play, inner.*, world),
         .all => |preds| {
             for (preds) |pred| {
-                if (!playMatchesPredicate(play, pred, agent)) return false;
+                if (!playMatchesPredicate(play, pred, world)) return false;
             }
             return true;
         },
         .any => |preds| {
             for (preds) |pred| {
-                if (playMatchesPredicate(play, pred, agent)) return true;
+                if (playMatchesPredicate(play, pred, world)) return true;
             }
             return false;
         },
@@ -865,7 +859,7 @@ pub fn evaluatePlayTargets(
         .my_play => |predicate| {
             const enc_state = enc.stateFor(actor.id) orelse return targets;
             for (enc_state.current.plays(), 0..) |play, i| {
-                if (playMatchesPredicate(&play, predicate, actor)) {
+                if (playMatchesPredicate(&play, predicate, world)) {
                     try targets.append(alloc, .{ .agent = actor, .play_index = i });
                 }
             }
@@ -876,7 +870,7 @@ pub fn evaluatePlayTargets(
                 for (enc.enemies.items) |mob| {
                     const mob_state = enc.stateFor(mob.id) orelse continue;
                     for (mob_state.current.plays(), 0..) |play, i| {
-                        if (playMatchesPredicate(&play, predicate, mob)) {
+                        if (playMatchesPredicate(&play, predicate, world)) {
                             try targets.append(alloc, .{ .agent = mob, .play_index = i });
                         }
                     }
@@ -884,7 +878,7 @@ pub fn evaluatePlayTargets(
             } else {
                 const player_state = enc.stateFor(world.player.id) orelse return targets;
                 for (player_state.current.plays(), 0..) |play, i| {
-                    if (playMatchesPredicate(&play, predicate, world.player)) {
+                    if (playMatchesPredicate(&play, predicate, world)) {
                         try targets.append(alloc, .{ .agent = world.player, .play_index = i });
                     }
                 }
