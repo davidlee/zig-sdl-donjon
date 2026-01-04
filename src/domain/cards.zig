@@ -224,6 +224,14 @@ pub const Technique = struct {
     }
 };
 
+/// Modifier effects for modify_play (extracted for type reference).
+pub const ModifyPlay = struct {
+    cost_mult: ?f32 = null,
+    damage_mult: ?f32 = null,
+    replace_advantage: ?combat.TechniqueAdvantage = null,
+    height_override: ?body.Height = null,
+};
+
 pub const Effect = union(enum) {
     combat_technique: Technique,
     modify_stamina: struct {
@@ -238,12 +246,7 @@ pub const Effect = union(enum) {
     interrupt,
     emit_event: Event,
     // Commit phase play manipulation
-    modify_play: struct {
-        cost_mult: ?f32 = null,
-        damage_mult: ?f32 = null,
-        replace_advantage: ?combat.TechniqueAdvantage = null,
-        height_override: ?body.Height = null,
-    },
+    modify_play: ModifyPlay,
     cancel_play, // removes target play
 };
 

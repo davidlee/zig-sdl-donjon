@@ -75,16 +75,16 @@ const CardViewData = struct {
 
 /// Committed play with context (for commit phase and resolution).
 const PlayViewData = struct {
-    const max_reinforcements = combat.Play.max_reinforcements;
+    const max_modifiers = combat.Play.max_modifiers;
 
     // Ownership
     owner_id: entity.ID,
     owner_is_player: bool,
 
     // Cards in the play
-    primary: CardViewData,
-    reinforcements_buf: [max_reinforcements]CardViewData = undefined,
-    reinforcements_len: u4 = 0,
+    action: CardViewData,
+    modifier_stack_buf: [max_modifiers]CardViewData = undefined,
+    modifier_stack_len: u4 = 0,
     stakes: cards.Stakes,
 
     // Targeting (if offensive)
@@ -95,18 +95,18 @@ const PlayViewData = struct {
     // matchup: ?*const PlayViewData,
     // outcome: Outcome,
 
-    fn reinforcements(self: *const PlayViewData) []const CardViewData {
-        return self.reinforcements_buf[0..self.reinforcements_len];
+    fn modifiers(self: *const PlayViewData) []const CardViewData {
+        return self.modifier_stack_buf[0..self.modifier_stack_len];
     }
 
-    /// Total cards in play (primary + reinforcements)
+    /// Total cards in play (action + modifiers)
     fn cardCount(self: *const PlayViewData) usize {
-        return 1 + self.reinforcements_len;
+        return 1 + self.modifier_stack_len;
     }
 
     /// Is this an offensive play?
     fn isOffensive(self: *const PlayViewData) bool {
-        return self.primary.template.tags.offensive;
+        return self.action.template.tags.offensive;
     }
 };
 

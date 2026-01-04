@@ -518,13 +518,13 @@ pub const Engagement = struct {
 // Turn State
 // ============================================================================
 
-/// A card being played, with optional reinforcements and modifiers.
+/// A card being played, with optional modifier stack.
 pub const Play = struct {
-    pub const max_reinforcements = 4;
+    pub const max_modifiers = 4;
 
-    primary: entity.ID, // the lead card
-    reinforcements_buf: [max_reinforcements]entity.ID = undefined,
-    reinforcements_len: usize = 0,
+    action: entity.ID, // the lead card (technique, maneuver, etc.)
+    modifier_stack_buf: [max_modifiers]entity.ID = undefined,
+    modifier_stack_len: usize = 0,
     stakes: cards.Stakes = .guarded,
     added_in_commit: bool = false, // true if added via Focus, cannot be stacked
 
@@ -533,26 +533,27 @@ pub const Play = struct {
     damage_mult: f32 = 1.0,
     advantage_override: ?TechniqueAdvantage = null,
 
-    pub fn reinforcements(self: *const Play) []const entity.ID {
-        return self.reinforcements_buf[0..self.reinforcements_len];
+    pub fn modifiers(self: *const Play) []const entity.ID {
+        return self.modifier_stack_buf[0..self.modifier_stack_len];
     }
 
-    pub fn addReinforcement(self: *Play, card_id: entity.ID) error{Overflow}!void {
-        if (self.reinforcements_len >= max_reinforcements) return error.Overflow;
-        self.reinforcements_buf[self.reinforcements_len] = card_id;
-        self.reinforcements_len += 1;
+    pub fn addModifier(self: *Play, card_id: entity.ID) error{Overflow}!void {
+        if (self.modifier_stack_len >= max_modifiers) return error.Overflow;
+        self.modifier_stack_buf[self.modifier_stack_len] = card_id;
+        self.modifier_stack_len += 1;
     }
 
     pub fn cardCount(self: Play) usize {
-        return 1 + self.reinforcements_len;
+        return 1 + self.modifier_stack_len;
     }
 
     pub fn canStack(self: Play) bool {
         return !self.added_in_commit;
     }
 
+    /// Stakes based on modifier stack depth.
     pub fn effectiveStakes(self: Play) cards.Stakes {
-        return switch (self.reinforcements_len) {
+        return switch (self.modifier_stack_len) {
             0 => self.stakes,
             1 => .committed,
             else => .reckless,
@@ -562,6 +563,60 @@ pub const Play = struct {
     /// Get advantage profile (override if set, else from technique).
     pub fn getAdvantage(self: Play, technique: *const cards.Technique) ?TechniqueAdvantage {
         return self.advantage_override orelse technique.advantage;
+    }
+
+    // -------------------------------------------------------------------------
+    // Computed modifier effects
+    // -------------------------------------------------------------------------
+
+    /// Extract modify_play effect from a template (first on_commit rule with modify_play).
+    fn getModifyPlayEffect(template: *const cards.Template) ?cards.ModifyPlay {
+        for (template.rules) |rule| {
+            if (rule.trigger != .on_commit) continue;
+            for (rule.expressions) |expr| {
+                switch (expr.effect) {
+                    .modify_play => |mp| return mp,
+                    else => {},
+                }
+            }
+        }
+        return null;
+    }
+
+    /// Compute effective cost multiplier from modifier stack + stored override.
+    pub fn effectiveCostMult(self: *const Play, registry: *const world.CardRegistry) f32 {
+        var mult: f32 = 1.0;
+        for (self.modifiers()) |mod_id| {
+            const card = registry.getConst(mod_id) orelse continue;
+            if (getModifyPlayEffect(card.template)) |mp| {
+                mult *= mp.cost_mult orelse 1.0;
+            }
+        }
+        return mult * self.cost_mult; // stored override applied last
+    }
+
+    /// Compute effective damage multiplier from modifier stack + stored override.
+    pub fn effectiveDamageMult(self: *const Play, registry: *const world.CardRegistry) f32 {
+        var mult: f32 = 1.0;
+        for (self.modifiers()) |mod_id| {
+            const card = registry.getConst(mod_id) orelse continue;
+            if (getModifyPlayEffect(card.template)) |mp| {
+                mult *= mp.damage_mult orelse 1.0;
+            }
+        }
+        return mult * self.damage_mult; // stored override applied last
+    }
+
+    /// Compute effective height from modifier stack (last override wins).
+    pub fn effectiveHeight(self: *const Play, registry: *const world.CardRegistry, base: body.Height) body.Height {
+        var height = base;
+        for (self.modifiers()) |mod_id| {
+            const card = registry.getConst(mod_id) orelse continue;
+            if (getModifyPlayEffect(card.template)) |mp| {
+                if (mp.height_override) |h| height = h;
+            }
+        }
+        return height;
     }
 };
 
@@ -605,10 +660,10 @@ pub const TurnState = struct {
         self.plays_len -= 1;
     }
 
-    /// Find a play by its primary card ID, returns index or null.
+    /// Find a play by its action card ID, returns index or null.
     pub fn findPlayByCard(self: *const TurnState, card_id: entity.ID) ?usize {
         for (self.plays(), 0..) |play, i| {
-            if (play.primary.eql(card_id)) return i;
+            if (play.action.eql(card_id)) return i;
         }
         return null;
     }
@@ -869,22 +924,22 @@ test "ConditionIterator computed condition thresholds" {
     try testing.expect(!(0.8 > 0.8)); // boundary: not triggered
 }
 
-test "Play.effectiveStakes escalates with reinforcements" {
-    var play = Play{ .primary = testId(1) };
+test "Play.effectiveStakes escalates with modifiers" {
+    var play = Play{ .action = testId(1) };
     try testing.expectEqual(cards.Stakes.guarded, play.effectiveStakes());
 
-    try play.addReinforcement(testId(2));
+    try play.addModifier(testId(2));
     try testing.expectEqual(cards.Stakes.committed, play.effectiveStakes());
 
-    try play.addReinforcement(testId(3));
+    try play.addModifier(testId(3));
     try testing.expectEqual(cards.Stakes.reckless, play.effectiveStakes());
 }
 
 test "Play.canStack false when added_in_commit" {
-    const normal_play = Play{ .primary = testId(1) };
+    const normal_play = Play{ .action = testId(1) };
     try testing.expect(normal_play.canStack());
 
-    const commit_play = Play{ .primary = testId(2), .added_in_commit = true };
+    const commit_play = Play{ .action = testId(2), .added_in_commit = true };
     try testing.expect(!commit_play.canStack());
 }
 
@@ -892,8 +947,8 @@ test "TurnState tracks plays and clears" {
     var state = TurnState{};
     try testing.expectEqual(@as(usize, 0), state.plays_len);
 
-    try state.addPlay(.{ .primary = testId(1) });
-    try state.addPlay(.{ .primary = testId(2) });
+    try state.addPlay(.{ .action = testId(1) });
+    try state.addPlay(.{ .action = testId(2) });
     try testing.expectEqual(@as(usize, 2), state.plays_len);
 
     state.clear();
@@ -939,7 +994,7 @@ test "AgentEncounterState.endTurn pushes to history" {
     var state = AgentEncounterState{};
 
     // Add a play to current turn
-    try state.current.addPlay(.{ .primary = testId(1) });
+    try state.current.addPlay(.{ .action = testId(1) });
     state.current.focus_spent = 2.5;
 
     // End turn
@@ -954,18 +1009,18 @@ test "AgentEncounterState.endTurn pushes to history" {
     try testing.expectEqual(@as(f32, 2.5), state.history.lastTurn().?.focus_spent);
 }
 
-test "Play.addReinforcement overflow returns error" {
-    var play = Play{ .primary = testId(0) };
+test "Play.addModifier overflow returns error" {
+    var play = Play{ .action = testId(0) };
 
     // Fill to capacity
-    for (0..Play.max_reinforcements) |i| {
-        try play.addReinforcement(testId(@intCast(i + 1)));
+    for (0..Play.max_modifiers) |i| {
+        try play.addModifier(testId(@intCast(i + 1)));
     }
-    try testing.expectEqual(Play.max_reinforcements, play.reinforcements_len);
+    try testing.expectEqual(Play.max_modifiers, play.modifier_stack_len);
 
     // Next one should fail
-    try testing.expectError(error.Overflow, play.addReinforcement(testId(99)));
-    try testing.expectEqual(Play.max_reinforcements, play.reinforcements_len); // unchanged
+    try testing.expectError(error.Overflow, play.addModifier(testId(99)));
+    try testing.expectEqual(Play.max_modifiers, play.modifier_stack_len); // unchanged
 }
 
 test "TurnState.addPlay overflow returns error" {
@@ -973,12 +1028,12 @@ test "TurnState.addPlay overflow returns error" {
 
     // Fill to capacity
     for (0..TurnState.max_plays) |i| {
-        try state.addPlay(.{ .primary = testId(@intCast(i)) });
+        try state.addPlay(.{ .action = testId(@intCast(i)) });
     }
     try testing.expectEqual(TurnState.max_plays, state.plays_len);
 
     // Next one should fail
-    try testing.expectError(error.Overflow, state.addPlay(.{ .primary = testId(99) }));
+    try testing.expectError(error.Overflow, state.addPlay(.{ .action = testId(99) }));
     try testing.expectEqual(TurnState.max_plays, state.plays_len); // unchanged
 }
 
@@ -998,21 +1053,21 @@ test "AgentPair.canonical produces consistent key regardless of order" {
 test "TurnState.removePlay shifts remaining plays" {
     var state = TurnState{};
 
-    try state.addPlay(.{ .primary = testId(1) });
-    try state.addPlay(.{ .primary = testId(2) });
-    try state.addPlay(.{ .primary = testId(3) });
+    try state.addPlay(.{ .action = testId(1) });
+    try state.addPlay(.{ .action = testId(2) });
+    try state.addPlay(.{ .action = testId(3) });
     try testing.expectEqual(@as(usize, 3), state.plays_len);
 
     // Remove middle play
     state.removePlay(1);
     try testing.expectEqual(@as(usize, 2), state.plays_len);
-    try testing.expectEqual(@as(u32, 1), state.plays()[0].primary.index);
-    try testing.expectEqual(@as(u32, 3), state.plays()[1].primary.index);
+    try testing.expectEqual(@as(u32, 1), state.plays()[0].action.index);
+    try testing.expectEqual(@as(u32, 3), state.plays()[1].action.index);
 }
 
 test "TurnState.removePlay handles out of bounds" {
     var state = TurnState{};
-    try state.addPlay(.{ .primary = testId(1) });
+    try state.addPlay(.{ .action = testId(1) });
 
     // Should do nothing for invalid index
     state.removePlay(5);
@@ -1022,9 +1077,9 @@ test "TurnState.removePlay handles out of bounds" {
 test "TurnState.findPlayByCard returns correct index" {
     var state = TurnState{};
 
-    try state.addPlay(.{ .primary = testId(10) });
-    try state.addPlay(.{ .primary = testId(20) });
-    try state.addPlay(.{ .primary = testId(30) });
+    try state.addPlay(.{ .action = testId(10) });
+    try state.addPlay(.{ .action = testId(20) });
+    try state.addPlay(.{ .action = testId(30) });
 
     try testing.expectEqual(@as(?usize, 0), state.findPlayByCard(testId(10)));
     try testing.expectEqual(@as(?usize, 1), state.findPlayByCard(testId(20)));

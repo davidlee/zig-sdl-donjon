@@ -76,32 +76,34 @@ Updated existing and added new technique templates with `playable_from = Playabl
 
 4. **Height modifiers default mid** - Deflect and Parry guard mid height. High/Low modifiers shift targeting.
 
-## Remaining Work
-
 ### Phase 1: Play Struct Refactor
 
-**Files:** `combat.zig`, `tick.zig`, `apply.zig`
+**Files:** `combat.zig`, `tick.zig`, `apply.zig`, `cards.zig`, `presentation/views/combat.zig`
 
-1. Rename Play fields:
+1. Renamed Play fields:
    - `primary` → `action`
    - `reinforcements_buf` → `modifier_stack_buf`
    - `reinforcements_len` → `modifier_stack_len`
+   - `max_reinforcements` → `max_modifiers`
    - `reinforcements()` → `modifiers()`
    - `addReinforcement()` → `addModifier()`
 
-2. Add computed methods to Play:
+2. Added computed methods to Play:
    ```zig
    pub fn effectiveCostMult(self: *const Play, registry: *const CardRegistry) f32
    pub fn effectiveDamageMult(self: *const Play, registry: *const CardRegistry) f32
    pub fn effectiveHeight(self: *const Play, registry: *const CardRegistry, base: body.Height) body.Height
-   pub fn effectiveStakes(self: *const Play, registry: *const CardRegistry) Stakes
    ```
 
-   These iterate `modifier_stack`, look up each card's template, extract `modify_play` effect, and accumulate multipliers.
+   These iterate `modifier_stack`, look up each card's template via registry, extract `modify_play` effect from rules, and accumulate multipliers. Stored cost_mult/damage_mult applied as final override.
 
-3. Update call sites:
-   - `tick.zig:commitPlayerCards()` - use computed methods
-   - `apply.zig:commitStack()` - now attaches modifiers, not same-card reinforcement
+3. Extracted `cards.ModifyPlay` struct for type reference from Effect.modify_play.
+
+4. Updated call sites in tick.zig, apply.zig, combat.zig tests.
+
+5. Updated view layer PlayViewData to match domain naming.
+
+## Remaining Work
 
 ### Phase 2: Populate always_available
 
@@ -130,12 +132,13 @@ attach_modifier: struct { play_index: usize, modifier_id: ID }
 
 | File | Status | Changes |
 |------|--------|---------|
-| `cards.zig` | Done | .modifier Kind, height_override in modify_play |
+| `cards.zig` | Done | .modifier Kind, height_override in modify_play, ModifyPlay struct |
 | `card_list.zig` | Done | Modifier templates, technique templates, BaseTechniques, StarterModifiers |
-| `combat.zig` | Partial | always_available renamed; Play struct refactor pending |
-| `apply.zig` | Partial | always_available renamed; command handlers pending |
-| `tick.zig` | Pending | commitPlayerCards needs computed methods |
+| `combat.zig` | Done | Play struct refactor, computed methods, updated tests |
+| `apply.zig` | Partial | action/modifiers renamed; command handlers pending |
+| `tick.zig` | Partial | action renamed; use of computed methods pending |
 | `world.zig` | Pending | Populate always_available pool |
+| `presentation/views/combat.zig` | Done | PlayViewData refactored to match domain |
 
 ## References
 

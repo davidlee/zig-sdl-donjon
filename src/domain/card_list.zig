@@ -434,21 +434,23 @@ const m_feint = Template{
         .trigger = .on_commit,
         .valid = .always,
         .expressions = &.{.{
-            .effect = .{ .modify_play = .{
-                .damage_mult = 0,
-                .cost_mult = 0.5,
-                .replace_advantage = .{
-                    // Opponent parried/blocked a feint = wasted their defense
-                    .on_parried = .{ .control = 0.25, .pressure = 0.1 },
-                    .on_blocked = .{ .control = 0.20 },
-                    // Opponent attacked through = called your bluff
-                    .on_countered = .{ .control = -0.15, .self_balance = -0.1 },
-                    // "Hit" (opponent did nothing) = gained initiative
-                    .on_hit = .{ .control = 0.15 },
-                    // Dodged = neutral, they repositioned
-                    .on_dodged = .{ .position = -0.05 },
+            .effect = .{
+                .modify_play = .{
+                    .damage_mult = 0,
+                    .cost_mult = 0.5,
+                    .replace_advantage = .{
+                        // Opponent parried/blocked a feint = wasted their defense
+                        .on_parried = .{ .control = 0.25, .pressure = 0.1 },
+                        .on_blocked = .{ .control = 0.20 },
+                        // Opponent attacked through = called your bluff
+                        .on_countered = .{ .control = -0.15, .self_balance = -0.1 },
+                        // "Hit" (opponent did nothing) = gained initiative
+                        .on_hit = .{ .control = 0.15 },
+                        // Dodged = neutral, they repositioned
+                        .on_dodged = .{ .position = -0.05 },
+                    },
                 },
-            } },
+            },
             .target = .{ .my_play = .{ .has_tag = .{ .offensive = true } } },
             .filter = null,
         }},

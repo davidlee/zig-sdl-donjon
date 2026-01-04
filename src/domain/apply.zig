@@ -284,7 +284,7 @@ pub const CommandHandler = struct {
         const enc = &(self.world.encounter orelse return CommandError.BadInvariant);
         const enc_state = enc.stateFor(player.id) orelse return CommandError.BadInvariant;
         try enc_state.current.addPlay(.{
-            .primary = card_id,
+            .action = card_id,
             .added_in_commit = true, // Cannot be stacked this turn
         });
 
@@ -337,8 +337,8 @@ pub const CommandHandler = struct {
             return CommandError.BadInvariant;
         };
 
-        // Look up primary card via card_registry
-        const primary_card = self.world.card_registry.get(target_play.primary) orelse {
+        // Look up action card via card_registry
+        const action_card = self.world.card_registry.get(target_play.action) orelse {
             if (needs_focus) {
                 player.focus.current += FOCUS_COST;
                 player.focus.available += FOCUS_COST;
@@ -347,7 +347,7 @@ pub const CommandHandler = struct {
         };
 
         // Must be same template
-        if (stack_card.template.id != primary_card.template.id) {
+        if (stack_card.template.id != action_card.template.id) {
             if (needs_focus) {
                 player.focus.current += FOCUS_COST;
                 player.focus.available += FOCUS_COST;
@@ -355,8 +355,8 @@ pub const CommandHandler = struct {
             return CommandError.TemplatesMismatch;
         }
 
-        // Add reinforcement
-        target_play.addReinforcement(card_id) catch {
+        // Add modifier
+        target_play.addModifier(card_id) catch {
             if (needs_focus) {
                 player.focus.current += FOCUS_COST;
                 player.focus.available += FOCUS_COST;
@@ -452,7 +452,7 @@ pub const EventProcessor = struct {
 
         const cs = agent.combat_state orelse return;
         for (cs.in_play.items) |card_id| {
-            try enc_state.current.addPlay(.{ .primary = card_id });
+            try enc_state.current.addPlay(.{ .action = card_id });
         }
     }
 
@@ -939,7 +939,7 @@ fn playMatchesPredicate(
     world: *World,
 ) bool {
     // Look up card via card_registry (new system)
-    const card = world.card_registry.get(play.primary) orelse return false;
+    const card = world.card_registry.get(play.action) orelse return false;
 
     // For play predicates, we only support tag checking for now
     return switch (predicate) {

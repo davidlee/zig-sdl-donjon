@@ -120,7 +120,7 @@ pub const TickResolver = struct {
 
         for (plays) |play| {
             // Look up card via card_registry (new system)
-            const card_instance = w.card_registry.get(play.primary) orelse continue;
+            const card_instance = w.card_registry.get(play.action) orelse continue;
             const template = card_instance.template;
             const tech_expr = template.getTechniqueWithExpression() orelse continue;
 
