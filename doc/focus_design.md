@@ -799,3 +799,106 @@ When you play Thrust + Feint, the Feint modifier converts your thrust into a zer
 - Do modifiers stack with reinforcement, or replace it?
 - How do multi-technique plays work (if at all)?
 - Modifier discard timing (on play? on resolution?)
+
+## Play Struct Design (Model B)
+
+*Added 2026-01-03*
+
+### Technique Instancing
+
+Techniques reference pool IDs directly (not instanced into in_play). Simpler for now. If card upgrades/mutations matter later, can add instance tracking.
+
+### Naming
+
+- `primary` → `technique` (from pool, always available)
+- `reinforcements` → `modifier_stack` (different cards from hand, combinable)
+
+### Computed vs Stored Properties
+
+**Decision: Computed approach.**
+
+Rather than storing accumulated modifiers on Play:
+```zig
+// OLD - stored
+cost_mult: f32 = 1.0,
+damage_mult: f32 = 1.0,
+advantage_override: ?TechniqueAdvantage = null,
+```
+
+Compute on-demand from modifier_stack:
+```zig
+// NEW - computed
+pub fn effectiveCostMult(self: *const Play, deck: *const Deck) f32 {
+    var mult: f32 = 1.0;
+    for (self.modifiers()) |mod_id| {
+        const card = deck.entities.get(mod_id);
+        mult *= card.template.cost_modifier orelse 1.0;
+    }
+    return mult;
+}
+```
+
+**Rationale:**
+- Play struct stays lean (just IDs)
+- Modifiers applied consistently from source (card templates)
+- Reaction cards modifying the stack "just work" - recompute reflects changes
+- Context (Agent, Engagement) can be passed to compute methods when conditions influence values
+
+**Context passing (future):**
+
+If conditions influence play effectiveness:
+```zig
+pub fn effectiveDamageMult(
+    self: *const Play,
+    deck: *const Deck,
+    agent: *const Agent,
+    engagement: *const Engagement,
+) f32 { ... }
+```
+
+Solvable when needed; doesn't require Play to store references.
+
+### Proposed Play Struct
+
+```zig
+pub const Play = struct {
+    pub const max_modifiers = 4;
+
+    technique: entity.ID,                              // from pool (always available)
+    modifier_stack_buf: [max_modifiers]entity.ID = undefined,
+    modifier_stack_len: usize = 0,
+
+    stakes: cards.Stakes = .guarded,
+    added_in_commit: bool = false,  // Feint etc. still commit-phase plays
+
+    // Accessor
+    pub fn modifiers(self: *const Play) []const entity.ID {
+        return self.modifier_stack_buf[0..self.modifier_stack_len];
+    }
+
+    pub fn addModifier(self: *Play, card_id: entity.ID) error{Overflow}!void {
+        if (self.modifier_stack_len >= max_modifiers) return error.Overflow;
+        self.modifier_stack_buf[self.modifier_stack_len] = card_id;
+        self.modifier_stack_len += 1;
+    }
+
+    // Computed properties
+    pub fn effectiveCostMult(self: *const Play, deck: *const Deck) f32 { ... }
+    pub fn effectiveDamageMult(self: *const Play, deck: *const Deck) f32 { ... }
+    pub fn effectiveAdvantage(self: *const Play, deck: *const Deck, technique: *const Technique) ?TechniqueAdvantage { ... }
+
+    pub fn effectiveStakes(self: Play) cards.Stakes {
+        // Could factor in modifier effects on stakes
+        return self.stakes;
+    }
+};
+```
+
+### Migration Notes
+
+Current Play struct uses stored properties. Migration path:
+1. Add modifier_stack alongside reinforcements
+2. Add computed methods
+3. Update resolution code to use computed methods
+4. Remove stored properties
+5. Rename reinforcements → modifier_stack (or remove if obsolete)

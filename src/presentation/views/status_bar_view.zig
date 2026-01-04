@@ -121,7 +121,7 @@ pub const StatusBarView = struct {
                 try list.append(alloc, pip);
             }
 
-            for (0..@intFromFloat(@ceil(self.stamina))) |n| {
+            for (0..@intFromFloat(@ceil(self.focus))) |n| {
                 const m: f32 = @floatFromInt(n);
                 const start_x = r_inner.x + border;
                 const pip: Renderable = .{ .filled_rect = .{ .rect = .{
@@ -133,7 +133,7 @@ pub const StatusBarView = struct {
                 try list.append(alloc, pip);
             }
 
-            for (0..@intFromFloat(@ceil(self.stamina_available))) |n| {
+            for (0..@intFromFloat(@ceil(self.focus_available))) |n| {
                 const m: f32 = @floatFromInt(n);
                 const start_x = r_inner.x + border;
                 const pip: Renderable = .{ .filled_rect = .{ .rect = .{

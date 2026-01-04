@@ -36,12 +36,39 @@
 **TODO added for integration tests**
 - `combat.zig` now has TODO comment listing missing test coverage
 
+**Card templates updated**
+- All cards in `card_list.zig` now have `.phase_selection = true`
+- Explicit phase flags required (no backwards-compatible default)
+
+**UI validation function added**
+- `apply.canPlayerPlayCard(world, card_id) bool` for UI greying out unplayable cards
+- Derives phase from `world.fsm.currentState()`
+
 ### Files Changed
-- `apply.zig` - validation, error types, renamed function, stacking cost fix, docstrings
+- `apply.zig` - validation, error types, renamed function, stacking cost fix, docstrings, canPlayerPlayCard
 - `cards.zig` - TagSet phase flags and canPlayInPhase method
+- `card_list.zig` - all cards have `.phase_selection = true`
 - `combat.zig` - stack_focus_paid flag, TODO for tests
 - `tick.zig` - updated function call
 - `commands.zig` - updated comments
+
+### Design Direction: Model B
+
+See `focus_design.md` "Design Evolution" section for full details.
+
+**Summary:**
+- Techniques always available (from pool), not dealt
+- Hand contains modifier cards (height, commitment, tempo)
+- Play = technique + modifier_stack
+- Computed properties (cost_mult, damage_mult) derived on-demand from modifier_stack
+- Feint becomes a modifier, not a technique
+
+**Next steps (not started):**
+1. Refactor Play struct (technique + modifier_stack)
+2. Add computed property methods
+3. Create modifier card templates
+4. Update resolution to use computed properties
+5. Move techniques to pool
 
 ---
 
