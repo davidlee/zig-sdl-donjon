@@ -1,6 +1,110 @@
 # Handover Notes
 
-## 2026-01-04: View Layer Migration (Partial)
+## 2026-01-04: Card Hover Rendering Bug (UNRESOLVED)
+
+### Symptoms
+
+When entering or exiting hover state on a card (hand or in-play):
+1. A partial card appears at viewport origin (0, 0) - visible under the chrome header bar
+2. Only bottom/right borders and grey background square visible (top occluded by header)
+3. Border colors vary: sometimes green, sometimes white, sometimes mixed
+4. Sprites (player/enemy avatars) and other cards momentarily flicker black
+5. Status bar and end turn button are NOT affected (they use `filled_rect` and a texture respectively)
+6. Enemy hover (which renders a `filled_rect` tooltip) works fine - no glitches
+
+### Root Cause Analysis
+
+The issue occurs when card textures are re-rendered mid-frame due to state change (highlighted flag).
+
+In `card_renderer.zig`, `getCardTexture()` detects state change and calls `renderCard()`:
+```zig
+fn renderCard(...) {
+    // Create texture, switch render target, draw card content, restore target
+    const prev_target = self.renderer.getTarget();
+    try self.renderer.setTarget(tex);
+    defer self.renderer.setTarget(prev_target) catch {};
+    // ... draw operations at (0,0) relative to texture ...
+}
+```
+
+This happens during `graphics.zig` `renderList()` iteration, WHILE a viewport is active:
+- `renderWithViewport()` sets viewport to `(0, 100, 1420, 880)` (chrome game area)
+- Card rendering triggers texture creation mid-iteration
+- Draw operations intended for the texture appear to also affect the screen
+
+Debug output showed:
+```
+prev_target=null, prev_viewport=.{ .x = 0, .y = 100, .w = 1420, .h = 880 }
+```
+
+### What Was Tried
+
+1. **Save/restore viewport** in `renderCard()` - no effect
+2. **Reset viewport to null** before drawing to texture - no effect
+3. **Defer old texture destruction** until after new one created - no effect
+4. **Add debug print for cards at origin** - nothing printed (no Renderable has dst at 0,0)
+5. **Verify setTarget worked** - no warning printed
+
+Key insight: No card Renderable has `dst` at (0,0), yet a card visually appears there. The artifact is coming from the texture creation process itself, not from a misplaced renderable.
+
+### Alternative Theory: Arena Allocator / Stale Memory
+
+The texture creation mid-render theory may be wrong. Another possibility:
+- The arena allocator used for CardViewData might be showing stale memory contents
+- `CombatView.arena` is `self.alloc` from Coordinator - need to verify this isn't being reset/reused unexpectedly
+- The varying border colors (green/white) could indicate stale CardViewData with garbage values
+
+Worth investigating:
+1. What allocator is actually being passed to CombatView? Is it an arena that gets reset?
+2. Add debug output to verify CardViewData contents are valid when renderables are built
+3. Check if the Renderable list itself contains stale entries
+
+### Original Theory: Texture Creation Mid-Render
+
+Don't create textures mid-render while viewport is active. Options:
+1. **Pre-pass**: Before `renderWithViewport()`, iterate all cards and ensure textures are cached
+2. **Cache both states**: Pre-create highlighted and non-highlighted textures for each card
+3. **Defer texture creation**: Queue texture updates, process them before next frame's render
+
+### Files Involved
+- `src/presentation/card_renderer.zig` - texture caching and creation
+- `src/presentation/graphics.zig` - `renderCard()` calls `getCardTexture()`
+- `src/presentation/coordinator.zig` - `render()` calls `renderWithViewport()`
+
+---
+
+## 2026-01-04: View Layer Migration Complete
+
+### Completed This Session
+
+**Hit testing migrated to new architecture**
+- Added `arena: std.mem.Allocator` field to CombatView
+- Updated `CombatView.init(world, arena)` to take allocator from Coordinator
+- `handleInput()` now uses `handZone(arena)` / `inPlayZone(arena)` with allocator
+- Added `enemyInPlayCards(alloc, agent)` query for multi-enemy support
+
+**Legacy view code removed**
+- Removed `LegacyCardZoneView` struct (was using Instance pointers)
+- Removed legacy zone helpers: `handZone()`, `inPlayZone()`, `enemyInPlayZone()` (replaced with allocator-based versions)
+- Removed legacy query methods: `playerHand()`, `playerInPlay()`, `enemy()`, `enemyInPlay()` (accessed Deck directly)
+- Removed orphaned `cardViewState()` helper function
+
+**Enemy rendering improved**
+- Commit phase now supports multiple enemies (iterates `opposition.enemies` with offset layout)
+
+### Ready for Phase 7 Completion
+
+**Remove legacy Deck storage**
+- `Deck.entities` SlotMap - instances now in `World.card_registry`
+- `Deck.draw`, `Deck.hand`, `Deck.discard`, `Deck.in_play`, `Deck.exhaust` - zones now in `Agent.combat_state`
+
+No more view layer references to Deck zone fields. All lookups use:
+- `combat_state.hand.items` / `combat_state.in_play.items` (zone IDs)
+- `world.card_registry.getConst(id)` (instance lookup)
+
+---
+
+## 2026-01-04: View Layer Migration (Partial) [superseded]
 
 ### Completed This Session
 
@@ -15,23 +119,11 @@
 - Added `CardRegistry.getConst()` and `SlotMap.getConst()` for const-correct lookups
 - Changed `apply.validateCardSelection()` to take `*const Agent` and `*const Instance`
 
-**Still using legacy Deck access (hit testing)**
-- `handleInput()` still uses legacy zone helpers for hit testing (no allocator available)
-- Marked as TODO: add arena allocator to CombatView for hit testing
-
 **Design doc updated** (`doc/view_card_design.md`)
 - Clarified allocator pattern (parameter, not stored field)
 - Added CombatUIState rename
 - Updated CardZoneView with ViewState for drag/hover
 - Marked speculative PlayViewData fields as TODO comments
-
-### Remaining Work
-
-**View layer cleanup**
-- Add arena allocator to CombatView for hit testing
-- Remove legacy zone helpers (handZone, inPlayZone, enemyInPlayZone)
-- Remove LegacyCardZoneView
-- Add enemyInPlayCards() query for commit phase rendering
 
 **Phase 7 completion**
 - Remove `Deck.entities` SlotMap and zone ArrayLists (once all Deck references gone)

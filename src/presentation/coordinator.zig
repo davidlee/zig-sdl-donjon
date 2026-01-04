@@ -69,7 +69,7 @@ pub const Coordinator = struct {
             .tick_resolution,
             .player_reaction,
             .animating,
-            => View{ .combat = combat.CombatView.init(self.world) },
+            => View{ .combat = combat.CombatView.init(self.world, self.alloc) },
         };
     }
 

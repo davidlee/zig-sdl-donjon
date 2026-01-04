@@ -290,104 +290,6 @@ const CardZoneView = struct {
     }
 };
 
-// Legacy CardZoneView using Instance pointers (to be removed after full migration)
-const LegacyCardZoneView = struct {
-    zone: ViewZone,
-    layout: CardLayout,
-    card_list: []const *cards.Instance,
-
-    const CardWithRect = struct {
-        card: cards.Instance,
-        rect: Rect,
-        state: CardViewState,
-    };
-
-    fn init(zone: ViewZone, card_list: []const *cards.Instance) LegacyCardZoneView {
-        return .{ .zone = zone, .layout = getLayout(zone), .card_list = card_list };
-    }
-
-    fn initWithLayout(zone: ViewZone, card_list: []const *cards.Instance, layout: CardLayout) LegacyCardZoneView {
-        return .{ .zone = zone, .layout = layout, .card_list = card_list };
-    }
-
-    fn hitTest(self: LegacyCardZoneView, vs: ViewState) ?entity.ID {
-        var i = self.card_list.len;
-        while (i > 0) {
-            i -= 1;
-            const cr = self.cardWithRect(vs, i);
-            if (cr.rect.pointIn(vs.mouse)) return cr.card.id;
-        }
-        return null;
-    }
-
-    fn cardWithRect(self: LegacyCardZoneView, vs: ViewState, i: usize) CardWithRect {
-        const cs = vs.combat;
-        const card = self.card_list[i];
-        const state = cardViewState(cs, card);
-
-        const base_x = self.layout.start_x + @as(f32, @floatFromInt(i)) * self.layout.spacing;
-        const base_y = self.layout.y;
-
-        return switch (state) {
-            .normal => .{
-                .card = card.*,
-                .rect = .{ .x = base_x, .y = base_y, .w = self.layout.w, .h = self.layout.h },
-                .state = .normal,
-            },
-            .hover => .{
-                .card = card.*,
-                .rect = .{ .x = base_x - 3, .y = base_y - 3, .w = self.layout.w + 6, .h = self.layout.h + 6 },
-                .state = .hover,
-            },
-            .drag => .{
-                .card = card.*,
-                .rect = .{
-                    .x = vs.mouse.x - cs.?.drag.?.grab_offset.x,
-                    .y = vs.mouse.y - cs.?.drag.?.grab_offset.y,
-                    .w = self.layout.w,
-                    .h = self.layout.h,
-                },
-                .state = .drag,
-            },
-        };
-    }
-
-    fn appendIndicatePlayable(
-        self: LegacyCardZoneView,
-        alloc: std.mem.Allocator,
-        vs: ViewState,
-        list: *std.ArrayList(Renderable),
-        last: *?Renderable,
-        player: *Agent,
-        phase: w.GameState,
-    ) !void {
-        for (0..self.card_list.len) |i| {
-            const cr = self.cardWithRect(vs, i);
-            var card = cr.card;
-            const playable = apply.validateCardSelection(player, &card, phase) catch false;
-            const card_vm = CardViewModel.fromInstance(cr.card, .{
-                .disabled = !playable,
-            });
-
-            const item: Renderable = .{ .card = .{ .model = card_vm, .dst = cr.rect } };
-            if (cr.state == .normal) {
-                try list.append(alloc, item);
-            } else {
-                last.* = item;
-            }
-        }
-    }
-
-    fn appendEnemyRenderables(self: LegacyCardZoneView, alloc: std.mem.Allocator, vs: ViewState, list: *std.ArrayList(Renderable)) !void {
-        for (0..self.card_list.len) |i| {
-            const cr = self.cardWithRect(vs, i);
-            const card_vm = CardViewModel.fromInstance(cr.card, .{});
-            const item: Renderable = .{ .card = .{ .model = card_vm, .dst = cr.rect } };
-            try list.append(alloc, item);
-        }
-    }
-};
-
 const PlayerAvatar = struct {
     rect: Rect,
     asset_id: AssetId,
@@ -478,17 +380,19 @@ const Opposition = struct {
 /// requires an active encounter.
 pub const CombatView = struct {
     world: *const World,
+    arena: std.mem.Allocator,
     end_turn_btn: EndTurnButton,
     player_avatar: PlayerAvatar,
     opposition: Opposition,
     combat_phase: w.GameState,
 
-    pub fn init(world: *const World) CombatView {
+    pub fn init(world: *const World, arena: std.mem.Allocator) CombatView {
         var fsm = world.fsm;
         const phase = fsm.currentState();
 
         return .{
             .world = world,
+            .arena = arena,
             .end_turn_btn = EndTurnButton.init(phase),
             .player_avatar = PlayerAvatar.init(),
             .opposition = Opposition.init(world.encounter.?.enemies.items),
@@ -510,6 +414,24 @@ pub const CombatView = struct {
         const player = self.world.player;
         const cs = player.combat_state orelse return &.{};
         return self.buildCardList(alloc, .in_play, cs.in_play.items);
+    }
+
+    /// Enemy cards in play (shown during commit phase).
+    /// Unlike player cards, these are always shown as "playable" (not greyed out).
+    fn enemyInPlayCards(self: *const CombatView, alloc: std.mem.Allocator, agent: *const Agent) []const CardViewData {
+        const cs = agent.combat_state orelse return &.{};
+        const ids = cs.in_play.items;
+
+        const result = alloc.alloc(CardViewData, ids.len) catch return &.{};
+        var count: usize = 0;
+
+        for (ids) |id| {
+            const inst = self.world.card_registry.getConst(id) orelse continue;
+            result[count] = CardViewData.fromInstance(inst, .in_play, true);
+            count += 1;
+        }
+
+        return result[0..count];
     }
 
     fn buildCardList(
@@ -534,32 +456,6 @@ pub const CombatView = struct {
         return result[0..count];
     }
 
-    // --- Legacy query methods ---
-    // TODO: These still access Deck zone fields. Rendering has been migrated to
-    // use CombatState zones (via handCards/inPlayCards). Hit testing still uses
-    // these legacy methods because handleInput doesn't have an allocator.
-    // Future: Add arena allocator to CombatView for hit testing, then remove these.
-
-    fn playerHand(self: *const CombatView) []const *cards.Instance {
-        return self.world.player.cards.deck.hand.items;
-    }
-
-    fn playerInPlay(self: *const CombatView) []const *cards.Instance {
-        return self.world.player.cards.deck.in_play.items;
-    }
-
-    // FIXME: hardcoded to single enemy
-    fn enemy(self: *const CombatView) *Agent {
-        const es = self.world.encounter.?.enemies.items;
-        if (es.len != 1) unreachable; // FIXME: only works with single mobs
-        return es[0];
-    }
-
-    // FIXME: hardcoded to single enemy
-    fn enemyInPlay(self: *const CombatView) []const *cards.Instance {
-        return self.enemy().cards.deck.in_play.items;
-    }
-
     // Input handling - returns command + optional view state update
     pub fn handleInput(self: *CombatView, event: s.events.Event, world: *const World, vs: ViewState) InputResult {
         _ = world;
@@ -577,12 +473,12 @@ pub const CombatView = struct {
                     return .{};
                 } else {
                     // check for hover on hand cards
-                    if (self.handZone().hitTest(vs)) |x| {
+                    if (self.handZone(self.arena).hitTest(vs)) |x| {
                         var new_cs = cs;
                         new_cs.hover = .{ .card = x };
                         return .{ .vs = vs.withCombat(new_cs) };
                         // hover for player cards in play zone
-                    } else if (self.inPlayZone().hitTest(vs)) |x| {
+                    } else if (self.inPlayZone(self.arena).hitTest(vs)) |x| {
                         var new_cs = cs;
                         new_cs.hover = .{ .card = x };
                         return .{ .vs = vs.withCombat(new_cs) };
@@ -611,9 +507,9 @@ pub const CombatView = struct {
     }
 
     fn handleClick(self: *CombatView, vs: ViewState) InputResult {
-        if (self.handZone().hitTest(vs)) |id| {
+        if (self.handZone(self.arena).hitTest(vs)) |id| {
             return .{ .command = .{ .play_card = id } };
-        } else if (self.inPlayZone().hitTest(vs)) |id| {
+        } else if (self.inPlayZone(self.arena).hitTest(vs)) |id| {
             return .{ .command = .{ .cancel_card = id } };
         } else if (self.opposition.hitTest(vs)) |sprite| {
             // std.debug.print("ENEMY HIT: id={d}:{d}\n", .{ sprite.id.index, sprite.id.generation });
@@ -628,29 +524,14 @@ pub const CombatView = struct {
         return .{};
     }
 
-    // --- New zone helpers (use CardZoneView with CardViewData) ---
+    // --- Zone helpers (use CardZoneView with CardViewData) ---
 
-    fn handZoneNew(self: *const CombatView, alloc: std.mem.Allocator) CardZoneView {
+    fn handZone(self: *const CombatView, alloc: std.mem.Allocator) CardZoneView {
         return CardZoneView.init(.hand, self.handCards(alloc));
     }
 
-    fn inPlayZoneNew(self: *const CombatView, alloc: std.mem.Allocator) CardZoneView {
+    fn inPlayZone(self: *const CombatView, alloc: std.mem.Allocator) CardZoneView {
         return CardZoneView.init(.in_play, self.inPlayCards(alloc));
-    }
-
-    // --- Legacy zone helpers (use LegacyCardZoneView, to be removed) ---
-
-    fn handZone(self: *const CombatView) LegacyCardZoneView {
-        return LegacyCardZoneView.init(.hand, self.playerHand());
-    }
-
-    fn inPlayZone(self: *const CombatView) LegacyCardZoneView {
-        return LegacyCardZoneView.init(.in_play, self.playerInPlay());
-    }
-
-    fn enemyInPlayZone(self: *const CombatView) LegacyCardZoneView {
-        const layout = getLayoutOffset(.in_play, Point{ .x = 400, .y = 0 });
-        return LegacyCardZoneView.initWithLayout(.in_play, self.enemyInPlay(), layout);
     }
 
     fn handleRelease(self: *CombatView, vs: ViewState) InputResult {
@@ -691,14 +572,24 @@ pub const CombatView = struct {
         try self.opposition.appendRenderables(alloc, &list);
 
         // Player cards - render in_play first (behind), then hand (in front)
-        // Uses new CardZoneView with CardViewData (decoupled from Deck)
         var last: ?Renderable = null;
-        try self.inPlayZoneNew(alloc).appendRenderables(alloc, vs, &list, &last);
-        try self.handZoneNew(alloc).appendRenderables(alloc, vs, &list, &last);
+        try self.inPlayZone(alloc).appendRenderables(alloc, vs, &list, &last);
+        try self.handZone(alloc).appendRenderables(alloc, vs, &list, &last);
 
-        // enemy cards (still uses legacy for now - need enemyInPlayCards query)
+        // enemy cards (commit phase only)
         if (self.combat_phase == .commit_phase) {
-            try self.enemyInPlayZone().appendEnemyRenderables(alloc, vs, &list);
+            for (self.opposition.enemies, 0..) |enemy_agent, i| {
+                const layout = getLayoutOffset(.in_play, Point{
+                    .x = 400 + @as(f32, @floatFromInt(i)) * 200,
+                    .y = 0,
+                });
+                const enemy_zone = CardZoneView.initWithLayout(
+                    .in_play,
+                    self.enemyInPlayCards(alloc, enemy_agent),
+                    layout,
+                );
+                try enemy_zone.appendRenderables(alloc, vs, &list, &last);
+            }
         }
 
         // Render hovered/dragged card last (on top)
@@ -743,16 +634,3 @@ pub const CombatView = struct {
         return list;
     }
 };
-
-fn cardViewState(cs: ?CombatUIState, card: *const cards.Instance) CardViewState {
-    const c = cs orelse CombatUIState{};
-    if (c.drag != null and c.drag.?.id.eql(card.id)) {
-        return .drag;
-    } else {
-        switch (c.hover) {
-            .card => |data| if (data.eql(card.id)) return .hover,
-            else => return .normal,
-        }
-    }
-    return .normal;
-}
