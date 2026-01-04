@@ -26,6 +26,56 @@ const WorldError = error{
     InvalidStateTransition,
 };
 
+/// Central registry for all card instances. Containers (Agent, Encounter) hold IDs.
+pub const CardRegistry = struct {
+    alloc: std.mem.Allocator,
+    entities: SlotMap(*cards.Instance),
+
+    pub fn init(alloc: std.mem.Allocator) !CardRegistry {
+        return .{
+            .alloc = alloc,
+            .entities = try SlotMap(*cards.Instance).init(alloc),
+        };
+    }
+
+    pub fn deinit(self: *CardRegistry) void {
+        // Free all instances
+        for (self.entities.items.items) |instance| {
+            self.alloc.destroy(instance);
+        }
+        self.entities.deinit();
+    }
+
+    /// Create a new card instance from a template
+    pub fn create(self: *CardRegistry, template: *const cards.Template) !*cards.Instance {
+        const instance = try self.alloc.create(cards.Instance);
+        const id = try self.entities.insert(instance);
+        instance.* = .{ .id = id, .template = template };
+        return instance;
+    }
+
+    /// Look up a card instance by ID
+    pub fn get(self: *CardRegistry, id: lib.entity.ID) ?*cards.Instance {
+        const ptr = self.entities.get(id) orelse return null;
+        return ptr.*;
+    }
+
+    /// Invalidate a card ID without freeing memory.
+    /// Memory is reclaimed when the registry is deinitialized.
+    ///
+    /// NOTE: This means mob cards from encounters accumulate until session end.
+    /// For long sessions, consider either:
+    /// - Pooling/reusing mob card instances
+    /// - Implementing proper destroy with generation-aware cleanup
+    /// - Periodic compaction during loading screens
+    ///
+    /// TODO: If memory becomes an issue, implement destroyAndFree with
+    /// tracking to avoid double-free in deinit.
+    pub fn remove(self: *CardRegistry, id: lib.entity.ID) void {
+        self.entities.remove(id);
+    }
+};
+
 pub const EntityMap = struct {
     agents: *SlotMap(*combat.Agent),
     weapons: *SlotMap(*weapon.Instance),
@@ -82,11 +132,10 @@ pub const World = struct {
     encounter: ?combat.Encounter,
     random: random.RandomStreamDict,
     entities: EntityMap,
-    // agents: *SlotMap(*combat.Agent),
+    card_registry: CardRegistry,
     player: *combat.Agent,
     fsm: zigfsm.StateMachine(GameState, GameEvent, .splash),
     tickResolver: TickResolver,
-    // deck: Deck,
     commandHandler: CommandHandler,
     eventProcessor: EventProcessor,
 
@@ -121,6 +170,7 @@ pub const World = struct {
             .encounter = null, // created after player
             .random = random.RandomStreamDict.init(),
             .entities = try EntityMap.init(alloc),
+            .card_registry = try CardRegistry.init(alloc),
             .player = undefined, // set after entities exist
             .fsm = fsm,
             .tickResolver = try TickResolver.init(alloc),
@@ -148,6 +198,9 @@ pub const World = struct {
 
         // Deinit player explicitly
         self.player.deinit();
+
+        // Deinit card registry (frees all card instances)
+        self.card_registry.deinit();
 
         // Deinit entity containers (items already freed above)
         self.entities.deinit(self.alloc);
@@ -207,3 +260,41 @@ pub const World = struct {
         };
     }
 };
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+test "CardRegistry: create and lookup" {
+    const alloc = std.testing.allocator;
+    var registry = try CardRegistry.init(alloc);
+    defer registry.deinit();
+
+    // Use a test template
+    const template = &card_list.BeginnerDeck[0];
+
+    // Create instance
+    const instance = try registry.create(template);
+    try std.testing.expectEqual(template, instance.template);
+
+    // Lookup by ID
+    const found = registry.get(instance.id);
+    try std.testing.expect(found != null);
+    try std.testing.expectEqual(instance, found.?);
+}
+
+test "CardRegistry: remove invalidates ID" {
+    const alloc = std.testing.allocator;
+    var registry = try CardRegistry.init(alloc);
+    defer registry.deinit();
+
+    const template = &card_list.BeginnerDeck[0];
+    const instance = try registry.create(template);
+    const id = instance.id;
+
+    // Remove (invalidates ID, memory freed on deinit)
+    registry.remove(id);
+
+    // Should not be found via get
+    try std.testing.expect(registry.get(id) == null);
+}

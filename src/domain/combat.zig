@@ -83,6 +83,55 @@ pub const Strat = union(enum) {
     pool: TechniquePool,
 };
 
+// ============================================================================
+// Card Containers (new architecture - see doc/card_storage_design.md)
+// ============================================================================
+
+/// Transient combat state - created per encounter, holds draw/hand/discard cycle.
+/// Card IDs reference World.card_registry.
+pub const CombatState = struct {
+    alloc: std.mem.Allocator,
+    draw: std.ArrayList(entity.ID),
+    hand: std.ArrayList(entity.ID),
+    discard: std.ArrayList(entity.ID),
+    in_play: std.ArrayList(entity.ID),
+    exhaust: std.ArrayList(entity.ID),
+
+    pub fn init(alloc: std.mem.Allocator) !CombatState {
+        return .{
+            .alloc = alloc,
+            .draw = try std.ArrayList(entity.ID).initCapacity(alloc, 20),
+            .hand = try std.ArrayList(entity.ID).initCapacity(alloc, 10),
+            .discard = try std.ArrayList(entity.ID).initCapacity(alloc, 20),
+            .in_play = try std.ArrayList(entity.ID).initCapacity(alloc, 8),
+            .exhaust = try std.ArrayList(entity.ID).initCapacity(alloc, 5),
+        };
+    }
+
+    pub fn deinit(self: *CombatState) void {
+        self.draw.deinit(self.alloc);
+        self.hand.deinit(self.alloc);
+        self.discard.deinit(self.alloc);
+        self.in_play.deinit(self.alloc);
+        self.exhaust.deinit(self.alloc);
+    }
+
+    pub fn clear(self: *CombatState) void {
+        self.draw.clearRetainingCapacity();
+        self.hand.clearRetainingCapacity();
+        self.discard.clearRetainingCapacity();
+        self.in_play.clearRetainingCapacity();
+        self.exhaust.clearRetainingCapacity();
+    }
+};
+
+// NOTE: Equipment is handled by existing systems:
+// - Weapons: Agent.weapons (Armament union with single/dual/compound)
+// - Armor: Agent.armour (armour.Stack with body-aware layers)
+//
+// When items become cards, we may need to track card IDs that correspond
+// to equipped weapon/armor instances for card effect targeting.
+
 // Humanoid AI: simplified pool with card instances
 pub const TechniquePool = struct {
     alloc: std.mem.Allocator,
@@ -258,7 +307,7 @@ pub const Agent = struct {
     id: entity.ID,
     alloc: std.mem.Allocator,
     director: Director,
-    cards: Strat,
+    cards: Strat, // Legacy: TODO remove after migration to new containers
     stats: stats.Block,
     // may be humanoid, or not
     body: body.Body,
@@ -266,6 +315,16 @@ pub const Agent = struct {
     armour: armour.Stack,
     weapons: Armament,
     dominant_side: body.Side = .right, // .center == ambidextrous
+
+    // New card containers (IDs reference World.card_registry)
+    // See doc/card_storage_design.md for architecture
+    // NOTE: Default to empty - use .init(alloc) pattern for non-test code
+    techniques_known: std.ArrayList(entity.ID) = .{}, // Always available in combat
+    spells_known: std.ArrayList(entity.ID) = .{}, // Always available (if mana)
+    deck_cards: std.ArrayList(entity.ID) = .{}, // Shuffled into draw at combat start
+    inventory: std.ArrayList(entity.ID) = .{}, // Carried items
+    combat_state: ?*CombatState = null, // Per-encounter, transient
+    // NOTE: weapons handled by Agent.weapons, armor by Agent.armour
 
     // state (wounds kept in body)
     balance: f32 = 1.0, // 0-1, intrinsic stability
@@ -302,6 +361,13 @@ pub const Agent = struct {
             .stamina = stamina,
             .focus = focus,
 
+            // New card containers (empty by default)
+            .techniques_known = try std.ArrayList(entity.ID).initCapacity(alloc, 10),
+            .spells_known = try std.ArrayList(entity.ID).initCapacity(alloc, 10),
+            .deck_cards = try std.ArrayList(entity.ID).initCapacity(alloc, 20),
+            .inventory = try std.ArrayList(entity.ID).initCapacity(alloc, 20),
+            .combat_state = null,
+
             .conditions = try std.ArrayList(damage.ActiveCondition).initCapacity(alloc, 5),
             .resistances = try std.ArrayList(damage.Resistance).initCapacity(alloc, 5),
             .immunities = try std.ArrayList(damage.Immunity).initCapacity(alloc, 5),
@@ -319,6 +385,16 @@ pub const Agent = struct {
         switch (self.cards) {
             .deck => |*dk| dk.deinit(),
             .pool => |*pl| pl.deinit(),
+        }
+
+        // Deinit new card containers
+        self.techniques_known.deinit(alloc);
+        self.spells_known.deinit(alloc);
+        self.deck_cards.deinit(alloc);
+        self.inventory.deinit(alloc);
+        if (self.combat_state) |cs| {
+            cs.deinit();
+            alloc.destroy(cs);
         }
 
         self.conditions.deinit(alloc);
