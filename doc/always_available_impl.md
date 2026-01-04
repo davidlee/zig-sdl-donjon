@@ -103,17 +103,18 @@ Updated existing and added new technique templates with `playable_from = Playabl
 
 5. Updated view layer PlayViewData to match domain naming.
 
-## Remaining Work
-
 ### Phase 2: Populate always_available
 
 **Files:** `world.zig`
 
-In `World.init()`:
-1. Create technique instances from `BaseTechniques` via `card_registry.createFromTemplates()`
-2. Populate `player.always_available` with technique IDs
-3. Create modifier instances from `StarterModifiers`
-4. Populate `player.deck_cards` with modifier IDs (replacing current technique cards)
+1. Added `createFromTemplatePtrs()` to CardRegistry for `[]*const Template` arrays
+2. Updated `World.init()`:
+   - Create technique instances from `BaseTechniques` (1 copy each)
+   - Populate `player.always_available` with technique IDs
+   - Create modifier instances from `StarterModifiers` (already has duplicates: 3x High, 3x Low, 2x Feint)
+   - Populate `player.deck_cards` with modifier IDs (replacing BeginnerDeck)
+
+## Remaining Work
 
 ### Phase 3: Selection Commands (future)
 
@@ -137,7 +138,7 @@ attach_modifier: struct { play_index: usize, modifier_id: ID }
 | `combat.zig` | Done | Play struct refactor, computed methods, updated tests |
 | `apply.zig` | Partial | action/modifiers renamed; command handlers pending |
 | `tick.zig` | Partial | action renamed; use of computed methods pending |
-| `world.zig` | Pending | Populate always_available pool |
+| `world.zig` | Done | createFromTemplatePtrs, populate always_available and deck_cards |
 | `presentation/views/combat.zig` | Done | PlayViewData refactored to match domain |
 
 ## References

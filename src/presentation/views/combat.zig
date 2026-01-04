@@ -37,7 +37,7 @@ const card_renderer = @import("../card_renderer.zig");
 const ViewZone = enum {
     hand,
     in_play,
-    techniques, // future
+    always_available,
     spells, // future
     player_plays, // commit phase
     enemy_plays, // commit phase
@@ -56,7 +56,7 @@ const CardViewData = struct {
     const Source = enum {
         hand,
         in_play,
-        techniques, // future
+        always_available,
         spells, // future
         equipped, // future
         inventory, // future
@@ -132,7 +132,7 @@ fn getLayout(zone: ViewZone) CardLayout {
         .y = switch (zone) {
             .hand => 400,
             .in_play => 200,
-            .techniques => 400, // same row as hand, different x
+            .always_available => 540, // same row as hand, different x
             .spells => 400,
             .player_plays => 200,
             .enemy_plays => 50,
@@ -377,6 +377,9 @@ const Opposition = struct {
 
 /// CombatView - view model for representing and interacting with combat
 /// requires an active encounter.
+///
+///
+///
 pub const CombatView = struct {
     world: *const World,
     arena: std.mem.Allocator,
@@ -413,6 +416,12 @@ pub const CombatView = struct {
         const player = self.world.player;
         const cs = player.combat_state orelse return &.{};
         return self.buildCardList(alloc, .in_play, cs.in_play.items);
+    }
+
+    /// Player always known cards (techniques mostly)
+    pub fn alwaysCards(self: *const CombatView, alloc: std.mem.Allocator) []const CardViewData {
+        const player = self.world.player;
+        return self.buildCardList(alloc, .always_available, player.always_available.items);
     }
 
     /// Enemy cards in play (shown during commit phase).
@@ -533,6 +542,10 @@ pub const CombatView = struct {
         return CardZoneView.init(.in_play, self.inPlayCards(alloc));
     }
 
+    fn alwaysZone(self: *const CombatView, alloc: std.mem.Allocator) CardZoneView {
+        return CardZoneView.init(.always_available, self.alwaysCards(alloc));
+    }
+
     fn handleRelease(self: *CombatView, vs: ViewState) InputResult {
         const cs = vs.combat orelse CombatUIState{};
         _ = self;
@@ -574,6 +587,7 @@ pub const CombatView = struct {
         var last: ?Renderable = null;
         try self.inPlayZone(alloc).appendRenderables(alloc, vs, &list, &last);
         try self.handZone(alloc).appendRenderables(alloc, vs, &list, &last);
+        try self.alwaysZone(alloc).appendRenderables(alloc, vs, &list, &last);
 
         // enemy cards (commit phase only)
         if (self.combat_phase == .commit_phase) {
@@ -623,9 +637,7 @@ pub const CombatView = struct {
         var sb = StatusBarView.init(self.world.player);
         try sb.render(alloc, vs, &list);
 
-        // TODO: enemies (top area)
         // TODO: engagement info / advantage bars
-        // TODO: stamina/time indicators
         // TODO: phase indicator
 
         return list;
