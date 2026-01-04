@@ -140,7 +140,7 @@ pub const UX = struct {
             .renderer = renderer,
             .fps_capper = s.extras.FramerateCapper(f32){ .mode = .{ .limited = config.fps } },
             .assets = assets,
-            .cards = CardRenderer.init(alloc, renderer, font_normal),
+            .cards = try CardRenderer.init(alloc, renderer, font_normal),
             .font = font_normal,
             .font_small = font_small,
         };
@@ -174,18 +174,15 @@ pub const UX = struct {
     }
 
     pub fn renderWithViewport(self: *UX, renderables: []const Renderable, vp: s.rect.IRect) !void {
-        // Pre-warm card textures before setting viewport to avoid
-        // render target artifacts from mid-frame texture creation
-        try self.prewarmCardTextures(renderables);
-
         try self.renderer.setViewport(vp);
+        // Prewarm must happen before renderList - texture creation mid-batch corrupts GPU state
+        try self.prewarmCardTextures(renderables);
         try self.renderList(renderables);
         try self.renderer.setViewport(null);
     }
 
-    /// Ensure all card textures are cached before rendering begins.
-    /// This prevents texture creation during viewport rendering which
-    /// causes ghost artifacts at viewport origin.
+    /// Ensure all card textures are cached before draw calls begin.
+    /// Creating textures during renderList corrupts SDL's render batch.
     fn prewarmCardTextures(self: *UX, renderables: []const Renderable) !void {
         for (renderables) |r| {
             switch (r) {
@@ -209,6 +206,11 @@ pub const UX = struct {
 
     pub fn renderFinalize(self: *UX) !void {
         try self.renderer.present();
+    }
+
+    /// Cleanup textures invalidated during this frame
+    pub fn endFrame(self: *UX) void {
+        self.cards.flushDestroyedTextures();
     }
 
     /// MAIN RENDER LOOP

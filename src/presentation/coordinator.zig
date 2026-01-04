@@ -185,5 +185,8 @@ pub const Coordinator = struct {
         // Layer 4: debug
         try self.ux.renderDebug();
         try self.ux.renderFinalize();
+
+        // Cleanup textures invalidated during this frame
+        self.ux.endFrame();
     }
 };

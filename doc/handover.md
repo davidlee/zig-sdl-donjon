@@ -1,75 +1,59 @@
 # Handover Notes
 
-## 2026-01-04: Card Hover Rendering Bug (UNRESOLVED)
+## 2026-01-04: Card Hover Rendering Bug (RESOLVED)
 
 ### Symptoms
 
 When entering or exiting hover state on a card (hand or in-play):
-1. A partial card appears at viewport origin (0, 0) - visible under the chrome header bar
-2. Only bottom/right borders and grey background square visible (top occluded by header)
-3. Border colors vary: sometimes green, sometimes white, sometimes mixed
-4. Sprites (player/enemy avatars) and other cards momentarily flicker black
-5. Status bar and end turn button are NOT affected (they use `filled_rect` and a texture respectively)
-6. Enemy hover (which renders a `filled_rect` tooltip) works fine - no glitches
+1. A partial card appears at viewport origin (0, 0)
+2. Border colors vary (green/white/mixed)
+3. Sprites and other cards momentarily flicker/distort
 
-### Root Cause Analysis
+### Root Cause
 
-The issue occurs when card textures are re-rendered mid-frame due to state change (highlighted flag).
+**Destroying textures mid-render-batch causes GPU state corruption.**
 
-In `card_renderer.zig`, `getCardTexture()` detects state change and calls `renderCard()`:
-```zig
-fn renderCard(...) {
-    // Create texture, switch render target, draw card content, restore target
-    const prev_target = self.renderer.getTarget();
-    try self.renderer.setTarget(tex);
-    defer self.renderer.setTarget(prev_target) catch {};
-    // ... draw operations at (0,0) relative to texture ...
-}
-```
+When a card's state changes (hover on/off), the texture cache would destroy the old texture (`texture.deinit()`) during `renderList()` iteration. SDL batches draw calls internally, and destroying a texture mid-batch corrupts GPU state.
 
-This happens during `graphics.zig` `renderList()` iteration, WHILE a viewport is active:
-- `renderWithViewport()` sets viewport to `(0, 100, 1420, 880)` (chrome game area)
-- Card rendering triggers texture creation mid-iteration
-- Draw operations intended for the texture appear to also affect the screen
+Creating textures during the batch (without destruction) doesn't cause issues - disabling the cache entirely (always creating, never destroying) worked fine. But texture creation during `renderList` is still problematic because it triggers destruction of the old cached texture.
 
-Debug output showed:
-```
-prev_target=null, prev_viewport=.{ .x = 0, .y = 100, .w = 1420, .h = 880 }
-```
+### The Fix
 
-### What Was Tried
+Two-part solution:
 
-1. **Save/restore viewport** in `renderCard()` - no effect
-2. **Reset viewport to null** before drawing to texture - no effect
-3. **Defer old texture destruction** until after new one created - no effect
-4. **Add debug print for cards at origin** - nothing printed (no Renderable has dst at 0,0)
-5. **Verify setTarget worked** - no warning printed
+1. **Prewarm textures before render pass** (`graphics.zig`):
+   ```zig
+   pub fn renderWithViewport(...) !void {
+       try self.prewarmCardTextures(renderables);  // ensure all textures exist
+       try self.renderer.setViewport(vp);
+       try self.renderList(renderables);           // only cache hits now
+       try self.renderer.setViewport(null);
+   }
+   ```
 
-Key insight: No card Renderable has `dst` at (0,0), yet a card visually appears there. The artifact is coming from the texture creation process itself, not from a misplaced renderable.
+2. **Defer texture destruction until after frame** (`card_renderer.zig`):
+   ```zig
+   // Instead of immediate deinit:
+   try self.pending_destroy.append(self.alloc, entry.texture);
 
-### Alternative Theory: Arena Allocator / Stale Memory
+   // Called after frame completes:
+   pub fn flushDestroyedTextures(self: *CardRenderer) void { ... }
+   ```
 
-The texture creation mid-render theory may be wrong. Another possibility:
-- The arena allocator used for CardViewData might be showing stale memory contents
-- `CombatView.arena` is `self.alloc` from Coordinator - need to verify this isn't being reset/reused unexpectedly
-- The varying border colors (green/white) could indicate stale CardViewData with garbage values
+### Key Insight
 
-Worth investigating:
-1. What allocator is actually being passed to CombatView? Is it an arena that gets reset?
-2. Add debug output to verify CardViewData contents are valid when renderables are built
-3. Check if the Renderable list itself contains stale entries
+The viewport was a red herring. Artifacts appeared at viewport (0,0) because that's where the corrupted GPU state manifested, not because viewport isolation was broken.
 
-### Original Theory: Texture Creation Mid-Render
+Disabling the cache entirely also "fixed" it (by avoiding texture reuse), confirming the issue was texture lifecycle during rendering.
 
-Don't create textures mid-render while viewport is active. Options:
-1. **Pre-pass**: Before `renderWithViewport()`, iterate all cards and ensure textures are cached
-2. **Cache both states**: Pre-create highlighted and non-highlighted textures for each card
-3. **Defer texture creation**: Queue texture updates, process them before next frame's render
+### Gotcha for Future Work
 
-### Files Involved
-- `src/presentation/card_renderer.zig` - texture caching and creation
-- `src/presentation/graphics.zig` - `renderCard()` calls `getCardTexture()`
-- `src/presentation/coordinator.zig` - `render()` calls `renderWithViewport()`
+**Never destroy textures during an active render batch (while iterating renderList).**
+
+Texture creation alone is fine, but cache invalidation triggers destruction. Structure rendering as:
+1. Prewarm: ensure all textures are cached (can be after setViewport, must be before renderList)
+2. Render batch: only read from textures
+3. Post-frame: cleanup destroyed textures via `flushDestroyedTextures()`
 
 ---
 

@@ -599,8 +599,6 @@ pub const CombatView = struct {
             try list.append(alloc, btn);
         }
 
-        // if (self.phase == .commit_phase) {}
-
         switch (cs.hover) {
             .enemy => |_| {
                 const xw = 240;

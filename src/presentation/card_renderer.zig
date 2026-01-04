@@ -79,6 +79,7 @@ fn stateBorderColor(state: CardState) ?Color {
 pub const CardRenderer = struct {
     renderer: Renderer,
     cache: std.AutoHashMap(u64, CacheEntry),
+    pending_destroy: std.ArrayList(Texture),
     alloc: std.mem.Allocator,
     font: Font,
 
@@ -87,21 +88,32 @@ pub const CardRenderer = struct {
         state_hash: u8, // to detect state changes
     };
 
-    pub fn init(alloc: std.mem.Allocator, renderer: Renderer, font: Font) CardRenderer {
+    pub fn init(alloc: std.mem.Allocator, renderer: Renderer, font: Font) !CardRenderer {
         return .{
             .renderer = renderer,
             .cache = std.AutoHashMap(u64, CacheEntry).init(alloc),
+            .pending_destroy = try std.ArrayList(Texture).initCapacity(alloc, 8),
             .alloc = alloc,
             .font = font,
         };
     }
 
     pub fn deinit(self: *CardRenderer) void {
+        self.flushDestroyedTextures();
+        self.pending_destroy.deinit(self.alloc);
         var it = self.cache.valueIterator();
         while (it.next()) |entry| {
             entry.texture.deinit();
         }
         self.cache.deinit();
+    }
+
+    /// Destroy textures queued for cleanup. Call after frame render completes.
+    pub fn flushDestroyedTextures(self: *CardRenderer) void {
+        for (self.pending_destroy.items) |tex| {
+            tex.deinit();
+        }
+        self.pending_destroy.clearRetainingCapacity();
     }
 
     /// Get or create texture for a card
@@ -110,11 +122,12 @@ pub const CardRenderer = struct {
         const state_hash = stateToHash(card.state);
 
         if (self.cache.get(id_key)) |entry| {
-            // Re-render if state changed
+            // Cache hit - return if state unchanged
             if (entry.state_hash == state_hash) {
                 return entry.texture;
             }
-            entry.texture.deinit();
+            // State changed - defer destruction until after frame completes
+            try self.pending_destroy.append(self.alloc, entry.texture);
         }
 
         const tex = try self.renderCard(card);
@@ -162,9 +175,8 @@ pub const CardRenderer = struct {
         );
         errdefer tex.deinit();
 
-        const prev_target = self.renderer.getTarget();
         try self.renderer.setTarget(tex);
-        defer self.renderer.setTarget(prev_target) catch {};
+        defer self.renderer.setTarget(null) catch {};
 
         try self.renderer.setDrawColor(.{ .r = 0, .g = 0, .b = 0, .a = 0 });
         try self.renderer.clear();
