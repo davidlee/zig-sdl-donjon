@@ -23,6 +23,7 @@ pub const Kind = enum {
     environment,
     resource,
     meta_progression,
+    modifier, // enhances another card's action
 };
 
 pub const Rarity = enum {
@@ -48,17 +49,17 @@ pub const Zone = enum {
 
 /// Specifies which containers a card can be played from.
 /// Multiple sources can be enabled (e.g., a technique might be
-/// playable from techniques_known OR hand if dealt as a bonus).
+/// playable from always_available OR hand if dealt as a bonus).
 pub const PlayableFrom = packed struct {
     hand: bool = false, // Dealt cards in hand (CombatState.hand)
-    techniques_known: bool = false, // Always-available techniques
+    always_available: bool = false, // Known techniques/modifiers (no card draw needed)
     spells_known: bool = false, // Always-available spells (if mana)
     equipped: bool = false, // Draw/throw/swap equipped items
     inventory: bool = false, // Use consumables
     environment: bool = false, // Pick up rubble/thrown items
 
     pub const hand_only: PlayableFrom = .{ .hand = true };
-    pub const technique: PlayableFrom = .{ .techniques_known = true };
+    pub const always_avail: PlayableFrom = .{ .always_available = true };
     pub const spell: PlayableFrom = .{ .spells_known = true };
 };
 
@@ -241,6 +242,7 @@ pub const Effect = union(enum) {
         cost_mult: ?f32 = null,
         damage_mult: ?f32 = null,
         replace_advantage: ?combat.TechniqueAdvantage = null,
+        height_override: ?body.Height = null,
     },
     cancel_play, // removes target play
 };

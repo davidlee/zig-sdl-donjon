@@ -62,6 +62,8 @@ pub const Coordinator = struct {
         return switch (self.world.fsm.currentState()) {
             .splash => View{ .title = splash.TitleScreenView.init(self.world) },
             .encounter_summary => View{ .summary = summary.SummaryView.init(self.world) },
+            // TODO: create proper WorldMapView when dungeon crawling is implemented
+            .world_map => View{ .title = splash.TitleScreenView.init(self.world) },
             // All combat-related states use CombatView
             .draw_hand,
             .player_card_selection,

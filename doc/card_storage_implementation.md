@@ -1,5 +1,83 @@
 # Handover Notes
 
+## 2026-01-04: Phase 8 - Combat Termination (COMPLETE)
+
+### What Changed
+
+**Implemented minimum viable combat termination.** Combat now checks for victory/defeat after tick resolution and properly cleans up resources.
+
+### Combat Outcome Detection
+
+`Agent.isIncapacitated()` checks three conditions:
+1. **Vital organ destroyed** - any body part with `is_vital=true` at `.missing` severity
+2. **Complete immobility** - `body.mobilityScore() == 0.0`
+3. **Unconscious/comatose condition** - checked via `activeConditions` iterator
+
+### FSM Changes
+
+New events and states:
+- `GameEvent.loot_collected` - player finished with summary screen
+- `GameState.world_map` - between encounters (stub, uses TitleScreenView)
+
+Transitions:
+```
+animating → encounter_summary  (victory via show_loot)
+animating → splash             (defeat via player_died)
+animating → draw_hand          (combat continues via redraw)
+encounter_summary → world_map  (via loot_collected)
+```
+
+### Cleanup Flow
+
+1. After tick resolution, `EventProcessor.checkCombatTermination()` checks player and all enemies
+2. If terminated, sets `Encounter.outcome` and emits `combat_ended` event
+3. On `encounter_summary`, SummaryView handles Space/Enter/click to emit `collect_loot` command
+4. On `world_map` state entry, `EventProcessor.cleanupEncounter()`:
+   - Calls `player.cleanupCombatState()`
+   - Calls `encounter.deinit()` (destroys enemies, cleans their combat state)
+   - Sets `world.encounter = null`
+
+### New Types
+
+```zig
+pub const CombatOutcome = enum {
+    victory,    // all enemies incapacitated
+    defeat,     // player incapacitated
+    flee,       // stub
+    surrender,  // stub
+};
+```
+
+`Encounter.outcome: ?CombatOutcome` - set when combat ends, for summary display.
+
+### New Event
+
+`Event.combat_ended: CombatOutcome` - emitted when combat terminates. Displayed in combat log.
+
+### New Command
+
+`Command.collect_loot` - emitted by SummaryView, transitions to world_map.
+
+### Files Changed
+
+- `combat.zig` - `CombatOutcome`, `Encounter.outcome`, `Agent.isIncapacitated()`, 5 tests
+- `events.zig` - `combat_ended` event
+- `world.zig` - `loot_collected` event, `world_map` state, FSM transitions
+- `apply.zig` - `checkCombatTermination()`, `cleanupEncounter()`, termination logic in `.animating` handler, `collect_loot` command handler
+- `commands.zig` - `collect_loot` command
+- `views/summary.zig` - input handling for Space/Enter/click
+- `combat_log.zig` - display `combat_ended` event
+- `coordinator.zig` - `world_map` state uses TitleScreenView as stub
+
+### Future Work
+
+- Implement proper WorldMapView for dungeon crawling
+- Wire incapacitation triggers (blood loss, trauma threshold, decapitation)
+- Add flee/surrender mechanics
+- Consider splitting FSM (World FSM vs Encounter FSM)
+
+---
+
 ## 2026-01-04: Phase 7 - Remove Legacy Deck Storage (COMPLETE)
 
 ### What Changed
@@ -32,7 +110,7 @@ pub const DrawStyle = enum {
 Both draw styles currently fall back to using `combat_state.in_play` like `shuffled_deck`. The AI director will need updates when these are implemented.
 
 ### Next Steps
-- Phase 8: Wire `cleanupCombatState()` when combat termination exists
+- ~~Phase 8: Wire `cleanupCombatState()` when combat termination exists~~ (DONE)
 - Implement cooldown tracking for `always_available` draw style
 - Implement scripted AI behaviour selection
 

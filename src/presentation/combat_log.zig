@@ -232,6 +232,12 @@ pub fn format(event: Event, world: *const World, alloc: std.mem.Allocator) !?Ent
             colors.system,
         ),
 
+        .combat_ended => |outcome| try singleSpan(
+            alloc,
+            try std.fmt.allocPrint(alloc, "=== COMBAT {s} ===", .{@tagName(outcome)}),
+            if (outcome == .victory) colors.player_action else colors.critical,
+        ),
+
         // Events not worth logging
         .entity_died,
         .played_reaction,

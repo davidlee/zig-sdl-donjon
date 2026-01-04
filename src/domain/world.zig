@@ -139,6 +139,7 @@ pub const GameEvent = enum {
     redraw,
     show_loot,
     player_died,
+    loot_collected, // player finished with summary screen
 };
 
 // TODO move the encounter-specific bits into an encounter fsm ...
@@ -151,6 +152,7 @@ pub const GameState = enum {
     player_reaction,
     encounter_summary,
     animating,
+    world_map, // between encounters (stub)
 };
 
 pub const World = struct {
@@ -184,6 +186,7 @@ pub const World = struct {
         try fsm.addEventAndTransition(.player_died, .animating, .splash);
         try fsm.addEventAndTransition(.show_loot, .animating, .encounter_summary);
         try fsm.addEventAndTransition(.redraw, .animating, .draw_hand);
+        try fsm.addEventAndTransition(.loot_collected, .encounter_summary, .world_map);
 
         const playerStats = stats.Block.splat(5);
         const playerBody = try body.Body.fromPlan(alloc, &body.HumanoidPlan);

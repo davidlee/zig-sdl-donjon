@@ -77,8 +77,16 @@ pub const Armament = union(enum) {
 /// How an agent acquires cards during combat.
 pub const DrawStyle = enum {
     shuffled_deck, // cards cycle through draw/hand/discard
-    always_available, // cards in techniques_known, cooldown-based (stub)
+    always_available, // cards in always_available pool, cooldown-based (stub)
     scripted, // behaviour tree selects from available cards (stub)
+};
+
+/// Result of a combat encounter.
+pub const CombatOutcome = enum {
+    victory, // all enemies incapacitated
+    defeat, // player incapacitated
+    flee, // player escaped (stub)
+    surrender, // negotiated end (stub)
 };
 
 // ============================================================================
@@ -234,6 +242,9 @@ pub const Encounter = struct {
     // Card ownership tracking for thrown items (card_id -> original_owner_id)
     thrown_by: std.AutoHashMap(entity.ID, entity.ID),
 
+    // Combat result (set when combat ends, for summary display)
+    outcome: ?CombatOutcome = null,
+
     pub fn init(alloc: std.mem.Allocator, player_id: entity.ID) !Encounter {
         var enc = Encounter{
             .alloc = alloc,
@@ -243,6 +254,7 @@ pub const Encounter = struct {
             .agent_state = std.AutoHashMap(entity.ID, AgentEncounterState).init(alloc),
             .environment = try std.ArrayList(entity.ID).initCapacity(alloc, 10),
             .thrown_by = std.AutoHashMap(entity.ID, entity.ID).init(alloc),
+            .outcome = null,
         };
         // Initialize player's encounter state
         try enc.agent_state.put(player_id, .{});
@@ -319,7 +331,7 @@ pub const Agent = struct {
     // New card containers (IDs reference World.card_registry)
     // See doc/card_storage_design.md for architecture
     // NOTE: Default to empty - use .init(alloc) pattern for non-test code
-    techniques_known: std.ArrayList(entity.ID) = .{}, // Always available in combat
+    always_available: std.ArrayList(entity.ID) = .{}, // Techniques/modifiers usable without drawing
     spells_known: std.ArrayList(entity.ID) = .{}, // Always available (if mana)
     deck_cards: std.ArrayList(entity.ID) = .{}, // Shuffled into draw at combat start
     inventory: std.ArrayList(entity.ID) = .{}, // Carried items
@@ -362,7 +374,7 @@ pub const Agent = struct {
             .focus = focus,
 
             // New card containers (empty by default)
-            .techniques_known = try std.ArrayList(entity.ID).initCapacity(alloc, 10),
+            .always_available = try std.ArrayList(entity.ID).initCapacity(alloc, 10),
             .spells_known = try std.ArrayList(entity.ID).initCapacity(alloc, 10),
             .deck_cards = try std.ArrayList(entity.ID).initCapacity(alloc, 20),
             .inventory = try std.ArrayList(entity.ID).initCapacity(alloc, 20),
@@ -383,7 +395,7 @@ pub const Agent = struct {
         const alloc = self.alloc;
 
         // Deinit card containers
-        self.techniques_known.deinit(alloc);
+        self.always_available.deinit(alloc);
         self.spells_known.deinit(alloc);
         self.deck_cards.deinit(alloc);
         self.inventory.deinit(alloc);
@@ -438,6 +450,32 @@ pub const Agent = struct {
             self.alloc.destroy(cs);
             self.combat_state = null;
         }
+    }
+
+    /// Check if agent is incapacitated (can no longer fight).
+    /// Triggers: vital organ destroyed, complete immobility, unconscious/comatose.
+    pub fn isIncapacitated(self: *const Agent) bool {
+        // Vital organ destroyed (brain, heart, lungs, etc.)
+        for (self.body.parts.items) |part| {
+            if (part.flags.is_vital and part.severity == .missing) {
+                return true;
+            }
+        }
+
+        // Complete loss of mobility (can't stand at all)
+        if (self.body.mobilityScore() == 0.0) {
+            return true;
+        }
+
+        // Unconscious or comatose condition
+        var iter = self.activeConditions(null);
+        while (iter.next()) |cond| {
+            if (cond.condition == .unconscious or cond.condition == .comatose) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// Returns an iterator over all active conditions (stored + computed).
@@ -999,3 +1037,114 @@ test "TurnState.findPlayByCard returns correct index" {
 // - commit_add: validates phase flags, marks added_in_commit, creates new play
 // - commit_stack: first stack costs 1F, subsequent free; template matching; can't stack added_in_commit
 // - executeCommitPhaseRules: fires on_commit rules, applies play modifications
+
+// Test helper to create minimal agent for isIncapacitated tests
+fn makeTestAgent(alloc: std.mem.Allocator, agents: *SlotMap(*Agent)) !*Agent {
+    const weapon_list = @import("weapon_list.zig");
+    const sword = try alloc.create(weapon.Instance);
+    sword.* = .{ .id = testId(999), .template = &weapon_list.knights_sword };
+
+    return Agent.init(
+        alloc,
+        agents,
+        .player,
+        .shuffled_deck,
+        stats.Block.splat(5),
+        try body.Body.fromPlan(alloc, &body.HumanoidPlan),
+        stats.Resource.init(10.0, 10.0, 2.0),
+        stats.Resource.init(3.0, 5.0, 3.0),
+        Armament{ .single = sword },
+    );
+}
+
+test "isIncapacitated false for healthy agent" {
+    const alloc = testing.allocator;
+    var agents = try SlotMap(*Agent).init(alloc);
+    defer agents.deinit();
+
+    const agent = try makeTestAgent(alloc, &agents);
+    const sword = agent.weapons.single; // save before destroy
+    defer alloc.destroy(sword);
+    defer agent.destroy(&agents);
+
+    try testing.expect(!agent.isIncapacitated());
+}
+
+test "isIncapacitated true when vital organ destroyed" {
+    const alloc = testing.allocator;
+    var agents = try SlotMap(*Agent).init(alloc);
+    defer agents.deinit();
+
+    const agent = try makeTestAgent(alloc, &agents);
+    const sword = agent.weapons.single;
+    defer alloc.destroy(sword);
+    defer agent.destroy(&agents);
+
+    // Find brain (vital organ)
+    const brain_idx = agent.body.indexOf("brain").?;
+    try testing.expect(agent.body.parts.items[brain_idx].flags.is_vital);
+
+    // Destroy it
+    agent.body.parts.items[brain_idx].severity = .missing;
+
+    try testing.expect(agent.isIncapacitated());
+}
+
+test "isIncapacitated true when mobility zero" {
+    const alloc = testing.allocator;
+    var agents = try SlotMap(*Agent).init(alloc);
+    defer agents.deinit();
+
+    const agent = try makeTestAgent(alloc, &agents);
+    const sword = agent.weapons.single;
+    defer alloc.destroy(sword);
+    defer agent.destroy(&agents);
+
+    // Destroy all can_stand parts (legs, feet, groin)
+    for (agent.body.parts.items) |*part| {
+        if (part.flags.can_stand) {
+            part.severity = .missing;
+        }
+    }
+
+    try testing.expectEqual(@as(f32, 0.0), agent.body.mobilityScore());
+    try testing.expect(agent.isIncapacitated());
+}
+
+test "isIncapacitated true when unconscious" {
+    const alloc = testing.allocator;
+    var agents = try SlotMap(*Agent).init(alloc);
+    defer agents.deinit();
+
+    const agent = try makeTestAgent(alloc, &agents);
+    const sword = agent.weapons.single;
+    defer alloc.destroy(sword);
+    defer agent.destroy(&agents);
+
+    // Add unconscious condition
+    try agent.conditions.append(alloc, .{
+        .condition = .unconscious,
+        .expiration = .permanent,
+    });
+
+    try testing.expect(agent.isIncapacitated());
+}
+
+test "isIncapacitated true when comatose" {
+    const alloc = testing.allocator;
+    var agents = try SlotMap(*Agent).init(alloc);
+    defer agents.deinit();
+
+    const agent = try makeTestAgent(alloc, &agents);
+    const sword = agent.weapons.single;
+    defer alloc.destroy(sword);
+    defer agent.destroy(&agents);
+
+    // Add comatose condition
+    try agent.conditions.append(alloc, .{
+        .condition = .comatose,
+        .expiration = .permanent,
+    });
+
+    try testing.expect(agent.isIncapacitated());
+}

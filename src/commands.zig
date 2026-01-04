@@ -19,6 +19,7 @@ pub const Command = union(enum) {
     start_game: void,
     pause_game: void,
     resume_game: void,
+    collect_loot: void, // finish encounter summary, transition to world map
 
     // Combat - card selection
     play_card: ID,

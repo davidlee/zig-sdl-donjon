@@ -144,6 +144,9 @@ pub const CommandHandler = struct {
             .commit_done => {
                 try self.world.transitionTo(.tick_resolution);
             },
+            .collect_loot => {
+                try self.world.transitionTo(.world_map);
+            },
             else => {
                 std.debug.print("UNHANDLED COMMAND: -- {any}", .{cmd});
             },
@@ -453,6 +456,44 @@ pub const EventProcessor = struct {
         }
     }
 
+    /// Check if combat should end. Returns outcome if terminated, null if combat continues.
+    fn checkCombatTermination(self: *EventProcessor) !?combat.CombatOutcome {
+        const player = self.world.player;
+        const enc = self.world.encounter orelse return null;
+
+        // Player incapacitated = defeat
+        if (player.isIncapacitated()) {
+            return .defeat;
+        }
+
+        // All enemies incapacitated = victory
+        var all_enemies_down = true;
+        for (enc.enemies.items) |enemy| {
+            if (!enemy.isIncapacitated()) {
+                all_enemies_down = false;
+                break;
+            }
+        }
+        if (all_enemies_down) {
+            return .victory;
+        }
+
+        return null; // Combat continues
+    }
+
+    /// Clean up encounter after loot collected. Called when entering world_map state.
+    fn cleanupEncounter(self: *EventProcessor) !void {
+        // Clean up combat state for player
+        self.world.player.cleanupCombatState();
+
+        // Clean up and destroy encounter
+        if (self.world.encounter) |*enc| {
+            // Combat state for enemies cleaned up in Agent.deinit via Encounter.deinit
+            enc.deinit(self.world.entities.agents);
+            self.world.encounter = null;
+        }
+    }
+
     pub fn dispatchEvent(self: *EventProcessor, event_system: *EventSystem) !bool {
         const result = event_system.pop();
         if (result) |event| {
@@ -498,7 +539,23 @@ pub const EventProcessor = struct {
                             try self.world.transitionTo(.animating);
                         },
                         .animating => {
-                            try self.world.transitionTo(.draw_hand);
+                            if (try self.checkCombatTermination()) |outcome| {
+                                // Combat ended - set outcome and transition appropriately
+                                self.world.encounter.?.outcome = outcome;
+                                try self.world.events.push(.{ .combat_ended = outcome });
+                                switch (outcome) {
+                                    .victory => try self.world.transitionTo(.encounter_summary),
+                                    .defeat => try self.world.transitionTo(.splash),
+                                    .flee, .surrender => try self.world.transitionTo(.encounter_summary),
+                                }
+                            } else {
+                                // Combat continues
+                                try self.world.transitionTo(.draw_hand);
+                            }
+                        },
+                        .world_map => {
+                            // Cleanup encounter after loot collected
+                            try self.cleanupEncounter();
                         },
                         else => {
                             std.debug.print("unhandled world state transition: {}", .{state});
@@ -582,9 +639,9 @@ fn isInPlayableSource(actor: *const Agent, cs: *const combat.CombatState, card_i
     // Check CombatState.hand
     if (pf.hand and cs.isInZone(card_id, .hand)) return true;
 
-    // Check techniques_known
-    if (pf.techniques_known) {
-        for (actor.techniques_known.items) |id| {
+    // Check always_available pool
+    if (pf.always_available) {
+        for (actor.always_available.items) |id| {
             if (id.eql(card_id)) return true;
         }
     }
@@ -1070,7 +1127,7 @@ pub fn applyCommittedCosts(
             },
             .always_available, .scripted => {
                 // TODO: implement cooldown tracking on CombatState
-                // For now, just move back to techniques_known (stub)
+                // always_available cards don't move zones, just reset cooldown (stub)
                 cs.moveCard(card.id, .in_play, .discard) catch continue;
             },
         }

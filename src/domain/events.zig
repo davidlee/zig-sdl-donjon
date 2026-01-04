@@ -134,6 +134,7 @@ pub const Event = union(enum) {
     player_turn_ended: void, // Payload: none
     player_committed: void, // Payload: none
     tick_ended: void, // tick resolution completed
+    combat_ended: combat.CombatOutcome, // Encounter finished (victory/defeat/etc)
 
     // Tick cleanup events (for observability)
     stamina_deducted: struct {

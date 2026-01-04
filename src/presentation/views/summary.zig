@@ -22,9 +22,17 @@ pub const SummaryView = struct {
 
     pub fn handleInput(self: *SummaryView, event: s.events.Event, world: *const World, vs: ViewState) InputResult {
         _ = self;
-        _ = event;
         _ = world;
         _ = vs;
+        // Any key or click proceeds to world map
+        const proceed = switch (event) {
+            .key_up => |data| (data.key.? == .space or data.key.? == .return_key),
+            .mouse_button_down => true,
+            else => false,
+        };
+        if (proceed) {
+            return .{ .command = .{ .collect_loot = {} } };
+        }
         return .{};
     }
 
