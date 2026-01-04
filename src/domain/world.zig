@@ -54,9 +54,15 @@ pub const CardRegistry = struct {
         return instance;
     }
 
-    /// Look up a card instance by ID
+    /// Look up a card instance by ID (mutable)
     pub fn get(self: *CardRegistry, id: lib.entity.ID) ?*cards.Instance {
         const ptr = self.entities.get(id) orelse return null;
+        return ptr.*;
+    }
+
+    /// Look up a card instance by ID (const)
+    pub fn getConst(self: *const CardRegistry, id: lib.entity.ID) ?*const cards.Instance {
+        const ptr = self.entities.getConst(id) orelse return null;
         return ptr.*;
     }
 

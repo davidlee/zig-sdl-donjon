@@ -27,7 +27,7 @@ pub const Color = s.pixels.Color;
 
 // Re-export view state types
 pub const ViewState = vs.ViewState;
-pub const CombatState = vs.CombatState;
+pub const CombatUIState = vs.CombatUIState;
 pub const DragState = vs.DragState;
 
 // Re-export card view model

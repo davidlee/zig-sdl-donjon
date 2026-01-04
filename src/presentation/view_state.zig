@@ -18,11 +18,11 @@ pub const ViewState = struct {
     mouse: Point = .{ .x = 0, .y = 0 },
 
     // Per-view state (null when not active or fresh)
-    combat: ?CombatState = null,
+    combat: ?CombatUIState = null,
     menu: ?MenuState = null,
 
-    /// Update just the combat state, preserving system state
-    pub fn withCombat(self: ViewState, combat_state: ?CombatState) ViewState {
+    /// Update just the combat UI state, preserving system state
+    pub fn withCombat(self: ViewState, combat_state: ?CombatUIState) ViewState {
         var new = self;
         new.combat = combat_state;
         return new;
@@ -49,8 +49,9 @@ const EntityRef = union(enum) {
     enemy: entity.ID,
 };
 
-/// Combat view state
-pub const CombatState = struct {
+/// Combat view UI state (interaction: hover, drag, selection)
+/// Named to distinguish from domain combat.CombatState (card zones).
+pub const CombatUIState = struct {
     drag: ?DragState = null,
     selected_card: ?entity.ID = null,
     hover: EntityRef = .none,

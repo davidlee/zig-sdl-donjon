@@ -64,6 +64,13 @@ pub fn SlotMap(comptime T: type) type {
             return &self.items.items[id.index];
         }
 
+        // Get const pointer to item IF the ID is valid
+        pub fn getConst(self: *const Self, id: entity.ID) ?*const T {
+            if (id.index >= self.items.items.len) return null;
+            if (self.generations.items[id.index] != id.generation) return null;
+            return &self.items.items[id.index];
+        }
+
         // Remove an item, invalidating all IDs pointing to it
         pub fn remove(self: *Self, id: entity.ID) void {
             // Verify ID is valid before deleting

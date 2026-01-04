@@ -554,13 +554,13 @@ pub fn canPlayerPlayCard(world: *World, card_id: entity.ID) bool {
 
 /// Is it valid to play this card in the selection phase?
 /// Convenience wrapper for AI directors that always play during selection.
-pub fn isCardSelectionValid(actor: *Agent, card: *Instance) bool {
+pub fn isCardSelectionValid(actor: *const Agent, card: *const Instance) bool {
     return validateCardSelection(actor, card, .player_card_selection) catch false;
 }
 
 /// Check if card can be played: combat_playable, phase flags, source location,
 /// costs, and rule predicates.
-pub fn validateCardSelection(actor: *Agent, card: *Instance, phase: w.GameState) !bool {
+pub fn validateCardSelection(actor: *const Agent, card: *const Instance, phase: w.GameState) !bool {
     const cs = actor.combat_state orelse return ValidationError.InvalidGameState;
     const template = card.template;
 

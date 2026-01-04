@@ -1,5 +1,85 @@
 # Handover Notes
 
+## 2026-01-04: View Layer Migration (Partial)
+
+### Completed This Session
+
+**View layer decoupled from Deck storage (rendering)**
+- Renamed `view_state.CombatState` → `CombatUIState` to avoid naming collision with domain `combat.CombatState`
+- Added `ViewZone` enum for view-specific zone types
+- Added `CardViewData` struct (id, template, playable, source) - decoupled from Instance pointers
+- Added `PlayViewData` struct (owner, primary, reinforcements, stakes) - for commit/resolution phases
+- New CombatView query methods: `handCards(alloc)`, `inPlayCards(alloc)` - use CombatState zones + CardRegistry
+- Refactored `CardZoneView` to use `[]const CardViewData` instead of `[]const *cards.Instance`
+- `renderables()` now uses new query methods for player cards
+- Added `CardRegistry.getConst()` and `SlotMap.getConst()` for const-correct lookups
+- Changed `apply.validateCardSelection()` to take `*const Agent` and `*const Instance`
+
+**Still using legacy Deck access (hit testing)**
+- `handleInput()` still uses legacy zone helpers for hit testing (no allocator available)
+- Marked as TODO: add arena allocator to CombatView for hit testing
+
+**Design doc updated** (`doc/view_card_design.md`)
+- Clarified allocator pattern (parameter, not stored field)
+- Added CombatUIState rename
+- Updated CardZoneView with ViewState for drag/hover
+- Marked speculative PlayViewData fields as TODO comments
+
+### Remaining Work
+
+**View layer cleanup**
+- Add arena allocator to CombatView for hit testing
+- Remove legacy zone helpers (handZone, inPlayZone, enemyInPlayZone)
+- Remove LegacyCardZoneView
+- Add enemyInPlayCards() query for commit phase rendering
+
+**Phase 7 completion**
+- Remove `Deck.entities` SlotMap and zone ArrayLists (once all Deck references gone)
+
+**Phase 8**
+- Wire `cleanupCombatState()` when combat termination exists
+
+---
+
+## 2026-01-04: Phase 7 Partial + View Layer Design
+
+### Completed This Session
+
+**Phase 7 partial: Domain layer cleanup**
+- `SimpleDeckDirector` migrated to use `combat_state.hand` + `card_registry.get()`
+- `ai.Director` interface simplified: `playCards(agent, world)` (removed redundant player/events params)
+- Removed dead code from `deck.zig`: `TagIterator`, `countByTag()`, `drawableByTag()`, 4 tests
+- Added `entity.ID.eql()` method, updated all ID comparisons across codebase
+
+**Remaining legacy Deck zone references** (view layer only):
+- `views/combat.zig:315` - `playerHand()` → `deck.hand.items`
+- `views/combat.zig:319` - `playerInPlay()` → `deck.in_play.items`
+- `views/combat.zig:331` - `enemyInPlay()` → `deck.in_play.items`
+
+**View layer design document created**: `doc/view_card_design.md`
+- Defines `CardViewData` (individual cards) and `PlayViewData` (committed plays)
+- Query interface for CombatView: `handCards()`, `techniques()`, `playerPlays()`, etc.
+- Layout concepts for multi-enemy, resolution matchups, stacks
+- Migration steps and open questions
+
+### Next Task: View Layer Migration
+
+See `doc/view_card_design.md` for full design. Summary:
+
+1. Add `CardViewData` and `PlayViewData` structs
+2. Add frame allocator to CombatView
+3. Implement query methods (build view data from combat_state + registry)
+4. Refactor `CardZoneView` to use `[]const CardViewData`
+5. Add `PlayZoneView` for committed plays
+6. Remove legacy Deck zone access
+
+### After View Migration
+
+- Phase 7 complete: Remove `Deck.entities` SlotMap and zone ArrayLists
+- Phase 8: Wire `cleanupCombatState()` when combat termination exists
+
+---
+
 ## 2026-01-04: Card Storage Architecture - Phases 1-6 Complete
 
 ### Context
