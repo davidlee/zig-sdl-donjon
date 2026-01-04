@@ -1,12 +1,8 @@
 # Card Storage Architecture Design
 
-## Problem Statement
+## Status
 
-The current card storage model (`Agent.cards: Strat` with `Deck` or `TechniquePool`) doesn't support Model B requirements:
-- Techniques always available (not dealt)
-- Modifier cards dealt from deck
-- Cards flowing between contexts (equipped → thrown → environment → loot)
-- Multiple card container types with different behaviors
+**Phases 1-7 complete.** Core architecture implemented. See handover.md for session-by-session details.
 
 ## Design Goals
 
@@ -14,22 +10,23 @@ The current card storage model (`Agent.cards: Strat` with `Deck` or `TechniquePo
 2. **Lifespan separation** - Agent-persistent vs encounter-transient state
 3. **Playability model** - Express where cards can be played from, when, how
 4. **Interoperability** - Cards flow between containers cleanly
-5. **Mob support** - Same structures, different AI drivers
+5. **Mob support** - Same structures, different draw behaviors
 
 ## Architecture Overview
 
 ```
 World
-├── card_registry: SlotMap(*Instance)    // All card instances
+├── card_registry: CardRegistry          // All card instances (SlotMap)
 ├── encounter: ?Encounter
-│   └── environment: ArrayList(entity.ID) // Rubble, thrown items
+│   ├── environment: ArrayList(entity.ID)  // Rubble, thrown items
+│   └── thrown_by: AutoHashMap(ID, ID)     // card -> original owner
 └── agents: []*Agent
-    ├── techniques_known: ArrayList(entity.ID)  // Always available
-    ├── spells_known: ArrayList(entity.ID)      // Always available (if mana)
+    ├── draw_style: DrawStyle             // shuffled_deck, always_available, scripted
+    ├── techniques_known: ArrayList(entity.ID)  // Always available (stub)
+    ├── spells_known: ArrayList(entity.ID)      // Always available (stub)
     ├── deck_cards: ArrayList(entity.ID)        // Shuffled into draw at combat start
-    ├── equipment: EquipmentSlots               // Body-aware
     ├── inventory: ArrayList(entity.ID)
-    └── combat: ?CombatState                    // Per-encounter, transient
+    └── combat_state: ?*CombatState             // Per-encounter, transient
         ├── draw: ArrayList(entity.ID)
         ├── hand: ArrayList(entity.ID)
         ├── discard: ArrayList(entity.ID)
@@ -39,12 +36,21 @@ World
 
 **Instance ownership:** Cards are instanced once (at acquisition) and carry upgrades/variations (Balatro-style). When you own a card, you own an Instance, not a Template reference.
 
-### Key Changes
+### What's Implemented
 
-1. **World.card_registry** replaces `Deck.entities`
-2. **Agent** gains explicit containers for knowledge, equipment, inventory
-3. **Agent.combat** is optional, created per-encounter
-4. **Encounter.environment** holds environmental/thrown cards
+1. **World.card_registry** - central card instance storage
+2. **Agent.draw_style** - enum controlling card availability behavior
+3. **Agent.combat_state** - per-encounter transient zones
+4. **Encounter.environment** - environmental/thrown cards
+5. **PlayableFrom** - template metadata for card sources
+6. **CombatState zone operations** - moveCard, shuffleDraw, etc.
+
+### What's Stubbed
+
+1. **DrawStyle.always_available** - falls back to shuffled_deck behavior
+2. **DrawStyle.scripted** - falls back to shuffled_deck behavior
+3. **Cooldown tracking** - TechniquePool removed, cooldowns not reimplemented
+4. **EquipmentSlots** - weapons/armor use existing Agent.weapons/armour systems
 
 ## Card Registry
 
@@ -82,23 +88,29 @@ pub const CardRegistry = struct {
 
 ```zig
 // combat.zig
+pub const DrawStyle = enum {
+    shuffled_deck,    // cards cycle through draw/hand/discard
+    always_available, // cards in techniques_known, cooldown-based (stub)
+    scripted,         // behaviour tree selects from available cards (stub)
+};
+
 pub const Agent = struct {
     // ... existing fields (id, body, stamina, focus, director) ...
 
+    draw_style: DrawStyle = .shuffled_deck,
+
     // Persistent card containers (IDs reference World.card_registry)
-    techniques_known: std.ArrayList(entity.ID),  // Always available in combat
-    spells_known: std.ArrayList(entity.ID),      // Always available (if mana)
+    techniques_known: std.ArrayList(entity.ID),  // Always available in combat (stub)
+    spells_known: std.ArrayList(entity.ID),      // Always available (stub)
     deck_cards: std.ArrayList(entity.ID),        // Shuffled into draw at combat start
-    equipment: EquipmentSlots,
     inventory: std.ArrayList(entity.ID),
 
     // Per-encounter combat state (null outside combat)
-    combat: ?*CombatState,
-
-    // Legacy: keeping for gradual migration
-    cards: Strat,  // TODO: remove after migration
+    combat_state: ?*CombatState,
 };
 ```
+
+**Note:** Weapons and armor use existing `Agent.weapons` (Armament) and `Agent.armour` (armour.Stack) systems, not card-based equipment slots.
 
 ### CombatState (replaces combat zones in Deck)
 
@@ -121,24 +133,6 @@ pub const CombatState = struct {
 };
 
 pub const CombatZone = enum { draw, hand, discard, in_play, exhaust };
-```
-
-### EquipmentSlots (body-aware)
-
-```zig
-pub const EquipmentSlots = struct {
-    // Slot -> card ID (null = empty)
-    // Slots derived from Agent.body
-    main_hand: ?entity.ID = null,
-    off_hand: ?entity.ID = null,
-    head: ?entity.ID = null,
-    torso: ?entity.ID = null,  // Can layer: gambeson + chain + plate
-    // ... etc based on body model
-
-    pub fn canEquip(self: *EquipmentSlots, body: *const Body, item: *const Instance) bool { ... }
-    pub fn equip(self: *EquipmentSlots, slot: Slot, item_id: entity.ID) !void { ... }
-    pub fn unequip(self: *EquipmentSlots, slot: Slot) ?entity.ID { ... }
-};
 ```
 
 ## Encounter Environment
@@ -398,94 +392,73 @@ pub fn getTemplate(registry: *const CardRegistry, id: entity.ID) ?*const Templat
 ### Combat Start
 
 ```zig
-pub fn initCombatState(world: *World, agent: *Agent) !void {
-    // Create combat state
-    agent.combat = try world.alloc.create(CombatState);
-    agent.combat.?.* = CombatState.init(world.alloc);
+// In Agent (combat.zig)
+pub fn initCombatState(self: *Agent) !void {
+    if (self.combat_state != null) return; // already initialized
+
+    const cs = try self.alloc.create(CombatState);
+    cs.* = try CombatState.init(self.alloc);
 
     // Populate draw pile from agent's deck_cards
-    for (agent.deck_cards.items) |card_id| {
-        try agent.combat.?.draw.append(card_id);
-    }
+    try cs.populateFromDeckCards(self.deck_cards.items);
 
-    // Shuffle
-    agent.combat.?.shuffle(world.rng);
+    self.combat_state = cs;
 }
 ```
 
-### Combat End
+### Combat End (TODO - Phase 8)
 
 ```zig
 pub fn cleanupCombatState(world: *World, agent: *Agent, won: bool) !void {
-    const combat = agent.combat orelse return;
+    const cs = agent.combat_state orelse return;
 
     // Handle thrown items
     if (won) {
         // Recover thrown items from environment
         const enc = &(world.encounter orelse return);
-        var to_recover = std.ArrayList(entity.ID).init(world.alloc);
-        defer to_recover.deinit();
-
         for (enc.environment.items) |item_id| {
             if (enc.thrown_by.get(item_id) == agent.id) {
-                try to_recover.append(item_id);
+                try agent.inventory.append(world.alloc, item_id);
             }
         }
-        for (to_recover.items) |item_id| {
-            try agent.inventory.append(item_id);
-            // Remove from environment
-            // ...
-        }
+        // Remove recovered items from environment...
     }
     // Else: thrown items stay in environment (lost)
 
     // All deck_cards return to agent.deck_cards (already there by reference)
-    // Exhausted cards un-exhaust (combat.exhaust is discarded)
+    // Exhausted cards un-exhaust (combat_state.exhaust is discarded)
     // Combat state is purely transient - deck_cards never left the agent
 
     // Free combat state
-    combat.deinit();
-    world.alloc.destroy(combat);
-    agent.combat = null;
+    cs.deinit();
+    agent.alloc.destroy(cs);
+    agent.combat_state = null;
 }
 ```
 
-**Key insight:** `deck_cards` IDs are *copied* into `combat.draw` at start. The agent always owns them. Combat zones are transient views. When combat ends, the transient state is discarded and `deck_cards` remains intact.
+**Key insight:** `deck_cards` IDs are *copied* into `combat_state.draw` at start. The agent always owns them. Combat zones are transient views. When combat ends, the transient state is discarded and `deck_cards` remains intact.
 
-## Migration Path
+## Migration Status
 
-### Phase 1: Add CardRegistry to World
-1. Add `World.card_registry: CardRegistry`
-2. Keep `Deck.entities` temporarily
-3. New card creation uses registry
+### Complete (Phases 1-7)
 
-### Phase 2: Add Agent Containers
-1. Add `Agent.techniques_known`, `spells_known`, `equipment`, `inventory`
-2. Add `Agent.combat: ?*CombatState`
-3. Populate from existing Deck zones at migration points
+- **Phase 1:** CardRegistry added to World
+- **Phase 2:** Agent containers (techniques_known, spells_known, deck_cards, inventory, combat_state)
+- **Phase 3:** Encounter.environment and thrown_by tracking
+- **Phase 4:** Card lookups migrated to card_registry, CombatState zone operations
+- **Phase 5:** CombatState wired into combat flow (initCombatState, zone transfers)
+- **Phase 6:** PlayableFrom metadata added to Template
+- **Phase 7:** Legacy removed (Deck, Strat, TechniquePool deleted)
 
-### Phase 3: Add Encounter.environment
-1. Add environment container to Encounter
-2. Add thrown_by tracking
+### Remaining
 
-### Phase 4: Update Card Operations
-1. Migrate card lookups from `deck.entities` to `world.card_registry`
-2. Update function signatures to take `*World` where needed
-3. Update zone transfers to use new containers
-
-### Phase 5: Add Playability Fields
-1. Add `PlayableFrom` to Template
-2. Add `combat_playable` to Template
-3. Update validation to check playability
-
-### Phase 6: Remove Legacy
-1. Remove `Deck.entities` (use registry)
-2. Remove combat zones from Deck (use CombatState)
-3. Simplify or remove `Strat` union
+- **Phase 8:** Wire `cleanupCombatState()` when combat termination is implemented
+- **Cooldowns:** Reimplement for `always_available` draw style (was in TechniquePool)
+- **Scripted AI:** Implement behaviour selection for `scripted` draw style
 
 ## Resolved Design Decisions
 
-1. **Deck storage**: `Agent.deck_cards: ArrayList(entity.ID)` - agent owns instanced cards. IDs copied to `combat.draw` at combat start.
+1. **Deck storage**: `Agent.deck_cards: ArrayList(entity.ID)` - agent owns instanced cards. IDs copied to `combat_state.draw` at combat start.
 
 2. **Instance ownership**: Cards instanced once at acquisition. Instances carry upgrades/variations (Balatro-style). Combat zones are transient views; `deck_cards` remains intact.
 
@@ -493,19 +466,22 @@ pub fn cleanupCombatState(world: *World, agent: *Agent, won: bool) !void {
 
 4. **Weapon influence**: `weapon.Offensive.speed` multiplies technique time cost. `weapon.Template.weight` multiplies stamina cost. Applied at resolution based on `technique.attack_mode`.
 
+5. **Mob card behavior**: All agents use unified `CombatState` + `CardRegistry`. Behavior differences expressed via `DrawStyle` enum, not separate data structures. AI director populates `in_play` appropriately for each style.
+
 ## Open Questions
 
-1. **Mob decks**: Should mobs use same CombatState, or keep simplified AI driver? TechniquePool could become an AI behavior selecting from `techniques_known`. Design should support either.
+1. **Cooldown storage**: For `always_available` draw style, where should cooldowns live? Options:
+   - `CombatState.cooldowns: AutoHashMap(cards.ID, u8)`
+   - Per-instance field on `cards.Instance`
 
 2. **Spell mana**: How does mana interact with `spells_known`? Separate resource like Focus? (Not yet designed)
 
-3. **Equipment layering**: Armor can layer (gambeson + chain + plate). Uses existing armor layer system from `body.zig`.
+3. **Equipment as cards**: Current weapons/armor use dedicated systems. If items become cards, need to track card IDs corresponding to equipped instances.
 
-## Files to Modify
+## Key Files
 
-- `src/domain/world.zig` - Add CardRegistry
-- `src/domain/combat.zig` - Agent containers, CombatState, EquipmentSlots, Encounter.environment
-- `src/domain/cards.zig` - PlayableFrom, combat_playable, Kind.modifier
-- `src/domain/deck.zig` - Migrate to use registry, eventually simplify
-- `src/domain/apply.zig` - Update to use new containers, pass World
-- `src/domain/tick.zig` - Update card lookups
+- `src/domain/world.zig` - CardRegistry, World.init populates deck_cards
+- `src/domain/combat.zig` - Agent (with draw_style), CombatState, Encounter
+- `src/domain/cards.zig` - PlayableFrom, combat_playable, Template
+- `src/domain/apply.zig` - Zone operations, card validation, commit phase
+- `src/domain/tick.zig` - Resolution, mob action commit

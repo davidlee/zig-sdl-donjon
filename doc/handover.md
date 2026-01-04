@@ -1,35 +1,40 @@
 # Handover Notes
 
-## 2026-01-04: Phase 7 - Remove Legacy Deck Storage (IN PROGRESS)
+## 2026-01-04: Phase 7 - Remove Legacy Deck Storage (COMPLETE)
 
-### Design Direction
+### What Changed
 
-**Unify all agents under CombatState + CardRegistry.** The `Strat` union and `TechniquePool` are removed. Different agent types (deck-based, pool-based, scripted) become configuration rather than separate data structures.
+**Unified all agents under CombatState + CardRegistry.** The `Strat` union, `TechniquePool`, and `Deck` structs were removed. Different agent types now use configuration rather than separate data structures.
 
 ```zig
 pub const DrawStyle = enum {
     shuffled_deck,    // cards cycle through draw/hand/discard
-    always_available, // cards in techniques_known, cooldown-based
-    scripted,         // behaviour tree selects from available cards
+    always_available, // cards in techniques_known, cooldown-based (stub)
+    scripted,         // behaviour tree selects from available cards (stub)
 };
 ```
 
-- `shuffled_deck`: populate draw from `deck_cards`, shuffle, draw to hand
-- `always_available`: cards live in `techniques_known`, cooldown timer instead of discard
-- `scripted`: AI picks from available cards based on behaviour rules (stub for now)
+### Files Removed
+- `src/domain/deck.zig` — replaced by `CardRegistry.createFromTemplates()`
 
-### Implementation Plan
+### Key Changes
+- `Agent.cards: Strat` → `Agent.draw_style: DrawStyle`
+- `Agent.init()` takes `DrawStyle` instead of `Strat`
+- `world.zig` uses `CardRegistry.createFromTemplates()` directly
+- `player.zig` simplified (no longer takes Deck parameter)
+- Switch sites in `apply.zig`, `tick.zig` now check `draw_style`
+- TechniquePool tests removed (functionality deferred to future implementation)
 
-1. Remove `Strat` union from `combat.zig`
-2. Add `Agent.draw_style: DrawStyle` (default `.shuffled_deck`)
-3. Remove `Deck` struct — use `CardRegistry.createFromTemplates` directly
-4. Update switch sites (`apply.zig`, `tick.zig`) to check `draw_style`
-5. Remove `TechniquePool` (or leave as stub if needed for tests)
-6. Leave `always_available` / `scripted` implementations as stubs
+### Stubs for Future
+- `always_available`: cooldown tracking not yet implemented
+- `scripted`: behaviour selection not yet implemented
 
-### Rationale
+Both draw styles currently fall back to using `combat_state.in_play` like `shuffled_deck`. The AI director will need updates when these are implemented.
 
-Pool/script mobs are still "playing cards" — just with different availability rules. Unifying storage eliminates the `Strat` union, `TechniquePool`, and `Deck` structs, reducing code complexity significantly.
+### Next Steps
+- Phase 8: Wire `cleanupCombatState()` when combat termination exists
+- Implement cooldown tracking for `always_available` draw style
+- Implement scripted AI behaviour selection
 
 ---
 
