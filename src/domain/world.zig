@@ -257,7 +257,7 @@ pub const World = struct {
 
         // Commit mob actions
         if (self.encounter) |*enc| {
-            try self.tickResolver.commitMobActions(enc.enemies.items);
+            try self.tickResolver.commitMobActions(enc.enemies.items, self);
         }
 
         // Resolve all actions

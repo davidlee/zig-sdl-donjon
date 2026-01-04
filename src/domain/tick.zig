@@ -144,13 +144,13 @@ pub const TickResolver = struct {
     }
 
     /// Commit actions for all mobs based on their strategy
-    pub fn commitMobActions(self: *TickResolver, mobs: []*Agent) !void {
+    pub fn commitMobActions(self: *TickResolver, mobs: []*Agent, w: *World) !void {
         for (mobs) |mob| {
-            try self.commitSingleMob(mob);
+            try self.commitSingleMob(mob, w);
         }
     }
 
-    fn commitSingleMob(self: *TickResolver, mob: *Agent) !void {
+    fn commitSingleMob(self: *TickResolver, mob: *Agent, w: ?*World) !void {
         switch (mob.cards) {
             .pool => |*pool| {
                 // Fill tick with techniques from pool (round-robin, respects stamina + predicates)
@@ -182,10 +182,13 @@ pub const TickResolver = struct {
                     attempts = 0; // reset attempts on success
                 }
             },
-            .deck => |*d| {
-                // Deck-based mob: use in_play cards like player
+            .deck => {
+                // Deck-based mob: use combat_state.in_play (stores IDs)
+                const registry = if (w) |world_ref| &world_ref.card_registry else return;
+                const cs = mob.combat_state orelse return;
                 var time_cursor: f32 = 0.0;
-                for (d.in_play.items) |card_instance| {
+                for (cs.in_play.items) |card_id| {
+                    const card_instance = registry.get(card_id) orelse continue;
                     const template = card_instance.template;
                     const tech_expr = template.getTechniqueWithExpression() orelse continue;
                     const time_cost = template.cost.time;
@@ -518,7 +521,7 @@ test "commitSingleMob fills tick with multiple pool techniques" {
     var resolver = try TickResolver.init(alloc);
     defer resolver.deinit();
 
-    try resolver.commitSingleMob(mob);
+    try resolver.commitSingleMob(mob, null);
 
     // With 10 stamina and 2.0 per technique, should fit 3-4 techniques
     // With 0.3s per technique, should fit 3 techniques before time exceeds 1.0
@@ -590,7 +593,7 @@ test "commitSingleMob stops when stamina exhausted" {
     var resolver = try TickResolver.init(alloc);
     defer resolver.deinit();
 
-    try resolver.commitSingleMob(mob);
+    try resolver.commitSingleMob(mob, null);
 
     // With 10 stamina and 4.0 per technique, should only fit 2 techniques
     try std.testing.expectEqual(@as(usize, 2), resolver.committed.items.len);

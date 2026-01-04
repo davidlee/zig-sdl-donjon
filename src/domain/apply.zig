@@ -154,15 +154,15 @@ pub const CommandHandler = struct {
         if (game_state != .player_card_selection) {
             return CommandError.InvalidGameState;
         }
-        const deck = &player.cards.deck;
+        const cs = player.combat_state orelse return CommandError.BadInvariant;
 
-        if (!deck.instanceInZone(id, .in_play)) {
-            return CommandError.CardNotInHand;
+        if (!cs.isInZone(id, .in_play)) {
+            return CommandError.CardNotInPlay;
         }
 
-        const card = try self.world.player.cards.deck.find(id, .in_play);
+        const card = self.world.card_registry.get(id) orelse return CommandError.BadInvariant;
 
-        try deck.move(id, .in_play, .hand);
+        cs.moveCard(id, .in_play, .hand) catch return CommandError.CardNotInPlay;
         try self.sink(Event{
             .card_moved = .{ .instance = card.id, .from = .in_play, .to = .hand, .actor = .{ .id = player.id, .player = true } },
         });
@@ -178,11 +178,14 @@ pub const CommandHandler = struct {
     pub fn playActionCard(self: *CommandHandler, id: entity.ID) !void {
         const player = self.world.player;
         const game_state = self.world.fsm.currentState();
-        const pd = switch (player.cards) {
-            .deck => |*d| d,
-            .pool => return CommandError.BadInvariant,
-        };
-        const card = try pd.find(id, .hand);
+        const cs = player.combat_state orelse return CommandError.BadInvariant;
+
+        // Check card is in hand
+        if (!cs.isInZone(id, .hand))
+            return CommandError.CardNotInHand;
+
+        // Look up card instance
+        const card = self.world.card_registry.get(id) orelse return CommandError.BadInvariant;
 
         if (game_state != .player_card_selection)
             return CommandError.InvalidGameState;
@@ -209,6 +212,7 @@ pub const CommandHandler = struct {
 
         const enc = &(self.world.encounter orelse return CommandError.BadInvariant);
         const enc_state = enc.stateFor(player.id) orelse return CommandError.BadInvariant;
+        const cs = player.combat_state orelse return CommandError.BadInvariant;
 
         // Find the play
         const play_index = enc_state.current.findPlayByCard(card_id) orelse {
@@ -219,16 +223,12 @@ pub const CommandHandler = struct {
         };
 
         // Get card and refund stamina
-        const pd = switch (player.cards) {
-            .deck => |*d| d,
-            .pool => return CommandError.BadInvariant,
-        };
-        const card = try pd.find(card_id, .in_play);
+        const card = self.world.card_registry.get(card_id) orelse return CommandError.BadInvariant;
         player.stamina.uncommit(card.template.cost.stamina);
         player.time_available += card.template.cost.time;
 
         // Move card back to hand
-        try pd.move(card_id, .in_play, .hand);
+        cs.moveCard(card_id, .in_play, .hand) catch return CommandError.CardNotInPlay;
         try self.sink(Event{
             .card_moved = .{ .instance = card.id, .from = .in_play, .to = .hand, .actor = .{ .id = player.id, .player = true } },
         });
@@ -249,17 +249,20 @@ pub const CommandHandler = struct {
         if (!player.focus.spend(FOCUS_COST))
             return CommandError.InsufficientFocus;
 
-        const pd = switch (player.cards) {
-            .deck => |*d| d,
-            .pool => return CommandError.BadInvariant,
-        };
+        const cs = player.combat_state orelse return CommandError.BadInvariant;
 
-        // Validate card can be played
-        const card = pd.find(card_id, .hand) catch {
-            // Refund focus if card not in hand
+        // Validate card is in hand
+        if (!cs.isInZone(card_id, .hand)) {
             player.focus.current += FOCUS_COST;
             player.focus.available += FOCUS_COST;
             return CommandError.CardNotInHand;
+        }
+
+        // Look up card instance
+        const card = self.world.card_registry.get(card_id) orelse {
+            player.focus.current += FOCUS_COST;
+            player.focus.available += FOCUS_COST;
+            return CommandError.BadInvariant;
         };
 
         if (!try validateCardSelection(player, card, .commit_phase)) {
@@ -293,6 +296,7 @@ pub const CommandHandler = struct {
 
         const enc = &(self.world.encounter orelse return CommandError.BadInvariant);
         const enc_state = enc.stateFor(player.id) orelse return CommandError.BadInvariant;
+        const cs = player.combat_state orelse return CommandError.BadInvariant;
 
         if (target_play_index >= enc_state.current.plays_len)
             return CommandError.CommandInvalid;
@@ -310,21 +314,25 @@ pub const CommandHandler = struct {
                 return CommandError.InsufficientFocus;
         }
 
-        const pd = switch (player.cards) {
-            .deck => |*d| d,
-            .pool => return CommandError.BadInvariant,
-        };
-
-        // Get both cards
-        const stack_card = pd.find(card_id, .hand) catch {
+        // Check card is in hand
+        if (!cs.isInZone(card_id, .hand)) {
             if (needs_focus) {
                 player.focus.current += FOCUS_COST;
                 player.focus.available += FOCUS_COST;
             }
             return CommandError.CardNotInHand;
+        }
+
+        // Look up stack card
+        const stack_card = self.world.card_registry.get(card_id) orelse {
+            if (needs_focus) {
+                player.focus.current += FOCUS_COST;
+                player.focus.available += FOCUS_COST;
+            }
+            return CommandError.BadInvariant;
         };
 
-        // Look up primary card via card_registry (new system)
+        // Look up primary card via card_registry
         const primary_card = self.world.card_registry.get(target_play.primary) orelse {
             if (needs_focus) {
                 player.focus.current += FOCUS_COST;
@@ -373,6 +381,16 @@ pub const EventProcessor = struct {
         };
     }
 
+    /// Initialize combat state for all agents (called once at combat start)
+    fn initAllCombatStates(self: *EventProcessor) !void {
+        try self.world.player.initCombatState();
+        if (self.world.encounter) |enc| {
+            for (enc.enemies.items) |mob| {
+                try mob.initCombatState();
+            }
+        }
+    }
+
     // TODO: fix hardcoded hand limit
     fn allShuffleAndDraw(self: *EventProcessor, count: usize) !void {
         std.debug.print("draw hand: enemies \n", .{});
@@ -381,26 +399,29 @@ pub const EventProcessor = struct {
         try self.shuffleAndDraw(self.world.player, count);
     }
 
-    /// Shuffle draw pile and draw cards to hands - everyone with a deck
+    /// Shuffle draw pile and draw cards to hands - uses CombatState
     fn shuffleAndDraw(self: *EventProcessor, agent: *Agent, count: usize) !void {
-        var pd = switch (agent.cards) {
-            .deck => |*d| d,
-            .pool => return, // pools don't draw
-        };
+        // Pools don't draw
+        switch (agent.cards) {
+            .pool => return,
+            .deck => {},
+        }
 
-        // const to_draw = @min(count, pd.draw.items.len);
+        const cs = agent.combat_state orelse return; // No combat state = can't draw
+
         for (0..count) |_| {
-            if (pd.draw.items.len == 0) { // need to shuffle the discard pile
-                while (pd.discard.items.len > 0) {
-                    const id = pd.discard.items[0].id;
-                    try pd.move(id, .discard, .draw);
+            if (cs.draw.items.len == 0) { // need to shuffle the discard pile
+                // Move all cards from discard to draw
+                while (cs.discard.items.len > 0) {
+                    const id = cs.discard.items[0];
+                    try cs.moveCard(id, .discard, .draw);
                 }
-
                 var rand = self.world.getRandomSource(.shuffler);
-                try pd.shuffleDrawPile(&rand);
+                try cs.shuffleDraw(&rand);
             }
-            const card_id = pd.draw.items[0].id;
-            try pd.move(card_id, .draw, .hand);
+            if (cs.draw.items.len == 0) break; // No cards left
+            const card_id = cs.draw.items[0];
+            try cs.moveCard(card_id, .draw, .hand);
         }
     }
 
@@ -427,13 +448,20 @@ pub const EventProcessor = struct {
         const enc_state = enc.stateFor(agent.id) orelse return;
         enc_state.current.clear();
 
-        const in_play_items = switch (agent.cards) {
-            .deck => |*d| d.in_play.items,
-            .pool => |*p| p.in_play.items,
-        };
-
-        for (in_play_items) |card| {
-            try enc_state.current.addPlay(.{ .primary = card.id });
+        switch (agent.cards) {
+            .deck => {
+                // Deck-based: use combat_state (stores IDs)
+                const cs = agent.combat_state orelse return;
+                for (cs.in_play.items) |card_id| {
+                    try enc_state.current.addPlay(.{ .primary = card_id });
+                }
+            },
+            .pool => |*p| {
+                // Pool-based: use pool.in_play (stores *Instance)
+                for (p.in_play.items) |card| {
+                    try enc_state.current.addPlay(.{ .primary = card.id });
+                }
+            },
         }
     }
 
@@ -459,6 +487,8 @@ pub const EventProcessor = struct {
                         // Draw cards when entering draw_hand state
                         .draw_hand => {
                             std.debug.print("draw hand\n", .{});
+                            // Initialize combat_state for all agents if not already done
+                            try self.initAllCombatStates();
                             try self.allShuffleAndDraw(5);
                             try self.world.transitionTo(.player_card_selection);
                         },
@@ -488,8 +518,12 @@ pub const EventProcessor = struct {
                     }
 
                     for (self.world.encounter.?.enemies.items) |mob| {
-                        for (mob.cards.deck.in_play.items) |instance| {
-                            log("cards in play (mob): {s}\n", .{instance.template.name});
+                        if (mob.combat_state) |cs| {
+                            for (cs.in_play.items) |card_id| {
+                                if (self.world.card_registry.get(card_id)) |instance| {
+                                    log("cards in play (mob): {s}\n", .{instance.template.name});
+                                }
+                            }
                         }
                     }
                 },
@@ -524,7 +558,7 @@ pub fn isCardSelectionValid(actor: *Agent, card: *Instance) bool {
 
 /// Check if card can be played: phase flags, costs, zone, and rule predicates.
 pub fn validateCardSelection(actor: *Agent, card: *Instance, phase: w.GameState) !bool {
-    const deck = &actor.cards.deck;
+    const cs = actor.combat_state orelse return ValidationError.InvalidGameState;
     const template = card.template;
 
     // Check if card can be played in this phase
@@ -539,7 +573,7 @@ pub fn validateCardSelection(actor: *Agent, card: *Instance, phase: w.GameState)
         return ValidationError.InsufficientFocus;
     }
 
-    if (!deck.instanceInZone(card.id, .hand)) return ValidationError.CardNotInHand;
+    if (!cs.isInZone(card.id, .hand)) return ValidationError.CardNotInHand;
 
     // check rule.valid predicates (weapon requirements, etc.)
     if (!rulePredicatesSatisfied(template, actor)) return ValidationError.PredicateFailed;
@@ -549,7 +583,7 @@ pub fn validateCardSelection(actor: *Agent, card: *Instance, phase: w.GameState)
 
 /// Doesn't perform validation. Just moves card, reserves costs, emits events.
 pub fn playValidCardReservingCosts(evs: *EventSystem, actor: *Agent, card: *Instance) !void {
-    const deck = &actor.cards.deck;
+    const cs = actor.combat_state orelse return error.InvalidGameState;
     const is_player = switch (actor.director) {
         .player => true,
         else => false,
@@ -557,7 +591,7 @@ pub fn playValidCardReservingCosts(evs: *EventSystem, actor: *Agent, card: *Inst
 
     const actor_meta: events.AgentMeta = .{ .id = actor.id, .player = is_player };
 
-    try deck.move(card.id, .hand, .in_play);
+    try cs.moveCard(card.id, .hand, .in_play);
     try evs.push(Event{
         .card_moved = .{ .instance = card.id, .from = .hand, .to = .in_play, .actor = actor_meta },
     });
@@ -920,15 +954,18 @@ pub fn applyCommitPhaseEffect(
 /// This is NOT for cards that are PLAYABLE during commit phase (use .phase_commit tag).
 /// Cards here already had costs validated when played during selection.
 pub fn executeCommitPhaseRules(world: *World, actor: *Agent) !void {
-    const enc = &(world.encounter orelse return);
-    _ = enc;
+    // Pools don't have commit phase cards
+    switch (actor.cards) {
+        .pool => return,
+        .deck => {},
+    }
 
-    const in_play_items = switch (actor.cards) {
-        .deck => |*d| d.in_play.items,
-        .pool => return, // Pools don't have commit phase cards
-    };
+    const cs = actor.combat_state orelse return;
 
-    for (in_play_items) |card| {
+    // Iterate over card IDs in play, look up instances via registry
+    for (cs.in_play.items) |card_id| {
+        const card = world.card_registry.get(card_id) orelse continue;
+
         for (card.template.rules) |rule| {
             if (rule.trigger != .on_commit) continue;
 
@@ -991,18 +1028,19 @@ pub fn applyCommittedCosts(
 
         // Move card to discard or exhaust (deck-based only)
         switch (agent.cards) {
-            .deck => |*d| {
-                const dest_zone: cards.Zone = if (card.template.cost.exhausts)
+            .deck => {
+                const cs = agent.combat_state orelse continue;
+                const dest_zone: combat.CombatZone = if (card.template.cost.exhausts)
                     .exhaust
                 else
                     .discard;
 
-                try d.move(card.id, .in_play, dest_zone);
+                cs.moveCard(card.id, .in_play, dest_zone) catch continue;
                 try event_system.push(.{
                     .card_moved = .{
                         .instance = card.id,
                         .from = .in_play,
-                        .to = dest_zone,
+                        .to = if (card.template.cost.exhausts) .exhaust else .discard,
                         .actor = actor_meta,
                     },
                 });

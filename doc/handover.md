@@ -1,6 +1,6 @@
 # Handover Notes
 
-## 2026-01-04: Card Storage Architecture - Phases 1-4 Complete
+## 2026-01-04: Card Storage Architecture - Phases 1-5 Complete
 
 ### Context
 Implementing new card storage architecture per `doc/card_storage_design.md`. Goal: unified card registry at World level, with Agent containers for techniques_known, deck_cards, etc.
@@ -35,40 +35,44 @@ Implementing new card storage architecture per `doc/card_storage_design.md`. Goa
 - CombatState zone helpers added: `CombatZone`, `zoneList()`, `isInZone()`, `moveCard()`, `shuffleDraw()`, `populateFromDeckCards()`
 - Agent helpers: `initCombatState()`, `cleanupCombatState()`
 
-**Note:** Deck still manages zone operations (move, find) using *Instance pointers. CombatState is ready but not yet wired into the main flow. This enables incremental migration - card IDs now come from registry, but zone ops still use legacy Deck.
+**Phase 5: CombatState wired into combat flow** (`apply.zig`, `tick.zig`, `world.zig`)
+- Combat state initialization: `initAllCombatStates()` called when entering `draw_hand` state
+- All zone operations now use CombatState instead of Deck:
+  - `shuffleAndDraw()` uses `combat_state.moveCard()` and `combat_state.shuffleDraw()`
+  - `playValidCardReservingCosts()` uses `combat_state.moveCard(.hand, .in_play)`
+  - `validateCardSelection()` uses `combat_state.isInZone(id, .hand)`
+  - `playActionCard()` uses `combat_state.isInZone()` and `card_registry.get()`
+  - `cancelActionCard()` uses `combat_state.moveCard(.in_play, .hand)`
+  - `commitWithdraw()` uses `combat_state.moveCard(.in_play, .hand)` and `card_registry.get()`
+  - `commitAdd()` uses `combat_state.isInZone()` and `card_registry.get()`
+  - `commitStack()` uses `combat_state.isInZone()` and `card_registry.get()`
+  - `buildPlaysForAgent()` uses `combat_state.in_play` for deck-based agents
+  - `applyCommittedCosts()` uses `combat_state.moveCard(.in_play, .discard/.exhaust)`
+  - `executeCommitPhaseRules()` iterates `combat_state.in_play` IDs
+  - `commitSingleMob()` in tick.zig uses `combat_state.in_play` for deck-based mobs
+- Key pattern: zone operations use CombatState (stores IDs), instance lookups use `card_registry.get(id)`
 
 ### Remaining Phases
-5. Wire CombatState into combat flow (replace Deck zone operations)
 6. Add `PlayableFrom` and `combat_playable` to Template
-7. Remove legacy `Deck.entities`
+7. Remove legacy `Deck.entities` and zone ArrayLists
+8. Add `cleanupCombatState()` call at combat end (when combat termination is implemented)
 
-### Next Task: Phase 5 - Wire CombatState into Combat Flow
+### Next Task: Phase 6 - Template Playability Metadata
 
-**Goal:** Replace Deck zone operations with CombatState during combat.
-
-**Current state:**
-- Card instances owned by `World.card_registry` (IDs shared with Deck)
-- `Agent.deck_cards` populated with card IDs
-- `Agent.combat_state` has helpers but is null (never initialized)
-- Deck still manages zones via `*Instance` pointers in `draw/hand/discard/in_play/exhaust`
+**Goal:** Add metadata to card templates for playability rules.
 
 **What needs to happen:**
-1. Call `agent.initCombatState()` when combat starts (in `draw_hand` state transition?)
-2. Update `shuffleAndDraw()` in apply.zig to use `combat_state.moveCard()` and `combat_state.shuffleDraw()`
-3. Update `playValidCardReservingCosts()` to use `combat_state.moveCard(.hand, .in_play)`
-4. Update `commitWithdraw()` to use `combat_state.moveCard(.in_play, .hand)`
-5. Update `validateCardSelection()` to use `combat_state.isInZone(id, .hand)`
-6. Call `agent.cleanupCombatState()` when combat ends
-
-**Key insight:** CombatState holds `entity.ID`, Deck holds `*Instance`. During transition, look up instances via `card_registry.get(id)` when needed.
+1. Add `PlayableFrom` enum to cards.zig (hand, equipped, inventory, environment)
+2. Add `combat_playable: bool` to Template (some cards only usable in combat)
+3. Update validation to check playability sources
 
 ### Key Files
 - `doc/card_storage_design.md` - full architecture design
 - `src/domain/world.zig` - CardRegistry, World.init uses initWithRegistry
 - `src/domain/combat.zig` - CombatState, CombatZone, Agent containers, Encounter.environment
 - `src/domain/deck.zig` - initWithRegistry, copyCardIdsTo
-- `src/domain/apply.zig` - card lookups use card_registry
-- `src/domain/tick.zig` - commitPlayerCards uses card_registry
+- `src/domain/apply.zig` - all zone operations now use combat_state
+- `src/domain/tick.zig` - commitPlayerCards and commitSingleMob use card_registry
 
 ---
 
