@@ -191,6 +191,26 @@ pub fn format(event: Event, world: *const World, alloc: std.mem.Allocator) !?Ent
             if (outcome == .victory) colors.player_action else colors.critical,
         ),
 
+        .condition_applied => |e| try singleSpan(
+            alloc,
+            try std.fmt.allocPrint(alloc, "{s} {s} {s}", .{
+                agentName(e.agent_id, world),
+                if (world.player.id.eql(e.agent_id)) "become" else "becomes",
+                conditionName(e.condition),
+            }),
+            if (e.actor.player) colors.critical else colors.wound,
+        ),
+
+        .condition_expired => |e| try singleSpan(
+            alloc,
+            try std.fmt.allocPrint(alloc, "{s} {s} no longer {s}", .{
+                agentName(e.agent_id, world),
+                if (world.player.id.eql(e.agent_id)) "are" else "is",
+                conditionName(e.condition),
+            }),
+            colors.default,
+        ),
+
         // Events not worth logging
         // .played_action_card,
         // .card_moved,
@@ -277,6 +297,43 @@ fn sidePrefix(side: body.Side) []const u8 {
         .left => "left ",
         .right => "right ",
         .center, .none => "",
+    };
+}
+
+/// Human-readable condition name
+fn conditionName(condition: damage.Condition) []const u8 {
+    return switch (condition) {
+        .blinded => "blinded",
+        .deafened => "deafened",
+        .silenced => "silenced",
+        .stunned => "stunned",
+        .paralysed => "paralysed",
+        .confused => "confused",
+        .prone => "prone",
+        .winded => "winded",
+        .shaken => "shaken",
+        .fearful => "fearful",
+        .nauseous => "nauseous",
+        .surprised => "surprised",
+        .unconscious => "unconscious",
+        .comatose => "comatose",
+        .asphyxiating => "asphyxiating",
+        .starving => "starving",
+        .dehydrating => "dehydrating",
+        .exhausted => "exhausted",
+        // Dwarven BAC
+        .sober => "sober",
+        .tipsy => "tipsy",
+        .buzzed => "buzzed",
+        .slurring => "slurring",
+        .pissed => "pissed",
+        .hammered => "hammered",
+        .pickled => "pickled",
+        .munted => "munted",
+        // Computed/relational
+        .pressured => "pressured",
+        .weapon_bound => "weapon bound",
+        .unbalanced => "unbalanced",
     };
 }
 
