@@ -70,5 +70,6 @@ pub const DragState = struct {
     id: entity.ID,
     // grab_offset: Point, // click position relative to item's origin
     original_pos: Point,
-    target: ?entity.ID = null, // highlight valid drop target
+    target: ?entity.ID = null, // highlight valid drop target (card ID)
+    target_play_index: ?usize = null, // highlight valid drop target (play index for modifiers)
 };

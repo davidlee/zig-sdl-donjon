@@ -51,8 +51,10 @@ pub const CommandError = error{
     BadInvariant,
     CardNotInHand,
     CardNotInPlay,
+    CardOnCooldown,
     TemplatesMismatch,
     PredicateFailed,
+    ModifierConflict,
     NotImplemented,
 };
 
@@ -61,7 +63,7 @@ pub const EventSystemError = error{
 };
 
 const EffectContext = struct {
-    card: *Instance,
+    card: *const Instance,
     effect: *const Effect,
     target: *std.ArrayList(*Agent), // TODO: will need to be polymorphic (player, body part)
     actor: *Agent,
@@ -75,10 +77,10 @@ const EffectContext = struct {
             // const t = tc.technique;
             // const bd = tc.base_damage;
             const eff = blk: switch (tc.base_damage.scaling.stats) {
-                .stat => |accessor| self.actor.stats.get(accessor),
+                .stat => |accessor| self.actor.stats.getConst(accessor),
                 .average => |arr| {
-                    const a = self.actor.stats.get(arr[0]);
-                    const b = self.actor.stats.get(arr[1]);
+                    const a = self.actor.stats.getConst(arr[0]);
+                    const b = self.actor.stats.getConst(arr[1]);
                     break :blk (a + b) / 2.0;
                 },
             } * tc.base_damage.scaling.ratio;
@@ -316,10 +318,46 @@ pub const CommandHandler = struct {
         enc_state.current.focus_spent += FOCUS_COST;
     }
 
-    /// Commit phase: Stack a card onto an existing play.
-    /// First stack costs 1 Focus; subsequent stacks this turn are free.
-    /// Card must match the primary card's template.
+    /// Stack a card onto an existing play (same-template reinforcement or modifier attachment).
+    /// Focus cost: base 1 (first stack only) + card's own focus cost.
+    /// Accepts cards from hand or always_available zones.
     pub fn commitStack(self: *CommandHandler, card_id: entity.ID, target_play_index: usize) !void {
+        const player = self.world.player;
+        const enc = &(self.world.encounter orelse return CommandError.BadInvariant);
+        const enc_state = enc.stateFor(player.id) orelse return CommandError.BadInvariant;
+
+        // Validate and compute costs
+        const validation = try self.validateStack(card_id, target_play_index);
+
+        // Calculate total focus cost
+        const base_focus: f32 = if (enc_state.current.stack_focus_paid) 0 else FOCUS_COST;
+        const total_focus = base_focus + validation.card_focus_cost;
+
+        // Spend focus
+        if (total_focus > 0) {
+            if (!player.focus.spend(total_focus))
+                return CommandError.InsufficientFocus;
+        }
+
+        // Apply the stack (all validation passed, focus spent)
+        self.applyStack(validation, target_play_index, enc_state, player, base_focus > 0, total_focus) catch |err| {
+            // Refund focus on unexpected error
+            if (total_focus > 0) {
+                player.focus.current += total_focus;
+                player.focus.available += total_focus;
+            }
+            return err;
+        };
+    }
+
+    /// Validated stack operation ready to apply.
+    const StackValidation = struct {
+        stack_card: *Instance,
+        card_focus_cost: f32,
+    };
+
+    /// Validate a stack operation without spending resources.
+    fn validateStack(self: *CommandHandler, card_id: entity.ID, target_play_index: usize) !StackValidation {
         const player = self.world.player;
         if (self.world.fsm.currentState() != .commit_phase)
             return CommandError.InvalidGameState;
@@ -328,74 +366,86 @@ pub const CommandHandler = struct {
         const enc_state = enc.stateFor(player.id) orelse return CommandError.BadInvariant;
         const cs = player.combat_state orelse return CommandError.BadInvariant;
 
+        // Validate target play exists
         if (target_play_index >= enc_state.current.plays_len)
             return CommandError.CommandInvalid;
 
-        const target_play = &enc_state.current.playsMut()[target_play_index];
+        const target_play = &enc_state.current.plays()[target_play_index];
 
         // Cannot stack on plays added this commit phase
         if (!target_play.canStack())
             return CommandError.CommandInvalid;
 
-        // Spend focus only on first stack this turn
-        const needs_focus = !enc_state.current.stack_focus_paid;
-        if (needs_focus) {
-            if (!player.focus.spend(FOCUS_COST))
-                return CommandError.InsufficientFocus;
-        }
-
-        // Check card is in hand
-        if (!cs.isInZone(card_id, .hand)) {
-            if (needs_focus) {
-                player.focus.current += FOCUS_COST;
-                player.focus.available += FOCUS_COST;
-            }
+        // Check card is available (hand or always_available)
+        const in_hand = cs.isInZone(card_id, .hand);
+        const in_always_available = player.inAlwaysAvailable(card_id);
+        if (!in_hand and !in_always_available)
             return CommandError.CardNotInHand;
-        }
+
+        // Check cooldown for always_available cards
+        if (in_always_available and !cs.isPoolCardAvailable(player, card_id))
+            return CommandError.CardOnCooldown;
 
         // Look up stack card
-        const stack_card = self.world.card_registry.get(card_id) orelse {
-            if (needs_focus) {
-                player.focus.current += FOCUS_COST;
-                player.focus.available += FOCUS_COST;
-            }
+        const stack_card = self.world.card_registry.get(card_id) orelse
             return CommandError.BadInvariant;
-        };
 
-        // Look up action card via card_registry
-        const action_card = self.world.card_registry.get(target_play.action) orelse {
-            if (needs_focus) {
-                player.focus.current += FOCUS_COST;
-                player.focus.available += FOCUS_COST;
-            }
+        // Look up action card
+        const action_card = self.world.card_registry.getConst(target_play.action) orelse
             return CommandError.BadInvariant;
-        };
 
-        // Must be same template
-        if (stack_card.template.id != action_card.template.id) {
-            if (needs_focus) {
-                player.focus.current += FOCUS_COST;
-                player.focus.available += FOCUS_COST;
-            }
+        // Validate compatibility
+        const same_template = stack_card.template.id == action_card.template.id;
+        const is_modifier = stack_card.template.kind == .modifier;
+
+        if (same_template) {
+            // Same template stacking - always OK
+        } else if (is_modifier) {
+            // Modifier attachment - check predicate and conflicts
+            if (!try canModifierAttachToPlay(stack_card.template, target_play, self.world))
+                return CommandError.PredicateFailed;
+
+            if (target_play.wouldConflict(stack_card.template, &self.world.card_registry))
+                return CommandError.ModifierConflict;
+        } else {
+            // Different template, not a modifier - invalid
             return CommandError.TemplatesMismatch;
         }
 
-        // Add modifier
-        target_play.addModifier(card_id) catch {
-            if (needs_focus) {
-                player.focus.current += FOCUS_COST;
-                player.focus.available += FOCUS_COST;
-            }
+        // Check modifier stack not full
+        if (target_play.modifier_stack_len >= combat.Play.max_modifiers)
             return CommandError.CommandInvalid;
+
+        return .{
+            .stack_card = stack_card,
+            .card_focus_cost = stack_card.template.cost.focus,
         };
+    }
+
+    /// Apply a validated stack operation (assumes validation passed and focus spent).
+    fn applyStack(
+        self: *CommandHandler,
+        validation: StackValidation,
+        target_play_index: usize,
+        enc_state: *combat.AgentEncounterState,
+        player: *Agent,
+        paid_base_focus: bool,
+        total_focus: f32,
+    ) !void {
+        const target_play = &enc_state.current.playsMut()[target_play_index];
+
+        // Add to modifier stack
+        try target_play.addModifier(validation.stack_card.id);
 
         // Move card to in_play, commit stamina
-        try playValidCardReservingCosts(&self.world.events, player, stack_card, &self.world.card_registry);
+        try playValidCardReservingCosts(&self.world.events, player, validation.stack_card, &self.world.card_registry);
 
-        // Mark that we've paid for stacking this turn
-        if (needs_focus) {
+        // Update focus tracking
+        if (paid_base_focus) {
             enc_state.current.stack_focus_paid = true;
-            enc_state.current.focus_spent += FOCUS_COST;
+        }
+        if (total_focus > 0) {
+            enc_state.current.focus_spent += total_focus;
         }
     }
 };
@@ -983,10 +1033,10 @@ pub const PlayTarget = struct {
 fn playMatchesPredicate(
     play: *const combat.Play,
     predicate: cards.Predicate,
-    world: *World,
+    world: *const World,
 ) bool {
     // Look up card via card_registry (new system)
-    const card = world.card_registry.get(play.action) orelse return false;
+    const card = world.card_registry.getConst(play.action) orelse return false;
 
     // For play predicates, we only support tag checking for now
     return switch (predicate) {
@@ -1007,6 +1057,57 @@ fn playMatchesPredicate(
         },
         else => false, // Other predicates not applicable to plays
     };
+}
+
+/// Extract target predicate from modifier template's first my_play expression.
+/// Returns error if multiple distinct my_play targets found (ambiguous attachment).
+pub fn getModifierTargetPredicate(template: *const cards.Template) !?cards.Predicate {
+    if (template.kind != .modifier) return null;
+
+    var found: ?cards.Predicate = null;
+    for (template.rules) |rule| {
+        for (rule.expressions) |expr| {
+            switch (expr.target) {
+                .my_play => |pred| {
+                    if (found != null) {
+                        // Multiple my_play targets found - ambiguous
+                        return error.MultipleModifierTargets;
+                    }
+                    found = pred;
+                },
+                else => continue,
+            }
+        }
+    }
+    return found;
+}
+
+/// Check if a modifier can attach to a specific play.
+pub fn canModifierAttachToPlay(
+    modifier: *const cards.Template,
+    play: *const combat.Play,
+    world: *const World, // *World or *const World
+) !bool {
+    const predicate = try getModifierTargetPredicate(modifier) orelse return false;
+    return playMatchesPredicate(play, predicate, world);
+}
+
+/// Resolve target agent IDs for a play's action (for UI display).
+/// Returns null if non-offensive or unable to resolve.
+/// Note: Currently returns null - full implementation requires const-aware target evaluation.
+pub fn resolvePlayTargetIDs(
+    alloc: std.mem.Allocator,
+    play: *const combat.Play,
+    actor: *const Agent,
+    world: *const World,
+) !?[]const entity.ID {
+    _ = alloc;
+    _ = play;
+    _ = actor;
+    _ = world;
+    // TODO: Implement const-aware target resolution
+    // For now, return null - UI will not display target indicators
+    return null;
 }
 
 /// Evaluate play-targeting queries (my_play, opponent_play)
@@ -1043,7 +1144,7 @@ pub fn evaluatePlayTargets(
                 }
             } else {
                 const player_state = enc.stateFor(world.player.id) orelse return targets;
-                for (player_state.current.plays(), 0..) |play, i| {
+                for (player_state.current.plays(), 1..) |play, i| {
                     if (playMatchesPredicate(&play, predicate, world)) {
                         try targets.append(alloc, .{ .agent = world.player, .play_index = i });
                     }
@@ -1312,4 +1413,61 @@ test "compareReach operators" {
     try testing.expect(compareReach(.far, .eq, .far));
     try testing.expect(compareReach(.near, .lt, .far));
     try testing.expect(!compareReach(.far, .lt, .near));
+}
+
+// ============================================================================
+// Modifier Attachment Tests
+// ============================================================================
+
+test "getModifierTargetPredicate extracts predicate from modifier template" {
+    const high = card_list.byName("high");
+    const predicate = try getModifierTargetPredicate(high);
+
+    try testing.expect(predicate != null);
+    // Modifier targets offensive plays
+    try testing.expectEqual(cards.Predicate{ .has_tag = .{ .offensive = true } }, predicate.?);
+}
+
+test "getModifierTargetPredicate returns null for non-modifier" {
+    const thrust = card_list.byName("thrust");
+    const predicate = try getModifierTargetPredicate(thrust);
+
+    try testing.expect(predicate == null);
+}
+
+test "canModifierAttachToPlay validates offensive tag match" {
+    // Setup: need a World with card_registry containing an offensive play
+    const alloc = testing.allocator;
+
+    var wrld = try w.World.init(alloc);
+    defer wrld.deinit();
+
+    // Create a play with an offensive action card (thrust)
+    const thrust_template = card_list.byName("thrust");
+    const thrust_card = try wrld.card_registry.create(thrust_template);
+    var play = combat.Play{ .action = thrust_card.id };
+
+    // High modifier targets offensive plays
+    const high = card_list.byName("high");
+    const can_attach = try canModifierAttachToPlay(high, &play, wrld);
+
+    try testing.expect(can_attach);
+}
+
+test "canModifierAttachToPlay rejects non-offensive play" {
+    const alloc = testing.allocator;
+
+    var wrld = try w.World.init(alloc);
+    defer wrld.deinit();
+
+    // Create a play with a non-offensive action card (parry is defensive)
+    const parry_template = card_list.byName("parry");
+    const parry_card = try wrld.card_registry.create(parry_template);
+    var play = combat.Play{ .action = parry_card.id };
+
+    // High modifier targets offensive plays - should reject defensive
+    const high = card_list.byName("high");
+    const can_attach = try canModifierAttachToPlay(high, &play, wrld);
+
+    try testing.expect(!can_attach);
 }

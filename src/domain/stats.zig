@@ -222,4 +222,19 @@ pub const Block = packed struct {
             .presence => self.presence,
         };
     }
+
+    pub fn getConst(self: *const Block, a: Accessor) f32 {
+        return switch (a) {
+            .power => self.power,
+            .speed => self.speed,
+            .agility => self.agility,
+            .dexterity => self.dexterity,
+            .fortitude => self.fortitude,
+            .endurance => self.endurance,
+            .acuity => self.acuity,
+            .will => self.will,
+            .intuition => self.intuition,
+            .presence => self.presence,
+        };
+    }
 };

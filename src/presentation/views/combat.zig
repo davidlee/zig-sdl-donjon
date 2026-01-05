@@ -297,6 +297,119 @@ const CardZoneView = struct {
     }
 };
 
+/// View over plays during commit phase (action + modifier stacks).
+/// Renders plays as solitaire-style vertical stacks.
+const PlayZoneView = struct {
+    const modifier_y_offset: f32 = 25; // vertical offset per stacked modifier
+
+    plays: []const PlayViewData,
+    layout: CardLayout,
+
+    fn init(zone: ViewZone, play_data: []const PlayViewData) PlayZoneView {
+        return .{ .plays = play_data, .layout = getLayout(zone) };
+    }
+
+    /// Hit test returns play index at given point (for whole stack)
+    fn hitTest(self: PlayZoneView, vs: ViewState, pt: Point) ?usize {
+        _ = vs;
+        // Reverse order so rightmost (last rendered) play is hit first
+        var i = self.plays.len;
+        while (i > 0) {
+            i -= 1;
+            const rect = self.playRect(i);
+            if (rect.pointIn(pt)) return i;
+        }
+        return null;
+    }
+
+    /// Compute rect for entire play stack (action + modifiers)
+    fn playRect(self: PlayZoneView, index: usize) Rect {
+        const play = self.plays[index];
+        const base_x = self.layout.start_x + @as(f32, @floatFromInt(index)) * self.layout.spacing;
+        // Stack grows upward: modifiers above action
+        const stack_height = self.layout.h + @as(f32, @floatFromInt(play.modifier_stack_len)) * modifier_y_offset;
+        const top_y = self.layout.y - @as(f32, @floatFromInt(play.modifier_stack_len)) * modifier_y_offset;
+        return Rect{
+            .x = base_x,
+            .y = top_y,
+            .w = self.layout.w,
+            .h = stack_height,
+        };
+    }
+
+    /// Compute rect for the action card within a play
+    fn actionRect(self: PlayZoneView, index: usize) Rect {
+        const base_x = self.layout.start_x + @as(f32, @floatFromInt(index)) * self.layout.spacing;
+        return Rect{
+            .x = base_x,
+            .y = self.layout.y,
+            .w = self.layout.w,
+            .h = self.layout.h,
+        };
+    }
+
+    /// Compute rect for a modifier card within a play (stacked above action)
+    fn modifierRect(self: PlayZoneView, play_index: usize, mod_index: usize) Rect {
+        const base_x = self.layout.start_x + @as(f32, @floatFromInt(play_index)) * self.layout.spacing;
+        const offset_y = @as(f32, @floatFromInt(mod_index + 1)) * modifier_y_offset;
+        return Rect{
+            .x = base_x,
+            .y = self.layout.y - offset_y,
+            .w = self.layout.w,
+            .h = self.layout.h,
+        };
+    }
+
+    /// Generate renderables for all plays
+    fn appendRenderables(
+        self: PlayZoneView,
+        alloc: std.mem.Allocator,
+        vs: ViewState,
+        list: *std.ArrayList(Renderable),
+    ) !void {
+        for (self.plays, 0..) |play, i| {
+            try self.appendPlayRenderables(alloc, vs, list, play, i);
+        }
+    }
+
+    fn appendPlayRenderables(
+        self: PlayZoneView,
+        alloc: std.mem.Allocator,
+        vs: ViewState,
+        list: *std.ArrayList(Renderable),
+        play: PlayViewData,
+        play_index: usize,
+    ) !void {
+        const is_drop_target = if (vs.combat) |ui| blk: {
+            if (ui.drag) |drag| {
+                break :blk drag.target_play_index == play_index;
+            }
+            break :blk false;
+        } else false;
+
+        // Render modifiers first (behind, top to bottom)
+        var j: usize = play.modifier_stack_len;
+        while (j > 0) {
+            j -= 1;
+            const mod = play.modifier_stack_buf[j];
+            const rect = self.modifierRect(play_index, j);
+            const mod_vm = CardViewModel.fromTemplate(mod.id, mod.template, .{
+                .target = is_drop_target,
+                .played = true,
+            });
+            try list.append(alloc, Renderable{ .card = .{ .model = mod_vm, .dst = rect } });
+        }
+
+        // Render action card last (in front, at base position)
+        const action_rect = self.actionRect(play_index);
+        const action_vm = CardViewModel.fromTemplate(play.action.id, play.action.template, .{
+            .target = is_drop_target,
+            .played = true,
+        });
+        try list.append(alloc, Renderable{ .card = .{ .model = action_vm, .dst = action_rect } });
+    }
+};
+
 const PlayerAvatar = struct {
     rect: Rect,
     asset_id: AssetId,
@@ -450,6 +563,62 @@ pub const CombatView = struct {
         return result[0..count];
     }
 
+    /// Player's plays for commit phase (action + modifier stacks)
+    pub fn playerPlays(self: *const CombatView, alloc: std.mem.Allocator) []const PlayViewData {
+        const enc = &(self.world.encounter orelse return &.{});
+        const enc_state = enc.stateForConst(self.world.player.id) orelse return &.{};
+
+        const result = alloc.alloc(PlayViewData, enc_state.current.plays_len) catch return &.{};
+        var count: usize = 0;
+
+        for (enc_state.current.plays()) |*play| {
+            if (self.buildPlayViewData(alloc, play, self.world.player)) |pvd| {
+                result[count] = pvd;
+                count += 1;
+            }
+        }
+
+        return result[0..count];
+    }
+
+    /// Build PlayViewData from domain Play
+    fn buildPlayViewData(
+        self: *const CombatView,
+        alloc: std.mem.Allocator,
+        play: *const combat.Play,
+        owner: *const Agent,
+    ) ?PlayViewData {
+        const action_inst = self.world.card_registry.getConst(play.action) orelse return null;
+
+        var pvd = PlayViewData{
+            .owner_id = owner.id,
+            .owner_is_player = owner.director == .player,
+            .action = CardViewData.fromInstance(action_inst, .in_play, true),
+            .stakes = play.effectiveStakes(),
+        };
+
+        // Add modifiers
+        for (play.modifiers()) |mod_id| {
+            const mod_inst = self.world.card_registry.getConst(mod_id) orelse continue;
+            pvd.modifier_stack_buf[pvd.modifier_stack_len] = CardViewData.fromInstance(mod_inst, .in_play, true);
+            pvd.modifier_stack_len += 1;
+        }
+
+        // Resolve target if offensive
+        if (pvd.isOffensive()) {
+            if (apply.resolvePlayTargetIDs(alloc, play, owner, self.world) catch null) |ids| {
+                if (ids.len > 0) pvd.target_id = ids[0];
+            }
+        }
+
+        return pvd;
+    }
+
+    /// Get PlayZoneView for commit phase
+    fn playerPlayZone(self: *const CombatView, alloc: std.mem.Allocator) PlayZoneView {
+        return PlayZoneView.init(.player_plays, self.playerPlays(alloc));
+    }
+
     fn buildCardList(
         self: *const CombatView,
         alloc: std.mem.Allocator,
@@ -526,20 +695,53 @@ pub const CombatView = struct {
 
     fn handleDragging(self: *CombatView, vs: ViewState, drag: DragState) InputResult {
         const cs = vs.combat orelse CombatUIState{};
-        var registry = self.world.card_registry;
-        const card = registry.get(drag.id);
-        _ = card;
-
-        // TODO: test if card can attach
-
         var new_cs = cs;
-        if (self.inPlayZone(self.arena).hitTest(vs, vs.mouse)) |id| {
-            new_cs.drag.?.target = id;
-            std.debug.print("Target: {}", .{id});
+
+        // Clear any previous target
+        new_cs.drag.?.target = null;
+        new_cs.drag.?.target_play_index = null;
+
+        // Get the dragged card
+        const card = self.world.card_registry.getConst(drag.id) orelse
             return .{ .vs = vs.withCombat(new_cs) };
+
+        // Only modifiers can be dropped on plays
+        if (card.template.kind != .modifier)
+            return .{ .vs = vs.withCombat(new_cs) };
+
+        // During commit phase, hit test against plays for modifier attachment
+        if (self.combat_phase == .commit_phase) {
+            const play_zone = self.playerPlayZone(self.arena);
+            if (play_zone.hitTest(vs, vs.mouse)) |play_index| {
+                // Validate the attachment
+                const enc = &(self.world.encounter orelse return .{ .vs = vs.withCombat(new_cs) });
+                const enc_state = enc.stateForConst(self.world.player.id) orelse
+                    return .{ .vs = vs.withCombat(new_cs) };
+                const plays = enc_state.current.plays();
+                if (play_index >= plays.len)
+                    return .{ .vs = vs.withCombat(new_cs) };
+
+                const play = &plays[play_index];
+
+                // Check predicate match
+                const can_attach = apply.canModifierAttachToPlay(card.template, play, self.world) catch false;
+                if (!can_attach)
+                    return .{ .vs = vs.withCombat(new_cs) };
+
+                // Check for conflicts
+                if (play.wouldConflict(card.template, &self.world.card_registry))
+                    return .{ .vs = vs.withCombat(new_cs) };
+
+                // Valid target!
+                new_cs.drag.?.target_play_index = play_index;
+            }
         } else {
-            new_cs.drag.?.target = null;
+            // Selection phase - original card-to-card hit test
+            if (self.inPlayZone(self.arena).hitTest(vs, vs.mouse)) |id| {
+                new_cs.drag.?.target = id;
+            }
         }
+
         return .{ .vs = vs.withCombat(new_cs) };
     }
 
@@ -670,7 +872,13 @@ pub const CombatView = struct {
 
         // Player cards - render in_play first (behind), then hand (in front)
         var last: ?Renderable = null;
-        try self.inPlayZone(alloc).appendRenderables(alloc, vs, &list, &last);
+
+        // During commit phase, render plays as stacked groups; otherwise flat cards
+        if (self.combat_phase == .commit_phase) {
+            try self.playerPlayZone(alloc).appendRenderables(alloc, vs, &list);
+        } else {
+            try self.inPlayZone(alloc).appendRenderables(alloc, vs, &list, &last);
+        }
         try self.handZone(alloc).appendRenderables(alloc, vs, &list, &last);
         try self.alwaysZone(alloc).appendRenderables(alloc, vs, &list, &last);
 

@@ -398,6 +398,11 @@ pub const Encounter = struct {
     pub fn stateFor(self: *Encounter, agent_id: entity.ID) ?*AgentEncounterState {
         return self.agent_state.getPtr(agent_id);
     }
+
+    /// Get encounter state for an agent (const version for read-only access).
+    pub fn stateForConst(self: *const Encounter, agent_id: entity.ID) ?*const AgentEncounterState {
+        return self.agent_state.getPtr(agent_id);
+    }
 };
 
 // const ScriptedAction = struct {};
@@ -735,6 +740,24 @@ pub const Play = struct {
         }
         return height;
     }
+
+    /// Check if adding a modifier would conflict with existing modifiers.
+    /// Currently detects: conflicting height_override (e.g., Low + High).
+    pub fn wouldConflict(self: *const Play, new_modifier: *const cards.Template, registry: *const world.CardRegistry) bool {
+        const new_effect = getModifyPlayEffect(new_modifier) orelse return false;
+        const new_height = new_effect.height_override orelse return false;
+
+        // Check existing modifiers for conflicting height
+        for (self.modifiers()) |mod_id| {
+            const card = registry.getConst(mod_id) orelse continue;
+            if (getModifyPlayEffect(card.template)) |mp| {
+                if (mp.height_override) |existing_height| {
+                    if (existing_height != new_height) return true;
+                }
+            }
+        }
+        return false;
+    }
 };
 
 /// Ephemeral state for the current turn - exists from commit through resolution.
@@ -986,6 +1009,7 @@ pub const TechniqueAdvantage = struct {
 // ============================================================================
 
 const testing = std.testing;
+const card_list = @import("card_list.zig");
 
 // NOTE: TechniquePool tests removed during Phase 7 migration.
 // TechniquePool was removed in favor of unified draw_style system.
@@ -1329,7 +1353,6 @@ test "addToInPlayFrom clones pool cards" {
     // Playing a card from always_available should create a new instance (clone)
     // with a different ID than the master, while master stays in pool.
     const alloc = testing.allocator;
-    const card_list = @import("card_list.zig");
 
     var registry = try world.CardRegistry.init(alloc);
     defer registry.deinit();
@@ -1360,7 +1383,6 @@ test "addToInPlayFrom clones pool cards" {
 test "addToInPlayFrom tracks master_id for pool cards" {
     // The in_play_sources entry should have master_id set to the original card
     const alloc = testing.allocator;
-    const card_list = @import("card_list.zig");
 
     var registry = try world.CardRegistry.init(alloc);
     defer registry.deinit();
@@ -1385,7 +1407,6 @@ test "removeFromInPlay destroys pool card clones" {
     // Removing a pool card clone should destroy it via registry,
     // and return the master_id for cooldown application.
     const alloc = testing.allocator;
-    const card_list = @import("card_list.zig");
 
     var registry = try world.CardRegistry.init(alloc);
     defer registry.deinit();
@@ -1457,4 +1478,85 @@ test "cancel hand card moves back to hand" {
     // Cancelling a hand card should move it back to hand, not destroy it.
     // TODO: Implement test
     return error.SkipZigTest;
+}
+
+// ============================================================================
+// Play Modifier Conflict Tests
+// ============================================================================
+
+test "Play.wouldConflict detects conflicting height_override" {
+    // High and Low modifiers both set height_override - they conflict
+    const alloc = testing.allocator;
+
+    var registry = try world.CardRegistry.init(alloc);
+    defer registry.deinit();
+
+    const high = card_list.byName("high");
+    const low = card_list.byName("low");
+
+    // Create cards in registry
+    const high_card = try registry.create(high);
+    const thrust = try registry.create(card_list.byName("thrust"));
+
+    // Create play with High modifier already attached
+    var play = Play{ .action = thrust.id };
+    try play.addModifier(high_card.id);
+
+    // Adding Low should conflict
+    try testing.expect(play.wouldConflict(low, &registry));
+}
+
+test "Play.wouldConflict allows same height_override" {
+    // Two High modifiers have the same height_override - no conflict
+    const alloc = testing.allocator;
+
+    var registry = try world.CardRegistry.init(alloc);
+    defer registry.deinit();
+
+    const high = card_list.byName("high");
+
+    const high_card = try registry.create(high);
+    const thrust = try registry.create(card_list.byName("thrust"));
+
+    var play = Play{ .action = thrust.id };
+    try play.addModifier(high_card.id);
+
+    // Adding another High should not conflict (same height)
+    try testing.expect(!play.wouldConflict(high, &registry));
+}
+
+test "Play.wouldConflict allows non-conflicting modifiers" {
+    // Feint has no height_override, so it doesn't conflict with anything
+    const alloc = testing.allocator;
+
+    var registry = try world.CardRegistry.init(alloc);
+    defer registry.deinit();
+
+    const high = card_list.byName("high");
+    const feint = card_list.byName("feint");
+
+    const high_card = try registry.create(high);
+    const thrust = try registry.create(card_list.byName("thrust"));
+
+    var play = Play{ .action = thrust.id };
+    try play.addModifier(high_card.id);
+
+    // Adding Feint should not conflict (no height_override)
+    try testing.expect(!play.wouldConflict(feint, &registry));
+}
+
+test "Play.wouldConflict returns false for empty modifier stack" {
+    // Empty modifier stack never has conflicts
+    const alloc = testing.allocator;
+
+    var registry = try world.CardRegistry.init(alloc);
+    defer registry.deinit();
+
+    const low = card_list.byName("low");
+    const thrust = try registry.create(card_list.byName("thrust"));
+
+    const play = Play{ .action = thrust.id };
+
+    // No existing modifiers - can't conflict
+    try testing.expect(!play.wouldConflict(low, &registry));
 }
