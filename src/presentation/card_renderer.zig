@@ -47,6 +47,10 @@ fn kindColors(kind: CardKind) KindColors {
             .background = .{ .r = 50, .g = 40, .b = 20, .a = 255 },
             .border = .{ .r = 200, .g = 160, .b = 60, .a = 255 },
         },
+        .modifier => .{
+            .background = .{ .r = 50, .g = 40, .b = 20, .a = 255 },
+            .border = .{ .r = 20, .g = 30, .b = 160, .a = 255 },
+        },
         .other => .{
             .background = .{ .r = 40, .g = 40, .b = 40, .a = 255 },
             .border = .{ .r = 120, .g = 120, .b = 120, .a = 255 },
@@ -73,6 +77,8 @@ fn stateOverlayColor(state: CardState) ?Color {
 fn stateBorderColor(state: CardState) ?Color {
     if (state.selected) return .{ .r = 255, .g = 255, .b = 100, .a = 255 };
     if (state.highlighted) return .{ .r = 200, .g = 200, .b = 255, .a = 255 };
+    if (state.target) return .{ .r = 0, .g = 125, .b = 255, .a = 255 };
+    if (state.played) return .{ .r = 200, .g = 200, .b = 200, .a = 255 };
     return null;
 }
 
@@ -160,7 +166,7 @@ pub const CardRenderer = struct {
     }
 
     fn stateToHash(state: CardState) u8 {
-        const bits: u4 = @bitCast(state);
+        const bits: u6 = @bitCast(state);
         return bits;
     }
 

@@ -68,6 +68,7 @@ pub const MenuState = struct {
 /// Drag operation state
 pub const DragState = struct {
     id: entity.ID,
-    grab_offset: Point, // click position relative to item's origin
-    original_pos: Point, // for snap-back on cancel
+    // grab_offset: Point, // click position relative to item's origin
+    original_pos: Point,
+    target: ?entity.ID = null, // highlight valid drop target
 };

@@ -115,7 +115,9 @@ const CardViewState = enum {
     normal,
     hover,
     drag,
+    target,
 };
+
 const CardLayout = struct {
     w: f32,
     h: f32,
@@ -159,7 +161,7 @@ const EndTurnButton = struct {
             .asset_id = AssetId.end_turn,
             .rect = Rect{
                 .x = 50,
-                .y = 650,
+                .y = 690,
                 .w = 120,
                 .h = 40,
             },
@@ -223,14 +225,14 @@ const CardZoneView = struct {
         for (self.cards, 0..) |card, i| {
             const rect = self.cardRect(i, card.id, vs);
             const state = self.cardInteractionState(card.id, ui);
-
             const card_vm = CardViewModel.fromTemplate(card.id, card.template, .{
-                .disabled = !card.playable,
+                .target = state == .target,
+                .played = (self.zone == .in_play),
+                .disabled = (!card.playable and self.zone != .in_play),
                 .highlighted = state == .hover,
             });
-
             const item: Renderable = .{ .card = .{ .model = card_vm, .dst = rect } };
-            if (state == .normal) {
+            if (state == .normal or state == .target) {
                 try list.append(alloc, item);
             } else {
                 last.* = item; // render last for z-order
@@ -285,6 +287,7 @@ const CardZoneView = struct {
         _ = self;
         if (ui.drag) |drag| {
             if (drag.id.eql(card_id)) return .drag;
+            if (drag.target) |id| if (id.eql(card_id)) return .target;
         }
         switch (ui.hover) {
             .card => |id| if (id.eql(card_id)) return .hover,
@@ -480,11 +483,9 @@ pub const CombatView = struct {
             .mouse_button_down => {
                 if (self.hitTestPlayerCards(vs)) |id| {
                     if (self.isCardDraggable(id)) {
-                        std.debug.print("yes is drag\n", .{});
                         var new_cs = cs;
                         new_cs.drag = .{
                             .original_pos = vs.mouse,
-                            .grab_offset = Point{ .x = 0, .y = 0 },
                             .id = id,
                         };
                         return .{ .vs = vs.withCombat(new_cs) };
@@ -498,8 +499,8 @@ pub const CombatView = struct {
                 return self.handleRelease(vs);
             },
             .mouse_motion => {
-                if (cs.drag) |_| {
-                    return .{};
+                if (cs.drag) |drag| {
+                    return self.handleDragging(vs, drag);
                 } else return self.handleHover(vs);
             },
             .key_down => |data| {
@@ -523,6 +524,25 @@ pub const CombatView = struct {
         return null;
     }
 
+    fn handleDragging(self: *CombatView, vs: ViewState, drag: DragState) InputResult {
+        const cs = vs.combat orelse CombatUIState{};
+        var registry = self.world.card_registry;
+        const card = registry.get(drag.id);
+        _ = card;
+
+        // TODO: test if card can attach
+
+        var new_cs = cs;
+        if (self.inPlayZone(self.arena).hitTest(vs, vs.mouse)) |id| {
+            new_cs.drag.?.target = id;
+            std.debug.print("Target: {}", .{id});
+            return .{ .vs = vs.withCombat(new_cs) };
+        } else {
+            new_cs.drag.?.target = null;
+        }
+        return .{ .vs = vs.withCombat(new_cs) };
+    }
+
     fn handleHover(self: *CombatView, vs: ViewState) InputResult {
         var hover: ?view_state.EntityRef = null;
         if (self.hitTestPlayerCards(vs)) |id| {
@@ -540,8 +560,7 @@ pub const CombatView = struct {
             var new_cs = vs.combat orelse CombatUIState{};
             new_cs.hover = ref;
             return .{ .vs = vs.withCombat(new_cs) };
-        }
-        return .{};
+        } else return .{};
     }
 
     fn isCardDraggable(self: *CombatView, id: entity.ID) bool {
@@ -551,13 +570,7 @@ pub const CombatView = struct {
                 std.debug.print("Error validating card playability: {s} -- {}", .{ card.template.name, err });
                 return false;
             };
-            if (playable) {
-                // return switch (card.template.kind) {
-                //     .modifier => true,
-                //     else => false,
-                // };
-                return if (card.template.kind == .modifier) true else false;
-            }
+            if (playable) return if (card.template.kind == .modifier) true else false;
         }
         return false;
     }
@@ -568,11 +581,7 @@ pub const CombatView = struct {
             if (self.isCardDraggable(id)) {
                 std.debug.print("yes is drag\n", .{});
                 var cs = vs.combat orelse CombatUIState{};
-                cs.drag = .{
-                    .original_pos = pos,
-                    .grab_offset = Point{ .x = 0, .y = 0 },
-                    .id = id,
-                };
+                cs.drag = .{ .original_pos = pos, .id = id };
                 return .{ .vs = vs.withCombat(cs) };
             } else {
                 return .{ .command = .{ .play_card = id } };
@@ -581,11 +590,7 @@ pub const CombatView = struct {
         } else if (self.handZone(self.arena).hitTest(vs, pos)) |id| {
             if (self.isCardDraggable(id)) {
                 var cs = vs.combat orelse CombatUIState{};
-                cs.drag = .{
-                    .original_pos = pos,
-                    .grab_offset = Point{ .x = 0, .y = 0 },
-                    .id = id,
-                };
+                cs.drag = .{ .original_pos = pos, .id = id };
                 return .{ .vs = vs.withCombat(cs) };
             } else {
                 return .{ .command = .{ .play_card = id } };

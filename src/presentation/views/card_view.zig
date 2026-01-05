@@ -13,6 +13,7 @@ pub const CardKind = enum {
     action,
     passive,
     reaction,
+    modifier,
     other,
 };
 
@@ -31,6 +32,8 @@ pub const CardState = packed struct {
     selected: bool = false,
     highlighted: bool = false,
     disabled: bool = false, // !playable by player - potentially expensive to compute
+    played: bool = false,
+    target: bool = false, // drag & drop target
 };
 
 /// All data the renderer needs to draw a card
@@ -68,6 +71,7 @@ pub const CardViewModel = struct {
             .action => .action,
             .passive => .passive,
             .reaction => .reaction,
+            .modifier => .modifier,
             else => .other,
         };
     }
