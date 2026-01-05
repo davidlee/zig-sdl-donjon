@@ -77,6 +77,27 @@ New error variants added to `CommandError`:
   - Returns target agent IDs for offensive plays
 - `PlayViewData.target_id` now populated correctly in `buildPlayViewData()`
 
+### COMPLETED - UI Layer (Session 4: Hit Testing Refactor)
+
+- **HitResult tagged union** (combat.zig:121-152)
+  - `HitResult.card` for standalone card hits (includes zone)
+  - `HitResult.play` for play stack hits (includes play_index, card_id, slot)
+  - `cardId()` helper extracts ID regardless of hit type
+- **CardZoneView.hitTest** returns `?HitResult` with zone context
+- **PlayZoneView.hitTest** returns `?HitResult` with card-level detail
+  - Tests modifiers first (topmost in z-order), then action card
+  - `PlayHit.slot` distinguishes action vs modifier (with index)
+  - Added `hitTestPlay()` convenience for drop targeting (returns just play_index)
+- **Hover state for stacked play cards**
+  - `hitTestPlayerCards()` checks play zone during commit phase
+  - `appendPlayRenderables()` tracks hovered card, renders last via `last` param
+  - `cardRectWithHover()` applies hover expansion (3px padding)
+  - Cards within plays now expand and pop to front on hover
+- **Bug fix: Pool card modifiers now cloned correctly**
+  - `playValidCardReservingCosts()` now returns the in-play ID (clone for pool cards)
+  - `applyStack()` uses returned clone ID for modifier stack (not original)
+  - Fixed hover disappearing when modifier from always_available was attached
+
 ### TODO - Future Enhancements
 
 #### 1. Target Indicator Visual

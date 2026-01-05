@@ -118,6 +118,39 @@ const CardViewState = enum {
     target,
 };
 
+/// Unified hit test result for cards and plays.
+/// Enables consistent interaction handling across zones.
+const HitResult = union(enum) {
+    /// Hit on a standalone card (hand, always_available, in_play during selection)
+    card: CardHit,
+    /// Hit on a card within a committed play stack
+    play: PlayHit,
+
+    const CardHit = struct {
+        id: entity.ID,
+        zone: ViewZone,
+    };
+
+    const PlayHit = struct {
+        play_index: usize,
+        card_id: entity.ID,
+        slot: Slot,
+
+        const Slot = union(enum) {
+            action,
+            modifier: u4, // index into modifier stack
+        };
+    };
+
+    /// Extract card ID regardless of hit type
+    pub fn cardId(self: HitResult) entity.ID {
+        return switch (self) {
+            .card => |c| c.id,
+            .play => |p| p.card_id,
+        };
+    }
+};
+
 const CardLayout = struct {
     w: f32,
     h: f32,
@@ -200,14 +233,16 @@ const CardZoneView = struct {
         return .{ .zone = zone, .layout = layout, .cards = card_data };
     }
 
-    /// Hit test returns card ID at given point
-    fn hitTest(self: CardZoneView, vs: ViewState, pt: Point) ?entity.ID {
+    /// Hit test returns HitResult at given point
+    fn hitTest(self: CardZoneView, vs: ViewState, pt: Point) ?HitResult {
         // Reverse order so topmost (last rendered) card is hit first
         var i = self.cards.len;
         while (i > 0) {
             i -= 1;
             const rect = self.cardRect(i, self.cards[i].id, vs);
-            if (rect.pointIn(pt)) return self.cards[i].id;
+            if (rect.pointIn(pt)) {
+                return .{ .card = .{ .id = self.cards[i].id, .zone = self.zone } };
+            }
         }
         return null;
     }
@@ -309,15 +344,50 @@ const PlayZoneView = struct {
         return .{ .plays = play_data, .layout = getLayout(zone) };
     }
 
-    /// Hit test returns play index at given point (for whole stack)
-    fn hitTest(self: PlayZoneView, vs: ViewState, pt: Point) ?usize {
+    /// Hit test returns HitResult with card-level detail
+    fn hitTest(self: PlayZoneView, vs: ViewState, pt: Point) ?HitResult {
         _ = vs;
         // Reverse order so rightmost (last rendered) play is hit first
         var i = self.plays.len;
         while (i > 0) {
             i -= 1;
-            const rect = self.playRect(i);
-            if (rect.pointIn(pt)) return i;
+            const play = self.plays[i];
+
+            // Check modifiers first (topmost in z-order, stacked above action)
+            // Check from highest modifier down
+            var m: usize = play.modifier_stack_len;
+            while (m > 0) {
+                m -= 1;
+                const mod_rect = self.modifierRect(i, m);
+                if (mod_rect.pointIn(pt)) {
+                    return .{ .play = .{
+                        .play_index = i,
+                        .card_id = play.modifier_stack_buf[m].id,
+                        .slot = .{ .modifier = @intCast(m) },
+                    } };
+                }
+            }
+
+            // Check action card (at base position)
+            const action_rect = self.actionRect(i);
+            if (action_rect.pointIn(pt)) {
+                return .{ .play = .{
+                    .play_index = i,
+                    .card_id = play.action.id,
+                    .slot = .action,
+                } };
+            }
+        }
+        return null;
+    }
+
+    /// Hit test returning only play index (for drop targeting where card slot doesn't matter)
+    fn hitTestPlay(self: PlayZoneView, vs: ViewState, pt: Point) ?usize {
+        if (self.hitTest(vs, pt)) |result| {
+            return switch (result) {
+                .play => |p| p.play_index,
+                .card => null,
+            };
         }
         return null;
     }
@@ -360,15 +430,16 @@ const PlayZoneView = struct {
         };
     }
 
-    /// Generate renderables for all plays
+    /// Generate renderables for all plays (hovered card rendered last via `last` out param)
     fn appendRenderables(
         self: PlayZoneView,
         alloc: std.mem.Allocator,
         vs: ViewState,
         list: *std.ArrayList(Renderable),
+        last: *?Renderable,
     ) !void {
         for (self.plays, 0..) |play, i| {
-            try self.appendPlayRenderables(alloc, vs, list, play, i);
+            try self.appendPlayRenderables(alloc, vs, list, play, i, last);
         }
     }
 
@@ -379,34 +450,68 @@ const PlayZoneView = struct {
         list: *std.ArrayList(Renderable),
         play: PlayViewData,
         play_index: usize,
+        last: *?Renderable,
     ) !void {
-        const is_drop_target = if (vs.combat) |ui| blk: {
-            if (ui.drag) |drag| {
-                break :blk drag.target_play_index == play_index;
-            }
-            break :blk false;
-        } else false;
+        const ui = vs.combat orelse CombatUIState{};
+
+        const is_drop_target = if (ui.drag) |drag|
+            drag.target_play_index == play_index
+        else
+            false;
+
+        // Get hovered card ID (if any)
+        const hover_id: ?entity.ID = switch (ui.hover) {
+            .card => |id| id,
+            else => null,
+        };
 
         // Render modifiers first (behind, top to bottom)
         var j: usize = play.modifier_stack_len;
         while (j > 0) {
             j -= 1;
             const mod = play.modifier_stack_buf[j];
-            const rect = self.modifierRect(play_index, j);
+            const is_hovered = if (hover_id) |hid| hid.eql(mod.id) else false;
+            const rect = self.cardRectWithHover(self.modifierRect(play_index, j), is_hovered);
             const mod_vm = CardViewModel.fromTemplate(mod.id, mod.template, .{
                 .target = is_drop_target,
                 .played = true,
+                .highlighted = is_hovered,
             });
-            try list.append(alloc, Renderable{ .card = .{ .model = mod_vm, .dst = rect } });
+            const item: Renderable = .{ .card = .{ .model = mod_vm, .dst = rect } };
+            if (is_hovered) {
+                last.* = item;
+            } else {
+                try list.append(alloc, item);
+            }
         }
 
-        // Render action card last (in front, at base position)
-        const action_rect = self.actionRect(play_index);
+        // Render action card (in front, at base position)
+        const is_action_hovered = if (hover_id) |hid| hid.eql(play.action.id) else false;
+        const action_rect = self.cardRectWithHover(self.actionRect(play_index), is_action_hovered);
         const action_vm = CardViewModel.fromTemplate(play.action.id, play.action.template, .{
             .target = is_drop_target,
             .played = true,
+            .highlighted = is_action_hovered,
         });
-        try list.append(alloc, Renderable{ .card = .{ .model = action_vm, .dst = action_rect } });
+        const action_item: Renderable = .{ .card = .{ .model = action_vm, .dst = action_rect } };
+        if (is_action_hovered) {
+            last.* = action_item;
+        } else {
+            try list.append(alloc, action_item);
+        }
+    }
+
+    /// Apply hover expansion to a rect
+    fn cardRectWithHover(self: PlayZoneView, base: Rect, is_hovered: bool) Rect {
+        _ = self;
+        if (!is_hovered) return base;
+        const pad: f32 = 3;
+        return .{
+            .x = base.x - pad,
+            .y = base.y - pad,
+            .w = base.w + pad * 2,
+            .h = base.h + pad * 2,
+        };
     }
 };
 
@@ -650,12 +755,13 @@ pub const CombatView = struct {
 
         switch (event) {
             .mouse_button_down => {
-                if (self.hitTestPlayerCards(vs)) |id| {
-                    if (self.isCardDraggable(id)) {
+                if (self.hitTestPlayerCards(vs)) |hit| {
+                    const card_id = hit.cardId();
+                    if (self.isCardDraggable(card_id)) {
                         var new_cs = cs;
                         new_cs.drag = .{
                             .original_pos = vs.mouse,
-                            .id = id,
+                            .id = card_id,
                         };
                         return .{ .vs = vs.withCombat(new_cs) };
                     }
@@ -682,13 +788,21 @@ pub const CombatView = struct {
         return .{};
     }
 
-    fn hitTestPlayerCards(self: *CombatView, vs: ViewState) ?ID {
-        if (self.alwaysZone(self.arena).hitTest(vs, vs.mouse)) |id| {
-            return id;
-        } else if (self.handZone(self.arena).hitTest(vs, vs.mouse)) |id| {
-            return id;
-        } else if (self.inPlayZone(self.arena).hitTest(vs, vs.mouse)) |id| {
-            return id;
+    fn hitTestPlayerCards(self: *CombatView, vs: ViewState) ?HitResult {
+        if (self.alwaysZone(self.arena).hitTest(vs, vs.mouse)) |hit| {
+            return hit;
+        } else if (self.handZone(self.arena).hitTest(vs, vs.mouse)) |hit| {
+            return hit;
+        }
+        // During commit phase, hit test plays; during selection, hit test flat in_play
+        if (self.combat_phase == .commit_phase) {
+            if (self.playerPlayZone(self.arena).hitTest(vs, vs.mouse)) |hit| {
+                return hit;
+            }
+        } else {
+            if (self.inPlayZone(self.arena).hitTest(vs, vs.mouse)) |hit| {
+                return hit;
+            }
         }
         return null;
     }
@@ -712,7 +826,7 @@ pub const CombatView = struct {
         // During commit phase, hit test against plays for modifier attachment
         if (self.combat_phase == .commit_phase) {
             const play_zone = self.playerPlayZone(self.arena);
-            if (play_zone.hitTest(vs, vs.mouse)) |play_index| {
+            if (play_zone.hitTestPlay(vs, vs.mouse)) |play_index| {
                 // Validate the attachment
                 const enc = &(self.world.encounter orelse return .{ .vs = vs.withCombat(new_cs) });
                 const enc_state = enc.stateForConst(self.world.player.id) orelse
@@ -737,8 +851,8 @@ pub const CombatView = struct {
             }
         } else {
             // Selection phase - original card-to-card hit test
-            if (self.inPlayZone(self.arena).hitTest(vs, vs.mouse)) |id| {
-                new_cs.drag.?.target = id;
+            if (self.inPlayZone(self.arena).hitTest(vs, vs.mouse)) |hit| {
+                new_cs.drag.?.target = hit.cardId();
             }
         }
 
@@ -747,8 +861,8 @@ pub const CombatView = struct {
 
     fn handleHover(self: *CombatView, vs: ViewState) InputResult {
         var hover: ?view_state.EntityRef = null;
-        if (self.hitTestPlayerCards(vs)) |id| {
-            hover = .{ .card = id };
+        if (self.hitTestPlayerCards(vs)) |hit| {
+            hover = .{ .card = hit.cardId() };
         } else if (self.opposition.hitTest(vs.mouse)) |sprite| {
             // hover for enemies
             const id = sprite.id;
@@ -779,7 +893,8 @@ pub const CombatView = struct {
 
     fn onClick(self: *CombatView, vs: ViewState, pos: Point) InputResult {
         // ALWAYS AVAILABLE CARD
-        if (self.alwaysZone(self.arena).hitTest(vs, pos)) |id| {
+        if (self.alwaysZone(self.arena).hitTest(vs, pos)) |hit| {
+            const id = hit.cardId();
             if (self.isCardDraggable(id)) {
                 std.debug.print("yes is drag\n", .{});
                 var cs = vs.combat orelse CombatUIState{};
@@ -789,7 +904,8 @@ pub const CombatView = struct {
                 return .{ .command = .{ .play_card = id } };
             }
             // IN HAND CARD
-        } else if (self.handZone(self.arena).hitTest(vs, pos)) |id| {
+        } else if (self.handZone(self.arena).hitTest(vs, pos)) |hit| {
+            const id = hit.cardId();
             if (self.isCardDraggable(id)) {
                 var cs = vs.combat orelse CombatUIState{};
                 cs.drag = .{ .original_pos = pos, .id = id };
@@ -798,8 +914,8 @@ pub const CombatView = struct {
                 return .{ .command = .{ .play_card = id } };
             }
             // IN PLAY CARD
-        } else if (self.inPlayZone(self.arena).hitTest(vs, pos)) |id| {
-            return .{ .command = .{ .cancel_card = id } };
+        } else if (self.inPlayZone(self.arena).hitTest(vs, pos)) |hit| {
+            return .{ .command = .{ .cancel_card = hit.cardId() } };
             // ENEMIES
         } else if (self.opposition.hitTest(pos)) |sprite| {
             return .{ .command = .{ .select_target = .{ .target_id = sprite.id } } };
@@ -883,7 +999,7 @@ pub const CombatView = struct {
 
         // During commit phase, render plays as stacked groups; otherwise flat cards
         if (self.combat_phase == .commit_phase) {
-            try self.playerPlayZone(alloc).appendRenderables(alloc, vs, &list);
+            try self.playerPlayZone(alloc).appendRenderables(alloc, vs, &list, &last);
         } else {
             try self.inPlayZone(alloc).appendRenderables(alloc, vs, &list, &last);
         }

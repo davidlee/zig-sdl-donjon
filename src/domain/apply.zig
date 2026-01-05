@@ -223,7 +223,7 @@ pub const CommandHandler = struct {
             return CommandError.InvalidGameState;
 
         if (try validateCardSelection(player, card, game_state)) {
-            try playValidCardReservingCosts(&self.world.events, player, card, &self.world.card_registry);
+            _ = try playValidCardReservingCosts(&self.world.events, player, card, &self.world.card_registry);
         } else {
             return CommandError.CommandInvalid;
         }
@@ -305,13 +305,14 @@ pub const CommandHandler = struct {
         }
 
         // Play card (move to in_play, commit stamina)
-        try playValidCardReservingCosts(&self.world.events, player, card, &self.world.card_registry);
+        // Returns the ID in play (same as card_id for hand cards)
+        const in_play_id = try playValidCardReservingCosts(&self.world.events, player, card, &self.world.card_registry);
 
         // Add to plays with added_in_commit flag
         const enc = &(self.world.encounter orelse return CommandError.BadInvariant);
         const enc_state = enc.stateFor(player.id) orelse return CommandError.BadInvariant;
         try enc_state.current.addPlay(.{
-            .action = card_id,
+            .action = in_play_id,
             .added_in_commit = true, // Cannot be stacked this turn
         });
 
@@ -434,11 +435,12 @@ pub const CommandHandler = struct {
     ) !void {
         const target_play = &enc_state.current.playsMut()[target_play_index];
 
-        // Add to modifier stack
-        try target_play.addModifier(validation.stack_card.id);
+        // Move card to in_play first - this creates a clone for pool cards
+        // Returns the ID that ends up in in_play (clone for pool cards, original for hand)
+        const in_play_id = try playValidCardReservingCosts(&self.world.events, player, validation.stack_card, &self.world.card_registry);
 
-        // Move card to in_play, commit stamina
-        try playValidCardReservingCosts(&self.world.events, player, validation.stack_card, &self.world.card_registry);
+        // Add the in_play ID (clone if pool card) to modifier stack
+        try target_play.addModifier(in_play_id);
 
         // Update focus tracking
         if (paid_base_focus) {
@@ -743,12 +745,13 @@ fn isInPlayableSource(actor: *const Agent, cs: *const combat.CombatState, card_i
 
 /// Doesn't perform validation. Just moves card, reserves costs, emits events.
 /// For pool cards (always_available, spells_known), creates ephemeral clone and sets cooldown.
+/// Returns the ID that ends up in in_play (clone ID for pool cards, original for hand cards).
 pub fn playValidCardReservingCosts(
     evs: *EventSystem,
     actor: *Agent,
     card: *Instance,
     registry: *w.CardRegistry,
-) !void {
+) !entity.ID {
     const cs = actor.combat_state orelse return error.InvalidGameState;
     const is_player = switch (actor.director) {
         .player => true,
@@ -790,6 +793,8 @@ pub fn playValidCardReservingCosts(
     try evs.push(Event{
         .card_cost_reserved = .{ .stamina = card.template.cost.stamina, .time = card.template.cost.time, .actor = actor_meta },
     });
+
+    return in_play_id;
 }
 
 // ============================================================================
