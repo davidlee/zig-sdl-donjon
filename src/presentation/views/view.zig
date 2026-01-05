@@ -57,7 +57,7 @@ pub const Renderable = union(enum) {
 pub const LogPane = struct {
     entries: []const combat_log.Entry,
     rect: Rect,
-    scroll_offset: usize, // cache invalidation key
+    scroll_y: i32, // pixel offset into texture (0 = bottom/most recent visible)
     entry_count: usize, // cache invalidation key
 };
 

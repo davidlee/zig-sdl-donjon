@@ -37,8 +37,8 @@ pub const ViewState = struct {
         return new;
     }
 
-    /// Update combat log scroll offset
-    pub fn withLogScroll(self: ViewState, scroll: usize) ViewState {
+    /// Update combat log scroll offset (pixels)
+    pub fn withLogScroll(self: ViewState, scroll: i32) ViewState {
         var new = self;
         if (new.combat) |*c| c.log_scroll = scroll;
         return new;
@@ -57,7 +57,7 @@ pub const CombatUIState = struct {
     drag: ?DragState = null,
     selected_card: ?entity.ID = null,
     hover: EntityRef = .none,
-    log_scroll: usize = 0, // scroll offset for combat log (0 = most recent)
+    log_scroll: i32 = 0, // pixel scroll offset for combat log (0 = bottom/most recent)
 };
 
 /// Menu view state

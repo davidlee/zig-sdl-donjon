@@ -323,12 +323,12 @@ fn layerName(layer: body.TissueLayer) []const u8 {
 /// Severity descriptor - how bad is the damage?
 fn severityWord(sev: body.Severity) []const u8 {
     return switch (sev) {
-        .none => "grazes",
-        .minor => "nicks",
-        .inhibited => "tears",
-        .disabled => "ruins",
+        .none => "grazed",
+        .minor => "nicked",
+        .inhibited => "torn",
+        .disabled => "ruined",
         .broken => "shatters",
-        .missing => "destroys",
+        .missing => "destroyed",
     };
 }
 

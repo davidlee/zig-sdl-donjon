@@ -19,6 +19,12 @@ const Point = view.Point;
 const logical_w = view.logical_w;
 const logical_h = view.logical_h;
 
+const colors = .{
+    .black = Color{ .r = 0, .g = 0, .b = 0 },
+    .dark = Color{ .r = 10, .g = 10, .b = 10 },
+    .grey = Color{ .r = 20, .g = 20, .b = 20 },
+};
+
 pub const header_h = 100;
 pub const footer_h = 100;
 pub const sidebar_w = 500;
@@ -42,7 +48,7 @@ const MenuBar = struct {
                     .w = logical_w,
                     .h = header_h,
                 },
-                .color = Color{ .r = 30, .g = 30, .b = 30 },
+                .color = colors.grey,
             } },
             // RHS
             .{ .filled_rect = .{
@@ -52,7 +58,16 @@ const MenuBar = struct {
                     .w = sidebar_w,
                     .h = logical_h - header_h - footer_h,
                 },
-                .color = Color{ .r = 30, .g = 30, .b = 30 },
+                .color = colors.grey,
+            } },
+            .{ .filled_rect = .{
+                .rect = .{
+                    .x = logical_w - sidebar_w + 3,
+                    .y = header_h,
+                    .w = sidebar_w,
+                    .h = logical_h - header_h - footer_h,
+                },
+                .color = colors.black,
             } },
 
             // footer
@@ -63,7 +78,7 @@ const MenuBar = struct {
                     .w = 1920,
                     .h = footer_h,
                 },
-                .color = Color{ .r = 30, .g = 30, .b = 30 },
+                .color = colors.grey,
             } },
             // footer
         };
@@ -73,8 +88,6 @@ const MenuBar = struct {
 // Sidebar layout
 const sidebar_x: f32 = logical_w - sidebar_w;
 const sidebar_y: f32 = header_h;
-const line_height: f32 = 18;
-const log_padding: f32 = 10;
 
 /// Rectangle for the sidebar content area (for hit testing)
 const sidebar_rect = Rect{
@@ -84,10 +97,7 @@ const sidebar_rect = Rect{
     .h = logical_h - header_h - footer_h,
 };
 
-/// Number of log lines that fit in the sidebar
-fn visibleLineCount() usize {
-    return @intFromFloat((sidebar_rect.h - log_padding * 2) / line_height);
-}
+const scroll_speed: i32 = 40; // pixels per scroll tick
 
 pub const ChromeView = struct {
     world: *const World,
@@ -98,18 +108,17 @@ pub const ChromeView = struct {
     }
 
     pub fn handleInput(self: *ChromeView, event: s.events.Event, world: *const World, vs: ViewState) InputResult {
+        _ = self;
         _ = world;
 
         // Handle mouse wheel scroll when over sidebar
         switch (event) {
             .mouse_wheel => |data| {
                 if (isInSidebar(vs.mouse)) {
-                    const current = if (vs.combat) |c| c.log_scroll else 0;
-                    const max = self.combat_log.maxScroll(visibleLineCount());
-                    const new_scroll = if (data.scroll_y > 0)
-                        @min(current + 3, max)
-                    else
-                        current -| 3;
+                    const current = if (vs.combat) |c| c.log_scroll else @as(i32, 0);
+                    // scroll_y > 0 = scroll up = see older = increase offset
+                    const delta: i32 = if (data.scroll_y > 0) scroll_speed else -scroll_speed;
+                    const new_scroll = @max(0, current + delta);
                     if (new_scroll != current) {
                         return .{ .vs = vs.withLogScroll(new_scroll) };
                     }
@@ -124,13 +133,12 @@ pub const ChromeView = struct {
         var list = try std.ArrayList(Renderable).initCapacity(alloc, 64);
         try list.appendSlice(alloc, MenuBar.render());
 
-        // Combat log as a single cached pane
-        const scroll_offset = if (vs.combat) |c| c.log_scroll else 0;
-        const visible = visibleLineCount();
+        // Combat log - pass all entries, renderer handles scrolling
+        const scroll_y = if (vs.combat) |c| c.log_scroll else @as(i32, 0);
         try list.append(alloc, .{ .log_pane = .{
-            .entries = self.combat_log.visibleEntries(scroll_offset, visible),
+            .entries = self.combat_log.entries.items,
             .rect = sidebar_rect,
-            .scroll_offset = scroll_offset,
+            .scroll_y = scroll_y,
             .entry_count = self.combat_log.entryCount(),
         } });
 
@@ -138,9 +146,11 @@ pub const ChromeView = struct {
     }
 
     fn isInSidebar(mouse: Point) bool {
+        // Mouse coords are viewport-adjusted (y offset by -header_h)
+        // So sidebar_y (100 in screen space) becomes 0 in mouse space
         return mouse.x >= sidebar_rect.x and
             mouse.x <= sidebar_rect.x + sidebar_rect.w and
-            mouse.y >= sidebar_rect.y and
-            mouse.y <= sidebar_rect.y + sidebar_rect.h;
+            mouse.y >= 0 and
+            mouse.y <= sidebar_rect.h;
     }
 };

@@ -13,8 +13,8 @@ const CardRenderer = card_renderer.CardRenderer;
 /// Cached texture for combat log rendering
 const LogTextureCache = struct {
     texture: s.render.Texture,
-    scroll_offset: usize,
     entry_count: usize,
+    content_height: i32, // actual rendered height for scroll clamping
 };
 
 const normal_font_path = "assets/font/Caudex-Bold.ttf";
@@ -318,67 +318,81 @@ pub const UX = struct {
         try self.renderer.renderTexture(tex, null, dst);
     }
 
-    const line_height: i32 = 18;
     const log_padding: i32 = 10;
 
     fn renderLogPane(self: *UX, pane: view.LogPane) !void {
-        // Check cache validity
+        const pane_h: i32 = @intFromFloat(pane.rect.h);
+
+        // Check cache validity (rebuild when entry count changes)
         if (self.log_cache) |cache| {
-            if (cache.scroll_offset == pane.scroll_offset and
-                cache.entry_count == pane.entry_count)
-            {
-                // Cache valid - render cached texture
-                const tex_w, const tex_h = try cache.texture.getSize();
-                const dst = rect.FRect{
-                    .x = pane.rect.x,
-                    .y = pane.rect.y,
-                    .w = tex_w,
-                    .h = tex_h,
-                };
-                try self.renderer.renderTexture(cache.texture, null, dst);
-                return;
+            if (cache.entry_count != pane.entry_count) {
+                cache.texture.deinit();
+                self.log_cache = null;
             }
-            // Cache invalid - free old texture
-            cache.texture.deinit();
-            self.log_cache = null;
         }
 
-        // Rebuild cache
-        const new_texture = try self.buildLogTexture(pane);
-        self.log_cache = .{
-            .texture = new_texture,
-            .scroll_offset = pane.scroll_offset,
-            .entry_count = pane.entry_count,
+        // Build cache if needed
+        if (self.log_cache == null) {
+            const result = try self.buildLogTexture(pane);
+            self.log_cache = .{
+                .texture = result.texture,
+                .entry_count = pane.entry_count,
+                .content_height = result.content_height,
+            };
+        }
+
+        const cache = self.log_cache.?;
+
+        // Clamp scroll to valid range
+        const max_scroll = @max(0, cache.content_height - pane_h);
+        const scroll_y = std.math.clamp(pane.scroll_y, 0, max_scroll);
+
+        // Source rect: which part of the full texture to show
+        // scroll_y=0 shows bottom (most recent), higher values show older
+        const visible_h = @min(pane.rect.h, @as(f32, @floatFromInt(cache.content_height)));
+        const src_y = cache.content_height - @as(i32, @intFromFloat(visible_h)) - scroll_y;
+        const src = rect.FRect{
+            .x = 0,
+            .y = @floatFromInt(@max(0, src_y)),
+            .w = pane.rect.w,
+            .h = visible_h,
         };
 
-        // Render the new texture
-        const tex_w, const tex_h = try new_texture.getSize();
+        // When content < pane, anchor to bottom of pane (most recent at bottom)
+        const dst_y = pane.rect.y + (pane.rect.h - visible_h);
         const dst = rect.FRect{
             .x = pane.rect.x,
-            .y = pane.rect.y,
-            .w = tex_w,
-            .h = tex_h,
+            .y = dst_y,
+            .w = pane.rect.w,
+            .h = visible_h,
         };
-        try self.renderer.renderTexture(new_texture, null, dst);
+
+        try self.renderer.renderTexture(cache.texture, src, dst);
     }
 
-    fn buildLogTexture(self: *UX, pane: view.LogPane) !s.render.Texture {
+    const BuildResult = struct {
+        texture: s.render.Texture,
+        content_height: i32,
+    };
+
+    fn buildLogTexture(self: *UX, pane: view.LogPane) !BuildResult {
         const pane_w: usize = @intFromFloat(pane.rect.w);
         const pane_h: usize = @intFromFloat(pane.rect.h);
-
-        // Create target surface with alpha
-        var log_surface = try s.surface.Surface.init(pane_w, pane_h, .packed_argb_8_8_8_8);
-        errdefer log_surface.deinit();
-
-        // Clear to transparent (Pixel is just a u32)
-        try log_surface.fillRect(null, .{ .value = 0 });
-
-        var y: i32 = log_padding;
         const max_width: i32 = @intCast(pane_w - @as(usize, @intCast(log_padding * 2)));
 
-        for (pane.entries) |entry| {
-            var x: i32 = log_padding;
+        // Estimate max height (generous: 3 lines per entry avg)
+        const estimated_height = @max(pane_h, pane.entries.len * 54 + 100);
 
+        // Create target surface with alpha
+        var log_surface = try s.surface.Surface.init(pane_w, estimated_height, .packed_argb_8_8_8_8);
+        errdefer log_surface.deinit();
+
+        // Clear to transparent
+        try log_surface.fillRect(null, .{ .value = 0 });
+
+        // Render all entries, track actual height
+        var y: i32 = log_padding;
+        for (pane.entries) |entry| {
             for (entry.spans) |span| {
                 if (span.text.len == 0) continue;
 
@@ -389,36 +403,26 @@ pub const UX = struct {
                     .a = span.color.a,
                 };
 
-                const text_surface = self.font_small.renderTextSolid(span.text, color) catch continue;
-                // const text_surface = try self.font_small.renderTextLcd(span.text, color, s.ttf.Color{ .r = 0, .g = 0, .b = 0, .a = 255 });
-
+                const text_surface = self.font_small.renderTextSolidWrapped(span.text, color, max_width) catch continue;
                 defer text_surface.deinit();
 
                 const text_w: i32 = @intCast(text_surface.getWidth());
                 const text_h: i32 = @intCast(text_surface.getHeight());
 
-                // Wrap if needed
-                if (x > log_padding and x + text_w > max_width) {
-                    x = log_padding;
-                    y += line_height;
-                }
-
-                // Blit span to log surface
                 const src_rect = s.rect.IRect{ .x = 0, .y = 0, .w = text_w, .h = text_h };
-                const dst_point = s.rect.IPoint{ .x = x, .y = y };
+                const dst_point = s.rect.IPoint{ .x = log_padding, .y = y };
                 try text_surface.blit(src_rect, log_surface, dst_point);
 
-                x += text_w;
+                y += text_h;
             }
-
-            y += line_height;
-
-            // Stop if we've exceeded the pane height
-            if (y > @as(i32, @intCast(pane_h))) break;
         }
 
-        // Convert surface to texture
-        return try self.renderer.createTextureFromSurface(log_surface);
+        const content_height = y + log_padding;
+
+        return .{
+            .texture = try self.renderer.createTextureFromSurface(log_surface),
+            .content_height = content_height,
+        };
     }
 };
 
