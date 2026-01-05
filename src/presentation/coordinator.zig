@@ -16,7 +16,7 @@ const graphics = @import("graphics.zig");
 const view = @import("views/view.zig");
 const view_state = @import("view_state.zig");
 const splash = @import("views/splash.zig");
-const combat = @import("views/combat.zig");
+const combat_view = @import("views/combat_view.zig");
 const summary = @import("views/summary.zig");
 const chrome = @import("views/chrome.zig");
 const combat_log = @import("combat_log.zig");
@@ -79,7 +79,7 @@ pub const Coordinator = struct {
             .tick_resolution,
             .player_reaction,
             .animating,
-            => View{ .combat = combat.CombatView.init(self.world, self.frameAlloc()) },
+            => View{ .combat = combat_view.CombatView.init(self.world, self.frameAlloc()) },
         };
     }
 

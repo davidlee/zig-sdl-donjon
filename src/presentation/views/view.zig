@@ -12,7 +12,7 @@ const combat_log = @import("../combat_log.zig");
 
 const splash = @import("splash.zig");
 const menu = @import("menu.zig");
-const combat = @import("combat.zig");
+const combat_view = @import("combat_view.zig");
 const summary = @import("summary.zig");
 pub const card_view = @import("card_view.zig");
 pub const vs = @import("../view_state.zig");
@@ -102,7 +102,7 @@ pub const InputResult = struct {
 pub const View = union(enum) {
     title: splash.TitleScreenView,
     menu: menu.MenuView,
-    combat: combat.CombatView,
+    combat: combat_view.CombatView,
     summary: summary.SummaryView,
 
     pub fn handleInput(self: *View, event: s.events.Event, world: *const World, state: ViewState) InputResult {
