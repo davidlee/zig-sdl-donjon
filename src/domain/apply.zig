@@ -180,17 +180,20 @@ pub const CommandHandler = struct {
         );
     }
 
+    /// Handles playing a card EITHER from hand, or from player.always_known
     pub fn playActionCard(self: *CommandHandler, id: entity.ID) !void {
         const player = self.world.player;
         const game_state = self.world.fsm.currentState();
         const cs = player.combat_state orelse return CommandError.BadInvariant;
 
+        // Look up card instance
+        const card = self.world.card_registry.get(id) orelse return CommandError.BadInvariant;
+
+        if (player.poolContains(id)) {} else
+
         // Check card is in hand
         if (!cs.isInZone(id, .hand))
             return CommandError.CardNotInHand;
-
-        // Look up card instance
-        const card = self.world.card_registry.get(id) orelse return CommandError.BadInvariant;
 
         if (game_state != .player_card_selection)
             return CommandError.InvalidGameState;
@@ -676,10 +679,16 @@ pub fn playValidCardReservingCosts(evs: *EventSystem, actor: *Agent, card: *Inst
 
     const actor_meta: events.AgentMeta = .{ .id = actor.id, .player = is_player };
 
-    try cs.moveCard(card.id, .hand, .in_play);
-    try evs.push(Event{
-        .card_moved = .{ .instance = card.id, .from = .hand, .to = .in_play, .actor = actor_meta },
-    });
+    if (actor.inAlwaysAvailable(card.id)) {
+        try cs.addToInPlayFrom(card.id, .always_available);
+    } else if (actor.inSpellsKnown(card.id)) {
+        try cs.addToInPlayFrom(card.id, .spells_known);
+    } else {
+        try cs.moveCard(card.id, .hand, .in_play);
+        try evs.push(Event{
+            .card_moved = .{ .instance = card.id, .from = .hand, .to = .in_play, .actor = actor_meta },
+        });
+    }
 
     // sink an event for the card being played
     try evs.push(Event{

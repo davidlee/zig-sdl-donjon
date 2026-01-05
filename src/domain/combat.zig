@@ -111,8 +111,14 @@ pub const CombatState = struct {
     discard: std.ArrayList(entity.ID),
     in_play: std.ArrayList(entity.ID),
     exhaust: std.ArrayList(entity.ID),
+    // Source tracking: where did cards in in_play come from?
+    // Needed for resolution (return to pool vs discard)
+    in_play_sources: std.AutoHashMap(entity.ID, CardSource),
+    // Cooldowns for pool-based cards (techniques, maybe spells)
+    cooldowns: std.AutoHashMap(entity.ID, u8),
 
     pub const ZoneError = error{NotFound};
+    pub const CardSource = enum { hand, always_available, spells_known, inventory, environment };
 
     pub fn init(alloc: std.mem.Allocator) !CombatState {
         return .{
@@ -122,6 +128,8 @@ pub const CombatState = struct {
             .discard = try std.ArrayList(entity.ID).initCapacity(alloc, 20),
             .in_play = try std.ArrayList(entity.ID).initCapacity(alloc, 8),
             .exhaust = try std.ArrayList(entity.ID).initCapacity(alloc, 5),
+            .in_play_sources = std.AutoHashMap(entity.ID, CardSource).init(alloc),
+            .cooldowns = std.AutoHashMap(entity.ID, u8).init(alloc),
         };
     }
 
@@ -131,6 +139,8 @@ pub const CombatState = struct {
         self.discard.deinit(self.alloc);
         self.in_play.deinit(self.alloc);
         self.exhaust.deinit(self.alloc);
+        self.in_play_sources.deinit();
+        self.cooldowns.deinit();
     }
 
     pub fn clear(self: *CombatState) void {
@@ -139,6 +149,8 @@ pub const CombatState = struct {
         self.discard.clearRetainingCapacity();
         self.in_play.clearRetainingCapacity();
         self.exhaust.clearRetainingCapacity();
+        self.in_play_sources.clearRetainingCapacity();
+        self.cooldowns.clearRetainingCapacity();
     }
 
     /// Get the ArrayList for a zone.
@@ -205,6 +217,39 @@ pub const CombatState = struct {
         for (deck_cards) |card_id| {
             try self.discard.append(self.alloc, card_id);
         }
+    }
+
+    /// Add card to in_play from a non-CombatZone source
+    pub fn addToInPlayFrom(self: *CombatState, id: entity.ID, source: CardSource) !void {
+        try self.in_play.append(self.alloc, id);
+        try self.in_play_sources.put(id, source);
+    }
+
+    /// Is card available? (in pool AND not on cooldown AND not in in_play)
+    pub fn isPoolCardAvailable(self: *const CombatState, agent: *const Agent, id: entity.ID) bool {
+        if (self.isInZone(id, .in_play)) return false;
+        if (self.cooldowns.get(id)) |cd| if (cd > 0) return false;
+        return agent.poolContains(id);
+    }
+
+    /// Decrement all cooldowns by 1 (called at turn start)
+    pub fn tickCooldowns(self: *CombatState) void {
+        var iter = self.cooldowns.iterator();
+        while (iter.next()) |entry| {
+            if (entry.value_ptr.* > 0) entry.value_ptr.* -= 1;
+        }
+    }
+
+    /// Remove card from in_play and clear its source tracking
+    pub fn removeFromInPlay(self: *CombatState, id: entity.ID) !void {
+        const idx = findIndex(&self.in_play, id) orelse return ZoneError.NotFound;
+        _ = self.in_play.orderedRemove(idx);
+        _ = self.in_play_sources.remove(id);
+    }
+
+    /// Set cooldown for a card (turns until available again)
+    pub fn setCooldown(self: *CombatState, id: entity.ID, turns: u8) !void {
+        try self.cooldowns.put(self.alloc, id, turns);
     }
 };
 
@@ -426,6 +471,24 @@ pub const Agent = struct {
 
     fn canPlayCardInPhase(self: *Agent, card: *cards.Instance, phase: world.GameState) bool {
         return apply.validateCardSelection(self, card, phase) catch false;
+    }
+
+    // Helpers for managing card arraylists
+    //
+    pub fn poolContains(self: *const Agent, id: entity.ID) bool {
+        for (self.always_available.items) |i| if (i.eql(id)) return true;
+        for (self.spells_known.items) |i| if (i.eql(id)) return true;
+        return false;
+    }
+
+    pub fn inAlwaysAvailable(self: *Agent, id: entity.ID) bool {
+        for (self.always_available.items) |i| if (i.eql(id)) return true;
+        return false;
+    }
+
+    pub fn inSpellsKnown(self: *Agent, id: entity.ID) bool {
+        for (self.always_available.items) |i| if (i.eql(id)) return true;
+        return false;
     }
 
     /// Initialize combat state from deck_cards (called at combat start).

@@ -480,8 +480,13 @@ pub const CombatView = struct {
                 if (cs.drag) |_| {
                     return .{};
                 } else {
-                    // check for hover on hand cards
-                    if (self.handZone(self.arena).hitTest(vs)) |x| {
+                    // check for hover on always known cards
+                    if (self.alwaysZone(self.arena).hitTest(vs)) |x| {
+                        var new_cs = cs;
+                        new_cs.hover = .{ .card = x };
+                        return .{ .vs = vs.withCombat(new_cs) };
+                        // hover for player cards in hand zone
+                    } else if (self.handZone(self.arena).hitTest(vs)) |x| {
                         var new_cs = cs;
                         new_cs.hover = .{ .card = x };
                         return .{ .vs = vs.withCombat(new_cs) };
@@ -515,7 +520,9 @@ pub const CombatView = struct {
     }
 
     fn handleClick(self: *CombatView, vs: ViewState) InputResult {
-        if (self.handZone(self.arena).hitTest(vs)) |id| {
+        if (self.alwaysZone(self.arena).hitTest(vs)) |id| {
+            return .{ .command = .{ .play_card = id } };
+        } else if (self.handZone(self.arena).hitTest(vs)) |id| {
             return .{ .command = .{ .play_card = id } };
         } else if (self.inPlayZone(self.arena).hitTest(vs)) |id| {
             return .{ .command = .{ .cancel_card = id } };

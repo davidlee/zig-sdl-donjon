@@ -34,7 +34,7 @@ pub const Event = union(enum) {
     entity_died: u32, // Payload: just the ID
     mob_died: entity.ID,
 
-    played_action_card: struct { instance: entity.ID, template: u64, actor: AgentMeta }, // FIXME needs more - agent id and type(player / ai)
+    played_action_card: struct { instance: entity.ID, template: u64, actor: AgentMeta },
     card_moved: struct { instance: entity.ID, from: Zone, to: Zone, actor: AgentMeta },
 
     game_state_transitioned_to: world.GameState,

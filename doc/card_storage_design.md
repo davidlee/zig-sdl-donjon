@@ -47,10 +47,11 @@ World
 
 ### What's Stubbed
 
-1. **DrawStyle.always_available** - falls back to shuffled_deck behavior
+1. **DrawStyle.always_available** - falls back to shuffled_deck behavior (design complete, implementation pending)
 2. **DrawStyle.scripted** - falls back to shuffled_deck behavior
-3. **Cooldown tracking** - TechniquePool removed, cooldowns not reimplemented
-4. **EquipmentSlots** - weapons/armor use existing Agent.weapons/armour systems
+3. **Cooldown tracking** - designed in "CardSource Tracking and Cooldowns" section, not yet implemented
+4. **CardSource tracking** - designed, not yet implemented
+5. **EquipmentSlots** - weapons/armor use existing Agent.weapons/armour systems
 
 ## Card Registry
 
@@ -438,6 +439,133 @@ pub fn cleanupCombatState(world: *World, agent: *Agent, won: bool) !void {
 
 **Key insight:** `deck_cards` IDs are *copied* into `combat_state.draw` at start. The agent always owns them. Combat zones are transient views. When combat ends, the transient state is discarded and `deck_cards` remains intact.
 
+## CardSource Tracking and Cooldowns
+
+Cards in `in_play` can originate from different sources with different post-resolution behaviors. CombatState tracks this transient state.
+
+### Design Decision
+
+**Cooldowns and source tracking live on CombatState**, not Agent containers or Instance fields, because:
+1. This state is combat-transient (reset each encounter)
+2. Agent containers are static during combat (what you "know" doesn't change)
+3. Instance fields persist across combats - wrong lifecycle
+4. CombatState already owns transient per-card state (zone membership)
+
+### CardSource Enum
+
+```zig
+// combat.zig
+pub const CardSource = enum {
+    hand,              // From CombatState.hand (deck cards)
+    always_available,  // From Agent.always_available (techniques)
+    spells_known,      // From Agent.spells_known
+    inventory,         // From Agent.inventory (consumables)
+    environment,       // From Encounter.environment (picked up)
+};
+```
+
+### CombatState Additions
+
+```zig
+pub const CombatState = struct {
+    // ... existing zones (draw, hand, in_play, discard, exhaust) ...
+
+    // Source tracking: where did cards in in_play originate?
+    in_play_sources: std.AutoHashMap(entity.ID, CardSource),
+
+    // Cooldowns for pool-based cards (turns until available again)
+    cooldowns: std.AutoHashMap(entity.ID, u8),
+
+    /// Add card to in_play from a non-zone source (always_available, inventory, etc.)
+    /// For zone sources, use moveCard(.hand, .in_play) instead.
+    pub fn addToInPlayFrom(self: *CombatState, id: entity.ID, source: CardSource) !void {
+        try self.in_play.append(self.alloc, id);
+        try self.in_play_sources.put(self.alloc, id, source);
+    }
+
+    /// Check if a pool card is available (not on cooldown, not currently in in_play)
+    pub fn isPoolCardAvailable(self: *const CombatState, id: entity.ID) bool {
+        if (self.isInZone(id, .in_play)) return false;
+        if (self.cooldowns.get(id)) |cd| if (cd > 0) return false;
+        return true;
+    }
+
+    /// Decrement all cooldowns by 1 (called at turn start)
+    pub fn tickCooldowns(self: *CombatState) void {
+        var iter = self.cooldowns.iterator();
+        while (iter.next()) |entry| {
+            if (entry.value_ptr.* > 0) entry.value_ptr.* -= 1;
+        }
+    }
+};
+```
+
+### Agent Helper
+
+```zig
+// combat.zig - Agent
+pub fn poolContains(self: *const Agent, id: entity.ID) bool {
+    for (self.always_available.items) |i| if (i.eql(id)) return true;
+    for (self.spells_known.items) |i| if (i.eql(id)) return true;
+    return false;
+}
+```
+
+### Resolution Behavior by Source
+
+| Source | After Resolution | Cooldown |
+|--------|------------------|----------|
+| hand | → discard (or exhaust) | No |
+| always_available | stays in pool, removed from in_play | Yes (template-defined) |
+| spells_known | stays in pool, removed from in_play | Maybe (mana-based?) |
+| inventory | consumed (destroy instance) or → inventory | No |
+| environment | → agent inventory (picked up) | No |
+
+### Playing a Card (apply.zig)
+
+```zig
+pub fn playCardFromSource(
+    cs: *CombatState,
+    card_id: entity.ID,
+    source: CardSource,
+) !void {
+    switch (source) {
+        .hand => try cs.moveCard(card_id, .hand, .in_play),
+        else => try cs.addToInPlayFrom(card_id, source),
+    }
+}
+```
+
+### Post-Resolution Cleanup (tick.zig)
+
+```zig
+pub fn returnCardAfterResolution(
+    cs: *CombatState,
+    card_id: entity.ID,
+    template: *const Template,
+) !void {
+    const source = cs.in_play_sources.get(card_id) orelse .hand;
+
+    // Remove from in_play
+    try cs.removeFromInPlay(card_id);
+    _ = cs.in_play_sources.remove(card_id);
+
+    switch (source) {
+        .hand => try cs.discard.append(cs.alloc, card_id),
+        .always_available => {
+            // Card stays in Agent.always_available (never left)
+            // Set cooldown if template specifies one
+            if (template.cooldown) |cd| {
+                try cs.cooldowns.put(cs.alloc, card_id, cd);
+            }
+        },
+        .spells_known => {}, // stays in pool, mana already spent
+        .inventory => {},    // consumable handling TBD
+        .environment => {},  // pickup handling TBD
+    }
+}
+```
+
 ## Migration Status
 
 ### Complete (Phases 1-7)
@@ -453,7 +581,7 @@ pub fn cleanupCombatState(world: *World, agent: *Agent, won: bool) !void {
 ### Remaining
 
 - **Phase 8:** Wire `cleanupCombatState()` when combat termination is implemented
-- **Cooldowns:** Reimplement for `always_available` draw style (was in TechniquePool)
+- **Phase 9:** Implement CardSource tracking and cooldowns (see "CardSource Tracking and Cooldowns" section)
 - **Scripted AI:** Implement behaviour selection for `scripted` draw style
 
 ## Resolved Design Decisions
@@ -468,15 +596,13 @@ pub fn cleanupCombatState(world: *World, agent: *Agent, won: bool) !void {
 
 5. **Mob card behavior**: All agents use unified `CombatState` + `CardRegistry`. Behavior differences expressed via `DrawStyle` enum, not separate data structures. AI director populates `in_play` appropriately for each style.
 
+6. **Cooldown and source tracking**: Lives on `CombatState`, not Agent containers or Instance fields. Combat-transient state: `in_play_sources` tracks where cards came from, `cooldowns` tracks turns until available. See "CardSource Tracking and Cooldowns" section.
+
 ## Open Questions
 
-1. **Cooldown storage**: For `always_available` draw style, where should cooldowns live? Options:
-   - `CombatState.cooldowns: AutoHashMap(cards.ID, u8)`
-   - Per-instance field on `cards.Instance`
+1. **Spell mana**: How does mana interact with `spells_known`? Separate resource like Focus? (Not yet designed)
 
-2. **Spell mana**: How does mana interact with `spells_known`? Separate resource like Focus? (Not yet designed)
-
-3. **Equipment as cards**: Current weapons/armor use dedicated systems. If items become cards, need to track card IDs corresponding to equipped instances.
+2. **Equipment as cards**: Current weapons/armor use dedicated systems. If items become cards, need to track card IDs corresponding to equipped instances.
 
 ## Key Files
 
