@@ -86,7 +86,7 @@ pub const SimpleDeckDirector = struct {
             const card_id = cs.hand.items[hand_index];
             const card = w.card_registry.get(card_id) orelse continue;
             if (apply.isCardSelectionValid(agent, card)) {
-                try apply.playValidCardReservingCosts(&w.events, agent, card);
+                try apply.playValidCardReservingCosts(&w.events, agent, card, &w.card_registry);
                 try w.events.push(e.Event{ .played_action_card = .{
                     .instance = card.id,
                     .template = card.template.id,

@@ -112,13 +112,21 @@ pub const CombatState = struct {
     in_play: std.ArrayList(entity.ID),
     exhaust: std.ArrayList(entity.ID),
     // Source tracking: where did cards in in_play come from?
-    // Needed for resolution (return to pool vs discard)
-    in_play_sources: std.AutoHashMap(entity.ID, CardSource),
-    // Cooldowns for pool-based cards (techniques, maybe spells)
+    // For pool cards, also tracks master_id for cooldown application.
+    in_play_sources: std.AutoHashMap(entity.ID, InPlayInfo),
+    // Cooldowns for pool-based cards - keyed by MASTER id (techniques, maybe spells)
     cooldowns: std.AutoHashMap(entity.ID, u8),
 
     pub const ZoneError = error{NotFound};
     pub const CardSource = enum { hand, always_available, spells_known, inventory, environment };
+
+    /// Tracks where an in_play card came from and its master (for cloned pool cards).
+    pub const InPlayInfo = struct {
+        source: CardSource,
+        /// For pool cards (always_available, spells_known): the master instance ID.
+        /// Cooldowns are applied to this ID. Null for hand/inventory/environment cards.
+        master_id: ?entity.ID = null,
+    };
 
     pub fn init(alloc: std.mem.Allocator) !CombatState {
         return .{
@@ -128,7 +136,7 @@ pub const CombatState = struct {
             .discard = try std.ArrayList(entity.ID).initCapacity(alloc, 20),
             .in_play = try std.ArrayList(entity.ID).initCapacity(alloc, 8),
             .exhaust = try std.ArrayList(entity.ID).initCapacity(alloc, 5),
-            .in_play_sources = std.AutoHashMap(entity.ID, CardSource).init(alloc),
+            .in_play_sources = std.AutoHashMap(entity.ID, InPlayInfo).init(alloc),
             .cooldowns = std.AutoHashMap(entity.ID, u8).init(alloc),
         };
     }
@@ -219,17 +227,46 @@ pub const CombatState = struct {
         }
     }
 
-    /// Add card to in_play from a non-CombatZone source
-    pub fn addToInPlayFrom(self: *CombatState, id: entity.ID, source: CardSource) !void {
-        try self.in_play.append(self.alloc, id);
-        try self.in_play_sources.put(id, source);
+    /// Add card to in_play from a non-CombatZone source (always_available, spells_known, etc.)
+    /// For pool sources, creates an ephemeral clone so the master stays in the pool.
+    /// Returns the ID of the card now in in_play (clone ID for pool sources, original for others).
+    pub fn addToInPlayFrom(
+        self: *CombatState,
+        master_id: entity.ID,
+        source: CardSource,
+        registry: *world.CardRegistry,
+    ) !entity.ID {
+        const is_pool_source = switch (source) {
+            .always_available, .spells_known => true,
+            .hand, .inventory, .environment => false,
+        };
+
+        if (is_pool_source) {
+            // Clone the master - ephemeral instance gets fresh ID
+            const clone = try registry.clone(master_id);
+            try self.in_play.append(self.alloc, clone.id);
+            try self.in_play_sources.put(clone.id, .{
+                .source = source,
+                .master_id = master_id,
+            });
+            return clone.id;
+        } else {
+            // Non-pool sources: use the original ID directly
+            try self.in_play.append(self.alloc, master_id);
+            try self.in_play_sources.put(master_id, .{
+                .source = source,
+                .master_id = null,
+            });
+            return master_id;
+        }
     }
 
-    /// Is card available? (in pool AND not on cooldown AND not in in_play)
-    pub fn isPoolCardAvailable(self: *const CombatState, agent: *const Agent, id: entity.ID) bool {
-        if (self.isInZone(id, .in_play)) return false;
-        if (self.cooldowns.get(id)) |cd| if (cd > 0) return false;
-        return agent.poolContains(id);
+    /// Is pool card available? (not on cooldown)
+    /// Cards without cooldown can be played unlimited times per turn.
+    /// Cards with cooldown have it set immediately on play, blocking further uses.
+    pub fn isPoolCardAvailable(self: *const CombatState, agent: *const Agent, master_id: entity.ID) bool {
+        if (self.cooldowns.get(master_id)) |cd| if (cd > 0) return false;
+        return agent.poolContains(master_id);
     }
 
     /// Decrement all cooldowns by 1 (called at turn start)
@@ -240,16 +277,33 @@ pub const CombatState = struct {
         }
     }
 
-    /// Remove card from in_play and clear its source tracking
-    pub fn removeFromInPlay(self: *CombatState, id: entity.ID) !void {
+    /// Remove card from in_play, destroy ephemeral clones, return master_id for cooldown.
+    /// Returns the master_id if this was a pool card (for cooldown application), null otherwise.
+    pub fn removeFromInPlay(
+        self: *CombatState,
+        id: entity.ID,
+        registry: *world.CardRegistry,
+    ) !?entity.ID {
         const idx = findIndex(&self.in_play, id) orelse return ZoneError.NotFound;
         _ = self.in_play.orderedRemove(idx);
+
+        const info = self.in_play_sources.get(id);
         _ = self.in_play_sources.remove(id);
+
+        if (info) |i| {
+            if (i.master_id) |master_id| {
+                // This was a clone - destroy the ephemeral instance
+                registry.destroy(id);
+                return master_id;
+            }
+        }
+
+        return null;
     }
 
-    /// Set cooldown for a card (turns until available again)
-    pub fn setCooldown(self: *CombatState, id: entity.ID, turns: u8) !void {
-        try self.cooldowns.put(self.alloc, id, turns);
+    /// Set cooldown for a pool card's master (turns until available again)
+    pub fn setCooldown(self: *CombatState, master_id: entity.ID, turns: u8) !void {
+        try self.cooldowns.put(master_id, turns);
     }
 };
 
@@ -1265,4 +1319,142 @@ test "isIncapacitated true when comatose" {
     });
 
     try testing.expect(agent.isIncapacitated());
+}
+
+// ============================================================================
+// Pool Card (always_available) Tests
+// ============================================================================
+
+test "addToInPlayFrom clones pool cards" {
+    // Playing a card from always_available should create a new instance (clone)
+    // with a different ID than the master, while master stays in pool.
+    const alloc = testing.allocator;
+    const card_list = @import("card_list.zig");
+
+    var registry = try world.CardRegistry.init(alloc);
+    defer registry.deinit();
+
+    var cs = try CombatState.init(alloc);
+    defer cs.deinit();
+
+    // Create a master card in always_available
+    const master = try registry.create(card_list.BaseTechniques[0]);
+    const master_id = master.id;
+
+    // Play it from always_available source
+    const in_play_id = try cs.addToInPlayFrom(master_id, .always_available, &registry);
+
+    // Clone should have different ID than master
+    try testing.expect(!in_play_id.eql(master_id));
+
+    // Master should still exist in registry
+    try testing.expect(registry.get(master_id) != null);
+
+    // Clone should exist in registry
+    try testing.expect(registry.get(in_play_id) != null);
+
+    // Clone should be in in_play zone
+    try testing.expect(cs.isInZone(in_play_id, .in_play));
+}
+
+test "addToInPlayFrom tracks master_id for pool cards" {
+    // The in_play_sources entry should have master_id set to the original card
+    const alloc = testing.allocator;
+    const card_list = @import("card_list.zig");
+
+    var registry = try world.CardRegistry.init(alloc);
+    defer registry.deinit();
+
+    var cs = try CombatState.init(alloc);
+    defer cs.deinit();
+
+    const master = try registry.create(card_list.BaseTechniques[0]);
+    const master_id = master.id;
+
+    const in_play_id = try cs.addToInPlayFrom(master_id, .always_available, &registry);
+
+    // in_play_sources should track the clone with master_id pointing to original
+    const info = cs.in_play_sources.get(in_play_id);
+    try testing.expect(info != null);
+    try testing.expectEqual(CombatState.CardSource.always_available, info.?.source);
+    try testing.expect(info.?.master_id != null);
+    try testing.expect(info.?.master_id.?.eql(master_id));
+}
+
+test "removeFromInPlay destroys pool card clones" {
+    // Removing a pool card clone should destroy it via registry,
+    // and return the master_id for cooldown application.
+    const alloc = testing.allocator;
+    const card_list = @import("card_list.zig");
+
+    var registry = try world.CardRegistry.init(alloc);
+    defer registry.deinit();
+
+    var cs = try CombatState.init(alloc);
+    defer cs.deinit();
+
+    const master = try registry.create(card_list.BaseTechniques[0]);
+    const master_id = master.id;
+
+    const clone_id = try cs.addToInPlayFrom(master_id, .always_available, &registry);
+
+    // Remove the clone from in_play
+    const returned_master_id = try cs.removeFromInPlay(clone_id, &registry);
+
+    // Should return the master_id for cooldown tracking
+    try testing.expect(returned_master_id != null);
+    try testing.expect(returned_master_id.?.eql(master_id));
+
+    // Clone should be destroyed (not in registry)
+    try testing.expect(registry.get(clone_id) == null);
+
+    // Master should still exist
+    try testing.expect(registry.get(master_id) != null);
+
+    // Clone should not be in in_play zone
+    try testing.expect(!cs.isInZone(clone_id, .in_play));
+
+    // Source tracking should be cleaned up
+    try testing.expect(cs.in_play_sources.get(clone_id) == null);
+}
+
+test "isPoolCardAvailable respects cooldowns" {
+    // A card with an active cooldown should not be available.
+    // A card with no cooldown or expired cooldown should be available.
+    // TODO: Implement test
+    return error.SkipZigTest;
+}
+
+test "tickCooldowns decrements all cooldowns" {
+    // After tickCooldowns, all cooldown values should decrease by 1.
+    // Cooldowns at 0 should remain at 0.
+    // TODO: Implement test
+    return error.SkipZigTest;
+}
+
+test "pool cards without cooldown can be played multiple times" {
+    // A card with cooldown=null in always_available should be playable
+    // again immediately after the previous clone is removed.
+    // TODO: Implement test
+    return error.SkipZigTest;
+}
+
+test "pool cards with cooldown block replay until expired" {
+    // A card with cooldown=1 should not be playable again until
+    // tickCooldowns brings it to 0.
+    // TODO: Implement test
+    return error.SkipZigTest;
+}
+
+test "cancel pool card destroys clone and clears cooldown" {
+    // Cancelling a pool card should destroy the clone, not move to hand,
+    // and should refund any cooldown that was set.
+    // TODO: Implement test
+    return error.SkipZigTest;
+}
+
+test "cancel hand card moves back to hand" {
+    // Cancelling a hand card should move it back to hand, not destroy it.
+    // TODO: Implement test
+    return error.SkipZigTest;
 }

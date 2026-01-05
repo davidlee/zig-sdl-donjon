@@ -167,10 +167,32 @@ pub const CommandHandler = struct {
 
         const card = self.world.card_registry.get(id) orelse return CommandError.BadInvariant;
 
-        cs.moveCard(id, .in_play, .hand) catch return CommandError.CardNotInPlay;
-        try self.sink(Event{
-            .card_moved = .{ .instance = card.id, .from = .in_play, .to = .hand, .actor = .{ .id = player.id, .player = true } },
-        });
+        // Check if this is a pool card clone (has master_id in in_play_sources)
+        const info = cs.in_play_sources.get(id);
+        if (info) |i| {
+            if (i.master_id) |master_id| {
+                // Pool card clone - destroy it and clear cooldown
+                _ = try cs.removeFromInPlay(id, &self.world.card_registry);
+                // Refund cooldown on cancel
+                _ = cs.cooldowns.remove(master_id);
+                // Event uses master_id since clone is destroyed
+                try self.sink(Event{
+                    .card_cancelled = .{ .instance = master_id, .actor = .{ .id = player.id, .player = true } },
+                });
+            } else {
+                // Non-pool card - move back to hand
+                cs.moveCard(id, .in_play, .hand) catch return CommandError.CardNotInPlay;
+                try self.sink(Event{
+                    .card_moved = .{ .instance = card.id, .from = .in_play, .to = .hand, .actor = .{ .id = player.id, .player = true } },
+                });
+            }
+        } else {
+            // No source info (shouldn't happen) - try move to hand
+            cs.moveCard(id, .in_play, .hand) catch return CommandError.CardNotInPlay;
+            try self.sink(Event{
+                .card_moved = .{ .instance = card.id, .from = .in_play, .to = .hand, .actor = .{ .id = player.id, .player = true } },
+            });
+        }
 
         player.stamina.uncommit(card.template.cost.stamina);
         player.time_available += card.template.cost.time;
@@ -199,7 +221,7 @@ pub const CommandHandler = struct {
             return CommandError.InvalidGameState;
 
         if (try validateCardSelection(player, card, game_state)) {
-            try playValidCardReservingCosts(&self.world.events, player, card);
+            try playValidCardReservingCosts(&self.world.events, player, card, &self.world.card_registry);
         } else {
             return CommandError.CommandInvalid;
         }
@@ -281,7 +303,7 @@ pub const CommandHandler = struct {
         }
 
         // Play card (move to in_play, commit stamina)
-        try playValidCardReservingCosts(&self.world.events, player, card);
+        try playValidCardReservingCosts(&self.world.events, player, card, &self.world.card_registry);
 
         // Add to plays with added_in_commit flag
         const enc = &(self.world.encounter orelse return CommandError.BadInvariant);
@@ -368,7 +390,7 @@ pub const CommandHandler = struct {
         };
 
         // Move card to in_play, commit stamina
-        try playValidCardReservingCosts(&self.world.events, player, stack_card);
+        try playValidCardReservingCosts(&self.world.events, player, stack_card, &self.world.card_registry);
 
         // Mark that we've paid for stacking this turn
         if (needs_focus) {
@@ -670,7 +692,13 @@ fn isInPlayableSource(actor: *const Agent, cs: *const combat.CombatState, card_i
 }
 
 /// Doesn't perform validation. Just moves card, reserves costs, emits events.
-pub fn playValidCardReservingCosts(evs: *EventSystem, actor: *Agent, card: *Instance) !void {
+/// For pool cards (always_available, spells_known), creates ephemeral clone and sets cooldown.
+pub fn playValidCardReservingCosts(
+    evs: *EventSystem,
+    actor: *Agent,
+    card: *Instance,
+    registry: *w.CardRegistry,
+) !void {
     const cs = actor.combat_state orelse return error.InvalidGameState;
     const is_player = switch (actor.director) {
         .player => true,
@@ -679,10 +707,20 @@ pub fn playValidCardReservingCosts(evs: *EventSystem, actor: *Agent, card: *Inst
 
     const actor_meta: events.AgentMeta = .{ .id = actor.id, .player = is_player };
 
+    // Track the ID that ends up in in_play (may be clone for pool cards)
+    var in_play_id: entity.ID = card.id;
+
     if (actor.inAlwaysAvailable(card.id)) {
-        try cs.addToInPlayFrom(card.id, .always_available);
+        in_play_id = try cs.addToInPlayFrom(card.id, .always_available, registry);
+        // Set cooldown immediately if template has one
+        if (card.template.cooldown) |cd| {
+            try cs.setCooldown(card.id, cd);
+        }
     } else if (actor.inSpellsKnown(card.id)) {
-        try cs.addToInPlayFrom(card.id, .spells_known);
+        in_play_id = try cs.addToInPlayFrom(card.id, .spells_known, registry);
+        if (card.template.cooldown) |cd| {
+            try cs.setCooldown(card.id, cd);
+        }
     } else {
         try cs.moveCard(card.id, .hand, .in_play);
         try evs.push(Event{
@@ -690,9 +728,9 @@ pub fn playValidCardReservingCosts(evs: *EventSystem, actor: *Agent, card: *Inst
         });
     }
 
-    // sink an event for the card being played
+    // sink an event for the card being played (use in_play_id for the clone)
     try evs.push(Event{
-        .played_action_card = .{ .instance = card.id, .template = card.template.id, .actor = actor_meta },
+        .played_action_card = .{ .instance = in_play_id, .template = card.template.id, .actor = actor_meta },
     });
 
     // put a hold on the time & stamina costs for the UI to display / player state

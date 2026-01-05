@@ -479,35 +479,7 @@ pub const CombatView = struct {
             .mouse_motion => {
                 if (cs.drag) |_| {
                     return .{};
-                } else {
-                    // check for hover on always known cards
-                    if (self.alwaysZone(self.arena).hitTest(vs)) |x| {
-                        var new_cs = cs;
-                        new_cs.hover = .{ .card = x };
-                        return .{ .vs = vs.withCombat(new_cs) };
-                        // hover for player cards in hand zone
-                    } else if (self.handZone(self.arena).hitTest(vs)) |x| {
-                        var new_cs = cs;
-                        new_cs.hover = .{ .card = x };
-                        return .{ .vs = vs.withCombat(new_cs) };
-                        // hover for player cards in play zone
-                    } else if (self.inPlayZone(self.arena).hitTest(vs)) |x| {
-                        var new_cs = cs;
-                        new_cs.hover = .{ .card = x };
-                        return .{ .vs = vs.withCombat(new_cs) };
-                        // hover for enemies
-                    } else if (self.opposition.hitTest(vs)) |sprite| {
-                        const id = sprite.id;
-                        var new_cs = cs;
-                        new_cs.hover = .{ .enemy = id };
-                        return .{ .vs = vs.withCombat(new_cs) };
-                        // reset hover state when no hit detected
-                    } else if (cs.hover != .none) {
-                        var new_cs = cs;
-                        new_cs.hover = .none;
-                        return .{ .vs = vs.withCombat(new_cs) };
-                    }
-                }
+                } else return self.handleHover(vs);
             },
             .key_down => |data| {
                 if (data.key) |key| {
@@ -519,6 +491,37 @@ pub const CombatView = struct {
         return .{};
     }
 
+    fn handleHover(self: *CombatView, vs: ViewState) InputResult {
+        const cs = vs.combat orelse CombatUIState{};
+        // check for hover on always known cards
+        if (self.alwaysZone(self.arena).hitTest(vs)) |x| {
+            var new_cs = cs;
+            new_cs.hover = .{ .card = x };
+            return .{ .vs = vs.withCombat(new_cs) };
+            // hover for player cards in hand zone
+        } else if (self.handZone(self.arena).hitTest(vs)) |x| {
+            var new_cs = cs;
+            new_cs.hover = .{ .card = x };
+            return .{ .vs = vs.withCombat(new_cs) };
+            // hover for player cards in play zone
+        } else if (self.inPlayZone(self.arena).hitTest(vs)) |x| {
+            var new_cs = cs;
+            new_cs.hover = .{ .card = x };
+            return .{ .vs = vs.withCombat(new_cs) };
+            // hover for enemies
+        } else if (self.opposition.hitTest(vs)) |sprite| {
+            const id = sprite.id;
+            var new_cs = cs;
+            new_cs.hover = .{ .enemy = id };
+            return .{ .vs = vs.withCombat(new_cs) };
+            // reset hover state when no hit detected
+        } else if (cs.hover != .none) {
+            var new_cs = cs;
+            new_cs.hover = .none;
+            return .{ .vs = vs.withCombat(new_cs) };
+        }
+    }
+
     fn handleClick(self: *CombatView, vs: ViewState) InputResult {
         if (self.alwaysZone(self.arena).hitTest(vs)) |id| {
             return .{ .command = .{ .play_card = id } };
@@ -527,7 +530,6 @@ pub const CombatView = struct {
         } else if (self.inPlayZone(self.arena).hitTest(vs)) |id| {
             return .{ .command = .{ .cancel_card = id } };
         } else if (self.opposition.hitTest(vs)) |sprite| {
-            // std.debug.print("ENEMY HIT: id={d}:{d}\n", .{ sprite.id.index, sprite.id.generation });
             return .{ .command = .{ .select_target = .{ .target_id = sprite.id } } };
         } else if (self.end_turn_btn.hitTest(vs)) {
             if (self.combat_phase == .player_card_selection) {

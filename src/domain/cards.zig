@@ -286,6 +286,12 @@ pub const Template = struct {
     playable_from: PlayableFrom = PlayableFrom.hand_only, // Default: dealt cards only
     combat_playable: bool = true, // false = out-of-combat only (e.g., don plate armor)
 
+    // Pool card cooldown (turns until available again after use)
+    // null = no cooldown, can be played unlimited times per turn
+    // 1 = available again next turn (cooldown set immediately on play)
+    // N = available after N turns
+    cooldown: ?u8 = null,
+
     /// Extract combat technique from rules (first combat_technique effect found)
     pub fn getTechnique(self: *const Template) ?*const Technique {
         const result = self.getTechniqueWithExpression();

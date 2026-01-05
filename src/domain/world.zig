@@ -31,19 +31,25 @@ const WorldError = error{
 pub const CardRegistry = struct {
     alloc: std.mem.Allocator,
     entities: SlotMap(*cards.Instance),
+    // Tracks indices whose memory was freed via destroy() (not just removed)
+    destroyed_indices: std.AutoHashMap(u32, void),
 
     pub fn init(alloc: std.mem.Allocator) !CardRegistry {
         return .{
             .alloc = alloc,
             .entities = try SlotMap(*cards.Instance).init(alloc),
+            .destroyed_indices = std.AutoHashMap(u32, void).init(alloc),
         };
     }
 
     pub fn deinit(self: *CardRegistry) void {
-        // Free all instances
-        for (self.entities.items.items) |instance| {
-            self.alloc.destroy(instance);
+        // Free only instances that weren't already destroyed via destroy()
+        for (self.entities.items.items, 0..) |instance, i| {
+            if (!self.destroyed_indices.contains(@intCast(i))) {
+                self.alloc.destroy(instance);
+            }
         }
+        self.destroyed_indices.deinit();
         self.entities.deinit();
     }
 
@@ -80,6 +86,24 @@ pub const CardRegistry = struct {
     /// tracking to avoid double-free in deinit.
     pub fn remove(self: *CardRegistry, id: lib.entity.ID) void {
         self.entities.remove(id);
+    }
+
+    /// Clone an existing card instance, returning a new instance with fresh ID.
+    /// Used for ephemeral copies when playing pool cards (always_available, spells_known).
+    pub fn clone(self: *CardRegistry, id: lib.entity.ID) !*cards.Instance {
+        const original = self.get(id) orelse return error.CardNotFound;
+        return self.create(original.template);
+    }
+
+    /// Remove and free a card instance immediately.
+    /// Used for ephemeral copies after resolution.
+    pub fn destroy(self: *CardRegistry, id: lib.entity.ID) void {
+        if (self.entities.get(id)) |ptr| {
+            const instance = ptr.*;
+            self.entities.remove(id);
+            self.destroyed_indices.put(id.index, {}) catch {};
+            self.alloc.destroy(instance);
+        }
     }
 
     /// Create cards from templates and return their IDs.

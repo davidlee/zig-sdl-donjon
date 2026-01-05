@@ -120,6 +120,12 @@ pub fn format(event: Event, world: *const World, alloc: std.mem.Allocator) !?Ent
             if (e.actor.player) colors.player_action else colors.enemy_action,
         ),
 
+        .card_cancelled => |e| try singleSpan(
+            alloc,
+            try std.fmt.allocPrint(alloc, "{s}: cancelled card", .{actorName(e.actor.player)}),
+            if (e.actor.player) colors.player_action else colors.enemy_action,
+        ),
+
         .wound_inflicted => |e| try singleSpan(
             alloc,
             try std.fmt.allocPrint(alloc, "Wound: {s} ({s})", .{
