@@ -276,7 +276,7 @@ pub const CardRenderer = struct {
         if (name.len == 0) return;
 
         const white: s.ttf.Color = .{ .r = 255, .g = 255, .b = 255, .a = 255 };
-        const text_surface = try self.font.renderTextBlended(name, white);
+        const text_surface = try self.font.renderTextBlendedWrapped(name, white, CARD_WIDTH);
         defer text_surface.deinit();
 
         const text_tex = try self.renderer.createTextureFromSurface(text_surface);

@@ -213,10 +213,8 @@ pub const CommandHandler = struct {
         // Look up card instance
         const card = self.world.card_registry.get(id) orelse return CommandError.BadInvariant;
 
-        if (player.poolContains(id)) {} else
-
-        // Check card is in hand
-        if (!cs.isInZone(id, .hand))
+        // Check card is in hand or available
+        if (!cs.isInZone(id, .hand) and !player.poolContains(id))
             return CommandError.CardNotInHand;
 
         if (game_state != .player_card_selection)
@@ -281,8 +279,8 @@ pub const CommandHandler = struct {
 
         const cs = player.combat_state orelse return CommandError.BadInvariant;
 
-        // Validate: card is in hand
-        if (!cs.isInZone(card_id, .hand))
+        // Validate: card is in hand or available
+        if (!cs.isInZone(card_id, .hand) and !player.poolContains(card_id))
             return CommandError.CardNotInHand;
 
         // Validate: card exists
@@ -374,7 +372,7 @@ pub const CommandHandler = struct {
 
         // Check card is available (hand or always_available)
         const in_hand = cs.isInZone(card_id, .hand);
-        const in_always_available = player.inAlwaysAvailable(card_id);
+        const in_always_available = player.poolContains(card_id);
         if (!in_hand and !in_always_available)
             return CommandError.CardNotInHand;
 
