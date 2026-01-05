@@ -165,9 +165,9 @@ const EndTurnButton = struct {
         };
     }
 
-    fn hitTest(self: *EndTurnButton, vs: ViewState) bool {
+    fn hitTest(self: *EndTurnButton, pt: Point) bool {
         if (self.active) {
-            if (self.rect.pointIn(vs.mouse)) return true;
+            if (self.rect.pointIn(pt)) return true;
         }
         return false;
     }
@@ -197,14 +197,14 @@ const CardZoneView = struct {
         return .{ .zone = zone, .layout = layout, .cards = card_data };
     }
 
-    /// Hit test returns card ID (uses mouse from ViewState)
-    fn hitTest(self: CardZoneView, vs: ViewState) ?entity.ID {
+    /// Hit test returns card ID at given point
+    fn hitTest(self: CardZoneView, vs: ViewState, pt: Point) ?entity.ID {
         // Reverse order so topmost (last rendered) card is hit first
         var i = self.cards.len;
         while (i > 0) {
             i -= 1;
             const rect = self.cardRect(i, self.cards[i].id, vs);
-            if (rect.pointIn(vs.mouse)) return self.cards[i].id;
+            if (rect.pointIn(pt)) return self.cards[i].id;
         }
         return null;
     }
@@ -305,8 +305,8 @@ const PlayerAvatar = struct {
         };
     }
 
-    fn hitTest(self: *const PlayerAvatar, vs: ViewState) bool {
-        return self.rect.pointIn(vs.mouse);
+    fn hitTest(self: *const PlayerAvatar, pt: Point) bool {
+        return self.rect.pointIn(pt);
     }
     fn renderable(self: *const PlayerAvatar) Renderable {
         return .{ .sprite = .{
@@ -337,8 +337,8 @@ const EnemySprite = struct {
         };
     }
 
-    fn hitTest(self: *const EnemySprite, vs: ViewState) bool {
-        return self.rect.pointIn(vs.mouse);
+    fn hitTest(self: *const EnemySprite, pt: Point) bool {
+        return self.rect.pointIn(pt);
     }
     fn renderable(self: *const EnemySprite) Renderable {
         return .{ .sprite = .{
@@ -357,10 +357,10 @@ const Opposition = struct {
         };
     }
 
-    fn hitTest(self: *const Opposition, vs: ViewState) ?EnemySprite {
+    fn hitTest(self: *const Opposition, pt: Point) ?EnemySprite {
         for (self.enemies, 0..) |e, i| {
             const sprite = EnemySprite.init(e.id, i);
-            if (sprite.hitTest(vs)) {
+            if (sprite.hitTest(pt)) {
                 return sprite;
             }
         }
@@ -464,14 +464,19 @@ pub const CombatView = struct {
         return result[0..count];
     }
 
-    // Input handling - returns command + optional view state update
+    // Input handling - returns optional command and/or view state update
+    //
+    //
     pub fn handleInput(self: *CombatView, event: s.events.Event, world: *const World, vs: ViewState) InputResult {
         _ = world;
         const cs = vs.combat orelse CombatUIState{};
 
         switch (event) {
             .mouse_button_down => {
-                return self.handleClick(vs);
+                // TODO if Draggable, drag, else ...
+                var new_vs = vs;
+                new_vs.clicked = vs.mouse;
+                return .{ .vs = new_vs };
             },
             .mouse_button_up => {
                 return self.handleRelease(vs);
@@ -494,22 +499,22 @@ pub const CombatView = struct {
     fn handleHover(self: *CombatView, vs: ViewState) InputResult {
         const cs = vs.combat orelse CombatUIState{};
         // check for hover on always known cards
-        if (self.alwaysZone(self.arena).hitTest(vs)) |x| {
+        if (self.alwaysZone(self.arena).hitTest(vs, vs.mouse)) |x| {
             var new_cs = cs;
             new_cs.hover = .{ .card = x };
             return .{ .vs = vs.withCombat(new_cs) };
             // hover for player cards in hand zone
-        } else if (self.handZone(self.arena).hitTest(vs)) |x| {
+        } else if (self.handZone(self.arena).hitTest(vs, vs.mouse)) |x| {
             var new_cs = cs;
             new_cs.hover = .{ .card = x };
             return .{ .vs = vs.withCombat(new_cs) };
             // hover for player cards in play zone
-        } else if (self.inPlayZone(self.arena).hitTest(vs)) |x| {
+        } else if (self.inPlayZone(self.arena).hitTest(vs, vs.mouse)) |x| {
             var new_cs = cs;
             new_cs.hover = .{ .card = x };
             return .{ .vs = vs.withCombat(new_cs) };
             // hover for enemies
-        } else if (self.opposition.hitTest(vs)) |sprite| {
+        } else if (self.opposition.hitTest(vs.mouse)) |sprite| {
             const id = sprite.id;
             var new_cs = cs;
             new_cs.hover = .{ .enemy = id };
@@ -520,23 +525,85 @@ pub const CombatView = struct {
             new_cs.hover = .none;
             return .{ .vs = vs.withCombat(new_cs) };
         }
+        return .{};
     }
 
     fn handleClick(self: *CombatView, vs: ViewState) InputResult {
-        if (self.alwaysZone(self.arena).hitTest(vs)) |id| {
+        if (self.alwaysZone(self.arena).hitTest(vs, vs.mouse)) |id| {
             return .{ .command = .{ .play_card = id } };
-        } else if (self.handZone(self.arena).hitTest(vs)) |id| {
+        } else if (self.handZone(self.arena).hitTest(vs, vs.mouse)) |id| {
             return .{ .command = .{ .play_card = id } };
-        } else if (self.inPlayZone(self.arena).hitTest(vs)) |id| {
+        } else if (self.inPlayZone(self.arena).hitTest(vs, vs.mouse)) |id| {
             return .{ .command = .{ .cancel_card = id } };
-        } else if (self.opposition.hitTest(vs)) |sprite| {
+        } else if (self.opposition.hitTest(vs.mouse)) |sprite| {
             return .{ .command = .{ .select_target = .{ .target_id = sprite.id } } };
-        } else if (self.end_turn_btn.hitTest(vs)) {
+        } else if (self.end_turn_btn.hitTest(vs.mouse)) {
             if (self.combat_phase == .player_card_selection) {
                 return .{ .command = .{ .end_turn = {} } };
             } else if (self.combat_phase == .commit_phase) {
                 return .{ .command = .{ .commit_turn = {} } };
             }
+        }
+        return .{};
+    }
+
+    fn onClickEvent(self: *CombatView, vs: ViewState, pos: Point) ?Command {
+        // ALWAYS AVAILABLE CARD
+        if (self.alwaysZone(self.arena).hitTest(vs, pos)) |id| {
+            return .{ .play_card = id };
+            // IN HAND CARD
+        } else if (self.handZone(self.arena).hitTest(vs, pos)) |id| {
+            return .{ .play_card = id };
+            // IN PLAY CARD
+        } else if (self.inPlayZone(self.arena).hitTest(vs, pos)) |id| {
+            return .{ .cancel_card = id };
+            // ENEMIES
+        } else if (self.opposition.hitTest(pos)) |sprite| {
+            return .{ .select_target = .{ .target_id = sprite.id } };
+            // END TURN
+        } else if (self.end_turn_btn.hitTest(pos)) {
+            if (self.combat_phase == .player_card_selection) {
+                return .{ .end_turn = {} };
+            } else if (self.combat_phase == .commit_phase) {
+                return .{ .commit_turn = {} };
+            }
+        }
+        return null;
+    }
+
+    fn handleRelease(self: *CombatView, vs: ViewState) InputResult {
+        const cs = vs.combat orelse CombatUIState{};
+        if (cs.drag) |drag| {
+            // TODO: hit test drop zones (enemies, discard, etc.)
+
+            std.debug.print("RELEASE card {d}:{d}\n", .{ drag.id.index, drag.id.generation });
+
+            // For now, just clear drag state (snap back)
+            var new_cs = cs;
+            new_cs.drag = null;
+            return .{ .vs = vs.withCombat(new_cs) };
+        } else {
+            if (vs.clicked) |pos| {
+                const click_cmd = self.onClickEvent(vs, pos);
+                const release_cmd = self.onClickEvent(vs, vs.mouse);
+                // complare to see if they're the 'same' command
+                if (std.meta.eql(click_cmd, release_cmd)) {
+                    return .{ .command = release_cmd };
+                } else {
+                    std.debug.print("discarding command: click doesn't match release: {any} -- {any}\n", .{ click_cmd, release_cmd });
+                }
+            }
+        }
+        return .{};
+    }
+
+    fn handleKey(self: *CombatView, keycode: Keycode, vs: ViewState) InputResult {
+        _ = self;
+        _ = vs;
+        switch (keycode) {
+            .q => std.process.exit(0),
+            .space => return .{ .command = .{ .end_turn = {} } },
+            else => {},
         }
         return .{};
     }
@@ -555,35 +622,7 @@ pub const CombatView = struct {
         return CardZoneView.init(.always_available, self.alwaysCards(alloc));
     }
 
-    fn handleRelease(self: *CombatView, vs: ViewState) InputResult {
-        const cs = vs.combat orelse CombatUIState{};
-        _ = self;
-
-        if (cs.drag) |drag| {
-            // TODO: hit test drop zones (enemies, discard, etc.)
-
-            std.debug.print("RELEASE card {d}:{d}\n", .{ drag.id.index, drag.id.generation });
-
-            // For now, just clear drag state (snap back)
-            var new_cs = cs;
-            new_cs.drag = null;
-            return .{ .vs = vs.withCombat(new_cs) };
-        }
-
-        return .{};
-    }
-
-    fn handleKey(self: *CombatView, keycode: Keycode, vs: ViewState) InputResult {
-        _ = self;
-        _ = vs;
-        switch (keycode) {
-            .q => std.process.exit(0),
-            .space => return .{ .command = .{ .end_turn = {} } },
-            else => {},
-        }
-        return .{};
-    }
-
+    // Renderables
     pub fn renderables(self: *const CombatView, alloc: std.mem.Allocator, vs: ViewState) !std.ArrayList(Renderable) {
         const cs = vs.combat orelse CombatUIState{};
 

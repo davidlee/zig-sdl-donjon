@@ -6,6 +6,7 @@
 const std = @import("std");
 const s = @import("sdl3");
 const lib = @import("infra");
+const view = @import("views/view.zig");
 const entity = lib.entity;
 
 pub const Point = s.rect.FPoint;
@@ -20,6 +21,7 @@ pub const ViewState = struct {
     // Per-view state (null when not active or fresh)
     combat: ?CombatUIState = null,
     menu: ?MenuState = null,
+    clicked: ?Point = null,
 
     /// Update just the combat UI state, preserving system state
     pub fn withCombat(self: ViewState, combat_state: ?CombatUIState) ViewState {
