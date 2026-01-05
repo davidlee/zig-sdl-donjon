@@ -5,12 +5,12 @@
 
 const std = @import("std");
 const s = @import("sdl3");
-const card_view = @import("views/card_view.zig");
+const card_mod = @import("views/card/mod.zig");
 
-const CardViewModel = card_view.CardViewModel;
-const CardKind = card_view.CardKind;
-const CardRarity = card_view.CardRarity;
-const CardState = card_view.CardState;
+const CardViewModel = card_mod.Model;
+const CardKind = card_mod.Kind;
+const CardRarity = card_mod.Rarity;
+const CardState = card_mod.State;
 
 const Texture = s.render.Texture;
 const Renderer = s.render.Renderer;

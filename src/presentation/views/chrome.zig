@@ -1,4 +1,5 @@
-// ChromeView - UI chrome (header, footer, sidebar with combat log)
+// Chrome View - UI chrome (header, footer, sidebar with combat log)
+// Access as: chrome.View
 //
 // Renders persistent UI elements around the game viewport.
 
@@ -99,15 +100,15 @@ const sidebar_rect = Rect{
 
 const scroll_speed: i32 = 40; // pixels per scroll tick
 
-pub const ChromeView = struct {
+pub const View = struct {
     world: *const World,
     combat_log: *CombatLog,
 
-    pub fn init(world: *const World, combat_log: *CombatLog) ChromeView {
+    pub fn init(world: *const World, combat_log: *CombatLog) View {
         return .{ .world = world, .combat_log = combat_log };
     }
 
-    pub fn handleInput(self: *ChromeView, event: s.events.Event, world: *const World, vs: ViewState) InputResult {
+    pub fn handleInput(self: *View, event: s.events.Event, world: *const World, vs: ViewState) InputResult {
         _ = self;
         _ = world;
 
@@ -129,7 +130,7 @@ pub const ChromeView = struct {
         return .{};
     }
 
-    pub fn renderables(self: *const ChromeView, alloc: std.mem.Allocator, vs: ViewState) !std.ArrayList(Renderable) {
+    pub fn renderables(self: *const View, alloc: std.mem.Allocator, vs: ViewState) !std.ArrayList(Renderable) {
         var list = try std.ArrayList(Renderable).initCapacity(alloc, 64);
         try list.appendSlice(alloc, MenuBar.render());
 

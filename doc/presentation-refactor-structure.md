@@ -1,48 +1,48 @@
 # Presentation Layer Refactoring Plan
 
-## Current Progress (Session 1)
+## COMPLETED (Sessions 1 + 2)
 
-**Completed:**
+**All phases completed:**
 - [x] Phase 1: types.zig created, view.zig updated as compatibility layer
 - [x] Phase 2: card/model.zig, card/data.zig, card/zone.zig, card/mod.zig created
-- [x] Phase 3: combat/hit.zig, combat/play.zig, combat/mod.zig created
-- [x] Phase 4: splash.zig → title.zig, menu/summary exports renamed to View
-- [x] combat_view.zig updated to use new imports (card_mod, hit_mod, play_mod aliases)
-- [x] coordinator.zig updated to use title.View, summary.View
+- [x] Phase 3: combat/hit.zig, combat/play.zig, combat/button.zig, combat/avatar.zig, combat/status_bar.zig, combat/view.zig created
+- [x] Phase 4: All views renamed to `View` (title, menu, summary, chrome)
+- [x] Session 2: combat_view.zig → combat/view.zig (CombatView → View)
+- [x] Session 2: EndTurnButton → combat/button.zig (EndTurn)
+- [x] Session 2: PlayerAvatar, EnemySprite, Opposition → combat/avatar.zig
+- [x] Session 2: status_bar_view.zig → combat/status_bar.zig (StatusBarView → View)
+- [x] Session 2: ChromeView → chrome.View
+- [x] Session 2: Deleted deprecated card_view.zig, combat_view.zig, status_bar_view.zig
 
 **Build status:** Compiles, tests pass, formatted
 
 **Key notes:**
-- Import names use `_mod` suffix to avoid shadowing local variables (e.g., `card_mod`, `hit_mod`, `play_mod`)
-- card/zone.zig only has Layout struct (CardZoneView stays in combat_view.zig - it's combat-coupled)
-- Aliases in combat_view.zig provide backward compatibility during migration
-- splash.zig deleted, replaced by title.zig
+- CardZoneView stays in combat/view.zig (it's combat-coupled)
+- view.zig remains as the barrel file (Phase 5 skipped - optional, current structure works)
+- Domain coupling issue documented below for future work
 
-**Remaining:**
-- Phase 5: Replace view.zig with mod.zig (optional - current structure works)
-- Document domain coupling issue
-
-**Current file structure:**
+**Final file structure:**
 ```
 src/presentation/views/
-├── view.zig             (compatibility layer, View union)
+├── view.zig             (View union, re-exports types)
 ├── types.zig            (shared Renderable, AssetId, InputResult, etc.)
-├── card_view.zig        (DEPRECATED - re-exports from card/model.zig)
 ├── card/
 │   ├── mod.zig          (barrel exports)
 │   ├── model.zig        (Model, Kind, Rarity, State)
 │   ├── data.zig         (Data, Source)
 │   └── zone.zig         (Layout only)
 ├── combat/
-│   ├── mod.zig          (barrel exports)
+│   ├── mod.zig          (barrel exports: View, Zone, Hit, EndTurn, Player, Enemy, Opposition, StatusBar)
+│   ├── view.zig         (View - main combat view, ~600 lines with CardZoneView)
 │   ├── hit.zig          (Zone, Hit, Interaction)
-│   └── play.zig         (Data, Zone for plays)
-├── combat_view.zig      (still has CardZoneView, EndTurnButton, Avatar, etc.)
-├── status_bar_view.zig  (unchanged - could move to combat/)
-├── title.zig            (View - was splash.zig)
-├── menu.zig             (View - renamed export)
-├── summary.zig          (View - renamed export)
-└── chrome.zig           (unchanged)
+│   ├── play.zig         (Data, Zone for plays)
+│   ├── button.zig       (EndTurn)
+│   ├── avatar.zig       (Player, Enemy, Opposition)
+│   └── status_bar.zig   (View)
+├── title.zig            (View)
+├── menu.zig             (View)
+├── summary.zig          (View)
+└── chrome.zig           (View)
 ```
 
 ---

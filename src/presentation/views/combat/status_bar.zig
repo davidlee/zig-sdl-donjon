@@ -1,25 +1,28 @@
+// Status bar component for combat view
+//
+// Displays time, stamina, and focus bars.
+// Access as: combat.status_bar.View
+
 const std = @import("std");
-const view = @import("view.zig");
-const infra = @import("infra");
-const w = @import("../../domain/world.zig");
-const combat = @import("../../domain/combat.zig");
+const view = @import("../view.zig");
+const combat = @import("../../../domain/combat.zig");
 const s = @import("sdl3");
-const chrome = @import("chrome.zig");
+const chrome = @import("../chrome.zig");
 
 const Renderable = view.Renderable;
 const Point = view.Point;
 const Rect = view.Rect;
 const ViewState = view.ViewState;
 
-pub const StatusBarView = struct {
+pub const View = struct {
     stamina: f32,
     stamina_available: f32,
     focus: f32,
     focus_available: f32,
     time_available: f32,
 
-    pub fn init(player: *combat.Agent) StatusBarView {
-        return StatusBarView{
+    pub fn init(player: *combat.Agent) View {
+        return View{
             .stamina = player.stamina.current,
             .stamina_available = player.stamina.available,
             .focus = player.focus.current,
@@ -38,7 +41,7 @@ pub const StatusBarView = struct {
     const black = s.pixels.Color{ .r = 0, .g = 0, .b = 0 };
     const max_pips = 20;
 
-    pub fn render(self: *StatusBarView, alloc: std.mem.Allocator, vs: ViewState, list: *std.ArrayList(Renderable)) !void {
+    pub fn render(self: *View, alloc: std.mem.Allocator, vs: ViewState, list: *std.ArrayList(Renderable)) !void {
         _ = .{ self, alloc, list, vs };
         // Time Bar
         {

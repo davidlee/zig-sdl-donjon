@@ -16,7 +16,7 @@ const graphics = @import("graphics.zig");
 const view = @import("views/view.zig");
 const view_state = @import("view_state.zig");
 const title = @import("views/title.zig");
-const combat_view = @import("views/combat_view.zig");
+const combat = @import("views/combat/mod.zig");
 const summary = @import("views/summary.zig");
 const chrome = @import("views/chrome.zig");
 const combat_log = @import("combat_log.zig");
@@ -73,7 +73,7 @@ pub const Coordinator = struct {
             // TODO: create proper WorldMapView when dungeon crawling is implemented
             .world_map => View{ .title = title.View.init(self.world) },
             // Active combat - turn phase determines sub-state within CombatView
-            .in_encounter => View{ .combat = combat_view.CombatView.init(self.world, self.frameAlloc()) },
+            .in_encounter => View{ .combat = combat.View.init(self.world, self.frameAlloc()) },
         };
     }
 
@@ -81,8 +81,8 @@ pub const Coordinator = struct {
         return self.world.fsm.currentState() != .splash;
     }
 
-    fn chromeView(self: *Coordinator) chrome.ChromeView {
-        return chrome.ChromeView.init(self.world, &self.combat_log);
+    fn chromeView(self: *Coordinator) chrome.View {
+        return chrome.View.init(self.world, &self.combat_log);
     }
 
     // Handle SDL input event

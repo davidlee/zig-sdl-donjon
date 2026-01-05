@@ -11,9 +11,9 @@ const World = @import("../../domain/world.zig").World;
 
 const title = @import("title.zig");
 const menu = @import("menu.zig");
-const combat_view = @import("combat_view.zig");
+const combat = @import("combat/mod.zig");
 const summary = @import("summary.zig");
-pub const card_view = @import("card_view.zig");
+pub const card = @import("card/mod.zig");
 pub const vs = @import("../view_state.zig");
 const types = @import("types.zig");
 
@@ -39,14 +39,14 @@ pub const DragState = types.DragState;
 pub const InputResult = types.InputResult;
 
 // Re-export card view model
-pub const CardViewModel = card_view.CardViewModel;
-pub const CardState = card_view.CardState;
+pub const CardViewModel = card.Model;
+pub const CardState = card.State;
 
 // View union - active view determined by game state
 pub const View = union(enum) {
     title: title.View,
     menu: menu.View,
-    combat: combat_view.CombatView,
+    combat: combat.View,
     summary: summary.View,
 
     pub fn handleInput(self: *View, event: s.events.Event, world: *const World, state: ViewState) InputResult {
