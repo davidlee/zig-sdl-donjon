@@ -34,16 +34,68 @@ pub const StatusBarView = struct {
     const border = 4;
     const trim = 5;
     const pip_spacing = 3;
-    const max_pips = 20;
     const trim_color = s.pixels.Color{ .r = 10, .g = 10, .b = 10 };
     const black = s.pixels.Color{ .r = 0, .g = 0, .b = 0 };
+    const max_pips = 20;
 
     pub fn render(self: *StatusBarView, alloc: std.mem.Allocator, vs: ViewState, list: *std.ArrayList(Renderable)) !void {
         _ = .{ self, alloc, list, vs };
+        // Time Bar
+        {
+            const slices = 10;
+            const y = 770;
+            const r_outer = Rect{ .x = margin_x, .y = y, .w = (chrome.viewport.w - (2 * margin_x)), .h = height };
+            const r_inner = Rect{ .x = r_outer.x + trim, .y = r_outer.y + trim, .w = r_outer.w - (2 * trim), .h = r_outer.h - (2 * trim) };
+
+            const outer: Renderable = .{ .filled_rect = .{ .rect = r_outer, .color = trim_color } };
+            const inner: Renderable = .{ .filled_rect = .{ .rect = r_inner, .color = black } };
+
+            try list.append(alloc, outer);
+            try list.append(alloc, inner);
+
+            const pip_total_w = r_inner.w - (border * 2);
+            const pip_w = (pip_total_w / slices) - pip_spacing;
+
+            for (0..slices) |n| {
+                const m: f32 = @floatFromInt(n);
+                const start_x = r_inner.x + border;
+                const pip: Renderable = .{ .filled_rect = .{ .rect = .{
+                    .x = start_x + (m * pip_w) + (m * pip_spacing),
+                    .y = r_inner.y + border,
+                    .w = pip_w,
+                    .h = r_inner.h - border * 2,
+                }, .color = s.pixels.Color{ .r = 0, .g = 0, .b = 40 } } };
+                try list.append(alloc, pip);
+            }
+
+            for (0..slices) |n| {
+                const m: f32 = @floatFromInt(n);
+                const start_x = r_inner.x + border;
+                const pip: Renderable = .{ .filled_rect = .{ .rect = .{
+                    .x = start_x + (m * pip_w) + (m * pip_spacing),
+                    .y = r_inner.y + border,
+                    .w = pip_w,
+                    .h = r_inner.h - border * 2,
+                }, .color = s.pixels.Color{ .r = 120, .g = 0, .b = 0 } } };
+                try list.append(alloc, pip);
+            }
+
+            for (0..@intFromFloat(@ceil(self.time_available / 0.1))) |n| {
+                const m: f32 = @floatFromInt(n);
+                const start_x = r_inner.x + border;
+                const pip: Renderable = .{ .filled_rect = .{ .rect = .{
+                    .x = start_x + (m * pip_w) + (m * pip_spacing) + border,
+                    .y = r_inner.y + border,
+                    .w = pip_w - border * 2,
+                    .h = (r_inner.h - border * 2) / 2,
+                }, .color = s.pixels.Color{ .r = 255, .g = 0, .b = 0 } } };
+                try list.append(alloc, pip);
+            }
+        }
 
         // Stamina Bar
         {
-            const y = 780;
+            const y = 800;
             const r_outer = Rect{ .x = margin_x, .y = y, .w = (chrome.viewport.w - (2 * margin_x)), .h = height };
             const r_inner = Rect{ .x = r_outer.x + trim, .y = r_outer.y + trim, .w = r_outer.w - (2 * trim), .h = r_outer.h - (2 * trim) };
 

@@ -207,7 +207,7 @@ const t_thrust = Template{
     .description = "hit them with the pokey bit",
     .rarity = .common,
     .cost = .{ .stamina = 3.0, .time = 0.2 },
-    .tags = .{ .melee = true, .offensive = true, .phase_selection = true },
+    .tags = .{ .melee = true, .offensive = true, .phase_selection = true, .phase_commit = true },
     .playable_from = PlayableFrom.always_avail,
     .rules = &.{.{
         .trigger = .on_play,
@@ -227,7 +227,7 @@ const t_slash = Template{
     .description = "slash them like a pirate",
     .rarity = .common,
     .cost = .{ .stamina = 3.0, .time = 0.3 },
-    .tags = .{ .melee = true, .offensive = true, .phase_selection = true },
+    .tags = .{ .melee = true, .offensive = true, .phase_selection = true, .phase_commit = true },
     .playable_from = PlayableFrom.always_avail,
     .rules = &.{.{
         .trigger = .on_play,
@@ -247,7 +247,7 @@ const t_shield_block = Template{
     .description = "shields were made to be splintered",
     .rarity = .common,
     .cost = .{ .stamina = 2.0, .time = 0.3 },
-    .tags = .{ .melee = true, .defensive = true, .phase_selection = true },
+    .tags = .{ .melee = true, .defensive = true, .phase_selection = true, .phase_commit = true },
     .playable_from = PlayableFrom.always_avail,
     .rules = &.{.{
         .trigger = .on_play,
@@ -267,7 +267,7 @@ const t_riposte = Template{
     .description = "seize the opening",
     .rarity = .uncommon,
     .cost = .{ .stamina = 3.0, .time = 0.25 },
-    .tags = .{ .melee = true, .offensive = true, .phase_selection = true },
+    .tags = .{ .melee = true, .offensive = true, .phase_selection = true, .phase_commit = true },
     .playable_from = PlayableFrom.always_avail,
     .rules = &.{.{
         .trigger = .on_play,
@@ -292,7 +292,7 @@ const t_deflect = Template{
     .description = "redirect incoming attacks",
     .rarity = .common,
     .cost = .{ .stamina = 1.5, .time = 0.2 },
-    .tags = .{ .melee = true, .defensive = true, .phase_selection = true },
+    .tags = .{ .melee = true, .defensive = true, .phase_selection = true, .phase_commit = true },
     .playable_from = PlayableFrom.always_avail,
     .rules = &.{.{
         .trigger = .on_play,
@@ -312,7 +312,7 @@ const t_parry = Template{
     .description = "beat aside their weapon",
     .rarity = .common,
     .cost = .{ .stamina = 2.5, .time = 0.15 },
-    .tags = .{ .melee = true, .defensive = true, .phase_selection = true },
+    .tags = .{ .melee = true, .defensive = true, .phase_selection = true, .phase_commit = true },
     .playable_from = PlayableFrom.always_avail,
     .rules = &.{.{
         .trigger = .on_play,

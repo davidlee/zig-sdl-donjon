@@ -12,6 +12,7 @@ const ai = @import("domain/ai.zig");
 
 const combat = @import("domain/combat.zig");
 const BeginnerDeck = card_list.BeginnerDeck;
+const Templates = card_list.BaseAlwaysAvailableTemplates;
 const World = @import("domain/world.zig").World;
 
 pub fn setupEncounter(world: *World) !void {
@@ -22,7 +23,7 @@ pub fn setupEncounter(world: *World) !void {
     const mob = try combat.Agent.init(
         world.alloc,
         world.entities.agents,
-        ai.simple(),
+        ai.pool(),
         .shuffled_deck,
         stats.Block.splat(6),
         try body.Body.fromPlan(world.alloc, &body.HumanoidPlan),
@@ -31,11 +32,11 @@ pub fn setupEncounter(world: *World) !void {
         combat.Armament{ .single = buckler },
     );
 
-    // Populate mob's deck_cards from card registry
-    var card_ids = try world.card_registry.createFromTemplatePtrs(&BeginnerDeck, 5);
+    // Populate mob's always_available pool from card registry
+    var card_ids = try world.card_registry.createFromTemplatePtrs(&Templates, 5);
     defer card_ids.deinit(world.alloc);
     for (card_ids.items) |id| {
-        try mob.deck_cards.append(world.alloc, id);
+        try mob.always_available.append(world.alloc, id);
     }
 
     try world.encounter.?.addEnemy(mob);

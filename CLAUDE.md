@@ -3,3 +3,5 @@
 - concern yourself closely with coupling, cohesion, and intent-revealing naming.
 - try to minimise the amount of code you add wherever possible - removing code is ideal
 - don't make assumptions; stop and clarify the intended design before implementation.
+- tests should focus on behaviour, not implementation
+

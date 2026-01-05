@@ -724,6 +724,31 @@ pub const CombatView = struct {
         return PlayZoneView.init(.player_plays, self.playerPlays(alloc));
     }
 
+    /// Enemy plays for commit phase (action + modifier stacks)
+    fn enemyPlays(self: *const CombatView, alloc: std.mem.Allocator, agent: *const Agent) []const PlayViewData {
+        const enc = self.world.encounter orelse return &.{};
+        const enc_state = enc.stateForConst(agent.id) orelse return &.{};
+        const plays = enc_state.current.plays();
+
+        const result = alloc.alloc(PlayViewData, plays.len) catch return &.{};
+        var count: usize = 0;
+        for (plays) |*play| {
+            if (self.buildPlayViewData(alloc, play, agent)) |pvd| {
+                result[count] = pvd;
+                count += 1;
+            }
+        }
+        return result[0..count];
+    }
+
+    /// Get PlayZoneView for enemy during commit phase
+    fn enemyPlayZone(self: *const CombatView, alloc: std.mem.Allocator, agent: *const Agent, offset: Point) PlayZoneView {
+        var layout = getLayout(.enemy_plays);
+        layout.start_x += offset.x;
+        layout.y += offset.y;
+        return .{ .plays = self.enemyPlays(alloc, agent), .layout = layout };
+    }
+
     fn buildCardList(
         self: *const CombatView,
         alloc: std.mem.Allocator,
@@ -892,6 +917,8 @@ pub const CombatView = struct {
     }
 
     fn onClick(self: *CombatView, vs: ViewState, pos: Point) InputResult {
+        const in_commit = self.combat_phase == .commit_phase;
+
         // ALWAYS AVAILABLE CARD
         if (self.alwaysZone(self.arena).hitTest(vs, pos)) |hit| {
             const id = hit.cardId();
@@ -901,32 +928,51 @@ pub const CombatView = struct {
                 cs.drag = .{ .original_pos = pos, .id = id };
                 return .{ .vs = vs.withCombat(cs) };
             } else {
-                return .{ .command = .{ .play_card = id } };
+                // Commit phase: add new play (1F); Selection: play card
+                return .{ .command = if (in_commit) .{ .commit_add = id } else .{ .play_card = id } };
             }
-            // IN HAND CARD
-        } else if (self.handZone(self.arena).hitTest(vs, pos)) |hit| {
+        }
+
+        // IN HAND CARD
+        if (self.handZone(self.arena).hitTest(vs, pos)) |hit| {
             const id = hit.cardId();
             if (self.isCardDraggable(id)) {
                 var cs = vs.combat orelse CombatUIState{};
                 cs.drag = .{ .original_pos = pos, .id = id };
                 return .{ .vs = vs.withCombat(cs) };
             } else {
-                return .{ .command = .{ .play_card = id } };
-            }
-            // IN PLAY CARD
-        } else if (self.inPlayZone(self.arena).hitTest(vs, pos)) |hit| {
-            return .{ .command = .{ .cancel_card = hit.cardId() } };
-            // ENEMIES
-        } else if (self.opposition.hitTest(pos)) |sprite| {
-            return .{ .command = .{ .select_target = .{ .target_id = sprite.id } } };
-            // END TURN
-        } else if (self.end_turn_btn.hitTest(pos)) {
-            if (self.combat_phase == .player_card_selection) {
-                return .{ .command = .{ .end_turn = {} } };
-            } else if (self.combat_phase == .commit_phase) {
-                return .{ .command = .{ .commit_turn = {} } };
+                // Commit phase: add new play (1F); Selection: play card
+                return .{ .command = if (in_commit) .{ .commit_add = id } else .{ .play_card = id } };
             }
         }
+
+        // PLAYS (commit phase) or IN PLAY CARDS (selection phase)
+        if (in_commit) {
+            if (self.playerPlayZone(self.arena).hitTest(vs, pos)) |hit| {
+                // Commit phase: withdraw play (1F, refund stamina)
+                return .{ .command = .{ .commit_withdraw = hit.cardId() } };
+            }
+        } else {
+            if (self.inPlayZone(self.arena).hitTest(vs, pos)) |hit| {
+                // Selection phase: cancel card
+                return .{ .command = .{ .cancel_card = hit.cardId() } };
+            }
+        }
+
+        // ENEMIES
+        if (self.opposition.hitTest(pos)) |sprite| {
+            return .{ .command = .{ .select_target = .{ .target_id = sprite.id } } };
+        }
+
+        // END TURN / COMMIT DONE
+        if (self.end_turn_btn.hitTest(pos)) {
+            if (self.combat_phase == .player_card_selection) {
+                return .{ .command = .{ .end_turn = {} } };
+            } else if (in_commit) {
+                return .{ .command = .{ .commit_done = {} } };
+            }
+        }
+
         return .{};
     }
 
@@ -961,11 +1007,16 @@ pub const CombatView = struct {
     }
 
     fn handleKey(self: *CombatView, keycode: Keycode, vs: ViewState) InputResult {
-        _ = self;
         _ = vs;
         switch (keycode) {
             .q => std.process.exit(0),
-            .space => return .{ .command = .{ .end_turn = {} } },
+            .space => {
+                if (self.combat_phase == .commit_phase) {
+                    return .{ .command = .{ .commit_done = {} } };
+                } else {
+                    return .{ .command = .{ .end_turn = {} } };
+                }
+            },
             else => {},
         }
         return .{};
@@ -1006,18 +1057,14 @@ pub const CombatView = struct {
         try self.handZone(alloc).appendRenderables(alloc, vs, &list, &last);
         try self.alwaysZone(alloc).appendRenderables(alloc, vs, &list, &last);
 
-        // enemy cards (commit phase only)
+        // enemy plays (commit phase only)
         if (self.combat_phase == .commit_phase) {
             for (self.opposition.enemies, 0..) |enemy_agent, i| {
-                const layout = getLayoutOffset(.in_play, Point{
+                const offset = Point{
                     .x = 400 + @as(f32, @floatFromInt(i)) * 200,
                     .y = 0,
-                });
-                const enemy_zone = CardZoneView.initWithLayout(
-                    .in_play,
-                    self.enemyInPlayCards(alloc, enemy_agent),
-                    layout,
-                );
+                };
+                const enemy_zone = self.enemyPlayZone(alloc, enemy_agent, offset);
                 try enemy_zone.appendRenderables(alloc, vs, &list, &last);
             }
         }

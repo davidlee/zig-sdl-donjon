@@ -233,39 +233,41 @@ pub const CommandHandler = struct {
 
     /// Commit phase: Withdraw a card from play (costs 1 Focus).
     /// Returns card to hand, uncommits stamina, removes from plays.
+    /// Fails if the play has modifiers attached.
     pub fn commitWithdraw(self: *CommandHandler, card_id: entity.ID) !void {
         const player = self.world.player;
         if (self.world.fsm.currentState() != .commit_phase)
             return CommandError.InvalidGameState;
 
-        // Spend focus
-        if (!player.focus.spend(FOCUS_COST))
-            return CommandError.InsufficientFocus;
-
         const enc = &(self.world.encounter orelse return CommandError.BadInvariant);
         const enc_state = enc.stateFor(player.id) orelse return CommandError.BadInvariant;
         const cs = player.combat_state orelse return CommandError.BadInvariant;
 
-        // Find the play
-        const play_index = enc_state.current.findPlayByCard(card_id) orelse {
-            // Refund focus if card not found
-            player.focus.current += FOCUS_COST;
-            player.focus.available += FOCUS_COST;
+        // Validate: find the play
+        const play_index = enc_state.current.findPlayByCard(card_id) orelse
             return CommandError.CardNotInPlay;
-        };
 
-        // Get card and refund stamina
+        // Validate: play has no modifiers
+        const play = &enc_state.current.plays()[play_index];
+        if (!canWithdrawPlay(play))
+            return CommandError.CommandInvalid;
+
+        // Validate: sufficient focus
+        if (player.focus.available < FOCUS_COST)
+            return CommandError.InsufficientFocus;
+
+        // All validation passed - apply changes
+        _ = player.focus.spend(FOCUS_COST);
+
         const card = self.world.card_registry.get(card_id) orelse return CommandError.BadInvariant;
         player.stamina.uncommit(card.template.cost.stamina);
         player.time_available += card.template.cost.time;
 
-        // Move card back to hand
         cs.moveCard(card_id, .in_play, .hand) catch return CommandError.CardNotInPlay;
         try self.sink(Event{
             .card_moved = .{ .instance = card.id, .from = .in_play, .to = .hand, .actor = .{ .id = player.id, .player = true } },
         });
 
-        // Remove from plays
         enc_state.current.removePlay(play_index);
         enc_state.current.focus_spent += FOCUS_COST;
     }
@@ -277,35 +279,28 @@ pub const CommandHandler = struct {
         if (self.world.fsm.currentState() != .commit_phase)
             return CommandError.InvalidGameState;
 
-        // Spend focus
-        if (!player.focus.spend(FOCUS_COST))
-            return CommandError.InsufficientFocus;
-
         const cs = player.combat_state orelse return CommandError.BadInvariant;
 
-        // Validate card is in hand
-        if (!cs.isInZone(card_id, .hand)) {
-            player.focus.current += FOCUS_COST;
-            player.focus.available += FOCUS_COST;
+        // Validate: card is in hand
+        if (!cs.isInZone(card_id, .hand))
             return CommandError.CardNotInHand;
-        }
 
-        // Look up card instance
-        const card = self.world.card_registry.get(card_id) orelse {
-            player.focus.current += FOCUS_COST;
-            player.focus.available += FOCUS_COST;
+        // Validate: card exists
+        const card = self.world.card_registry.get(card_id) orelse
             return CommandError.BadInvariant;
-        };
 
-        if (!try validateCardSelection(player, card, .commit_phase)) {
-            // Refund focus if validation fails
-            player.focus.current += FOCUS_COST;
-            player.focus.available += FOCUS_COST;
+        // Validate: card selection rules (phase, costs, predicates)
+        if (!try validateCardSelection(player, card, .commit_phase))
             return CommandError.PredicateFailed;
-        }
+
+        // Validate: sufficient focus
+        if (player.focus.available < FOCUS_COST)
+            return CommandError.InsufficientFocus;
+
+        // All validation passed - apply changes
+        _ = player.focus.spend(FOCUS_COST);
 
         // Play card (move to in_play, commit stamina)
-        // Returns the ID in play (same as card_id for hand cards)
         const in_play_id = try playValidCardReservingCosts(&self.world.events, player, card, &self.world.card_registry);
 
         // Add to plays with added_in_commit flag
@@ -473,6 +468,51 @@ pub const EventProcessor = struct {
         }
     }
 
+    /// End-of-turn cleanup: discard hand, refresh resources, clear turn state.
+    /// Called when transitioning to draw_hand (start of new turn).
+    fn endTurnCleanup(self: *EventProcessor) !void {
+        const enc = &(self.world.encounter orelse return);
+
+        // Cleanup for player
+        try self.agentEndTurnCleanup(self.world.player, enc);
+
+        // Cleanup for enemies
+        for (enc.enemies.items) |mob| {
+            try self.agentEndTurnCleanup(mob, enc);
+        }
+    }
+
+    fn agentEndTurnCleanup(self: *EventProcessor, agent: *Agent, enc: *combat.Encounter) !void {
+        if (agent.combat_state) |cs| {
+            // Discard remaining hand cards
+            while (cs.hand.items.len > 0) {
+                const card_id = cs.hand.items[0];
+                try cs.moveCard(card_id, .hand, .discard);
+            }
+
+            // Clean up remaining in_play cards (e.g. orphaned modifiers)
+            // Uses removeFromInPlay which destroys pool card clones, discards hand cards
+            while (cs.in_play.items.len > 0) {
+                const card_id = cs.in_play.items[0];
+                const master_id = try cs.removeFromInPlay(card_id, &self.world.card_registry);
+                // For hand-sourced cards, move to discard
+                if (master_id == null) {
+                    try cs.discard.append(cs.alloc, card_id);
+                }
+            }
+        }
+
+        // Refresh resources
+        agent.stamina.tick();
+        agent.focus.tick();
+        agent.time_available = 1.0;
+
+        // Clear turn state (push to history)
+        if (enc.stateFor(agent.id)) |enc_state| {
+            enc_state.endTurn();
+        }
+    }
+
     // TODO: fix hardcoded hand limit
     fn allShuffleAndDraw(self: *EventProcessor, count: usize) !void {
         std.debug.print("draw hand: enemies \n", .{});
@@ -574,7 +614,7 @@ pub const EventProcessor = struct {
     pub fn dispatchEvent(self: *EventProcessor, event_system: *EventSystem) !bool {
         const result = event_system.pop();
         if (result) |event| {
-            // std.debug.print("             -> dispatchEvent: {}\n", .{event});
+            std.debug.print("             -> dispatchEvent: {}\n", .{event});
             switch (event) {
                 .game_state_transitioned_to => |state| {
                     std.debug.print("\nSTATE ==> {}\n\n", .{state});
@@ -593,6 +633,8 @@ pub const EventProcessor = struct {
                         // Draw cards when entering draw_hand state
                         .draw_hand => {
                             std.debug.print("draw hand\n", .{});
+                            // End-of-turn cleanup (no-op on first turn when combat_state is null)
+                            try self.endTurnCleanup();
                             // Initialize combat_state for all agents if not already done
                             try self.initAllCombatStates();
                             try self.allShuffleAndDraw(5);
@@ -1087,6 +1129,11 @@ pub fn getModifierTargetPredicate(template: *const cards.Template) !?cards.Predi
     return found;
 }
 
+/// Check if a play can be withdrawn (no modifiers attached).
+pub fn canWithdrawPlay(play: *const combat.Play) bool {
+    return play.modifier_stack_len == 0;
+}
+
 /// Check if a modifier can attach to a specific play.
 pub fn canModifierAttachToPlay(
     modifier: *const cards.Template,
@@ -1523,4 +1570,20 @@ test "canModifierAttachToPlay rejects non-offensive play" {
     const can_attach = try canModifierAttachToPlay(high, &play, wrld);
 
     try testing.expect(!can_attach);
+}
+
+// ============================================================================
+// Commit Phase Withdraw Tests
+// ============================================================================
+
+test "canWithdrawPlay returns true for play with no modifiers" {
+    var play = combat.Play{ .action = testId(0) };
+    try testing.expect(canWithdrawPlay(&play));
+}
+
+test "canWithdrawPlay returns false for play with modifiers attached" {
+    var play = combat.Play{ .action = testId(0) };
+    try play.addModifier(testId(1));
+
+    try testing.expect(!canWithdrawPlay(&play));
 }

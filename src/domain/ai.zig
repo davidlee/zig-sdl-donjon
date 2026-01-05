@@ -93,3 +93,45 @@ pub const SimpleDeckDirector = struct {
         }
     }
 };
+
+/// Randomly picks 2-3 cards from always_available to play.
+/// For agents that use pool-based techniques instead of decks.
+pub const PoolDirector = struct {
+    pub fn director(self: *PoolDirector) Director {
+        return Director{
+            .ptr = self,
+            .playCardsFn = playCards,
+        };
+    }
+
+    pub fn playCards(ptr: *anyopaque, agent: *Agent, w: *World) !void {
+        _ = ptr;
+        const available = agent.always_available.items;
+        if (available.len == 0) return;
+
+        // Pick 2-3 cards randomly
+        const r1 = try w.drawRandom(.combat);
+        const target_plays: usize = 2 + @as(usize, @intFromFloat(@floor(r1 * 2)));
+        var played: usize = 0;
+
+        // Try up to 10 random picks to find valid cards
+        var attempts: usize = 0;
+        while (played < target_plays and attempts < 10) : (attempts += 1) {
+            const r2 = try w.drawRandom(.combat);
+            const idx = @as(usize, @intFromFloat(r2 * @as(f32, @floatFromInt(available.len))));
+            const card_id = available[idx];
+            const card = w.card_registry.get(card_id) orelse continue;
+
+            // Check if playable (not on cooldown, meets requirements)
+            if (apply.isCardSelectionValid(agent, card)) {
+                _ = try apply.playValidCardReservingCosts(&w.events, agent, card, &w.card_registry);
+                played += 1;
+            }
+        }
+    }
+};
+
+pub fn pool() combat.Director {
+    var impl = PoolDirector{};
+    return .{ .ai = impl.director() };
+}
