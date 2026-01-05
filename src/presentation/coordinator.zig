@@ -15,7 +15,7 @@ const effects = @import("effects.zig");
 const graphics = @import("graphics.zig");
 const view = @import("views/view.zig");
 const view_state = @import("view_state.zig");
-const splash = @import("views/splash.zig");
+const title = @import("views/title.zig");
 const combat_view = @import("views/combat_view.zig");
 const summary = @import("views/summary.zig");
 const chrome = @import("views/chrome.zig");
@@ -68,10 +68,10 @@ pub const Coordinator = struct {
     // Get the active view based on game state
     fn activeView(self: *Coordinator) View {
         return switch (self.world.fsm.currentState()) {
-            .splash => View{ .title = splash.TitleScreenView.init(self.world) },
-            .encounter_summary => View{ .summary = summary.SummaryView.init(self.world) },
+            .splash => View{ .title = title.View.init(self.world) },
+            .encounter_summary => View{ .summary = summary.View.init(self.world) },
             // TODO: create proper WorldMapView when dungeon crawling is implemented
-            .world_map => View{ .title = splash.TitleScreenView.init(self.world) },
+            .world_map => View{ .title = title.View.init(self.world) },
             // Active combat - turn phase determines sub-state within CombatView
             .in_encounter => View{ .combat = combat_view.CombatView.init(self.world, self.frameAlloc()) },
         };

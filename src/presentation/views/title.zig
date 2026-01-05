@@ -1,6 +1,7 @@
-// TitleScreenView - splash/title screen
+// Title screen view
 //
 // Displays title image and tagline. Any input starts the game.
+// Access as: title.View
 
 const std = @import("std");
 const view = @import("view.zig");
@@ -14,14 +15,14 @@ const InputResult = view.InputResult;
 const Command = infra.commands.Command;
 const AssetId = view.AssetId;
 
-pub const TitleScreenView = struct {
+pub const View = struct {
     world: *const World,
 
-    pub fn init(world: *const World) TitleScreenView {
+    pub fn init(world: *const World) View {
         return .{ .world = world };
     }
 
-    pub fn handleInput(self: *TitleScreenView, event: s.events.Event, world: *const World, vs: ViewState) InputResult {
+    pub fn handleInput(self: *View, event: s.events.Event, world: *const World, vs: ViewState) InputResult {
         _ = self;
         _ = world;
         _ = vs;
@@ -35,12 +36,12 @@ pub const TitleScreenView = struct {
         } else return .{};
     }
 
-    pub fn renderables(self: *const TitleScreenView, alloc: std.mem.Allocator, vs: ViewState) !std.ArrayList(Renderable) {
+    pub fn renderables(self: *const View, alloc: std.mem.Allocator, vs: ViewState) !std.ArrayList(Renderable) {
         _ = self;
         _ = vs;
         var list = try std.ArrayList(Renderable).initCapacity(alloc, 8);
 
-        // Background image (null dst = native size at origin)
+        // Background image
         try list.append(alloc, .{ .sprite = .{
             .asset = AssetId.splash_background,
             .dst = .{ .x = 0, .y = 0, .w = 1920, .h = 1080 },
@@ -50,7 +51,7 @@ pub const TitleScreenView = struct {
         try list.append(alloc, .{
             .sprite = .{
                 .asset = AssetId.splash_tagline,
-                .dst = .{ .x = 720, .y = 680, .w = 0, .h = 0 }, // w/h ignored when 0
+                .dst = .{ .x = 720, .y = 680, .w = 0, .h = 0 },
             },
         });
 

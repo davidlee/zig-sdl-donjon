@@ -10,7 +10,12 @@
       "Bash(mkdir:*)",
       "Bash(git mv:*)",
       "mcp__serena__find_file",
-      "mcp__serena__think_about_collected_information"
+      "mcp__serena__think_about_collected_information",
+      "mcp__serena__list_dir",
+      "Bash(wc:*)",
+      "mcp__serena__initial_instructions",
+      "mcp__serena__check_onboarding_performed",
+      "mcp__serena__list_memories"
     ]
   }
 }

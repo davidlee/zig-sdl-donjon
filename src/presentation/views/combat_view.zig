@@ -16,13 +16,16 @@ const entity = infra.entity;
 const chrome = @import("chrome.zig");
 const apply = @import("../../domain/apply.zig");
 const StatusBarView = @import("status_bar_view.zig").StatusBarView;
+const card_mod = @import("card/mod.zig");
+const hit_mod = @import("combat/hit.zig");
+const play_mod = @import("combat/play.zig");
 
 const Renderable = view.Renderable;
 const AssetId = view.AssetId;
 const Point = view.Point;
 const Rect = view.Rect;
-const CardViewModel = view.CardViewModel;
-const CardState = view.CardState;
+const CardViewModel = card_mod.Model;
+const CardModelState = card_mod.State;
 const ViewState = view.ViewState;
 const CombatUIState = view.CombatUIState;
 const DragState = view.DragState;
@@ -33,131 +36,18 @@ const ID = infra.commands.ID;
 const Keycode = s.keycode.Keycode;
 const card_renderer = @import("../card_renderer.zig");
 
-/// View-specific zone enum for layout purposes.
-/// Distinct from cards.Zone and combat.CombatZone (domain types).
-const ViewZone = enum {
-    hand,
-    in_play,
-    always_available,
-    spells, // future
-    player_plays, // commit phase
-    enemy_plays, // commit phase
-};
+// Aliases for types migrated to card module
+const CardViewData = card_mod.Data;
+const CardLayout = card_mod.Layout;
 
-/// Minimal card data for view rendering.
-/// Decouples view layer from Instance pointers.
-const CardViewData = struct {
-    id: entity.ID,
-    template: *const cards.Template,
-    playable: bool,
-    source: Source,
+// Aliases for types migrated to combat/hit.zig
+const ViewZone = hit_mod.Zone;
+const HitResult = hit_mod.Hit;
+const CardViewState = hit_mod.Interaction;
 
-    /// Card sources - where the card originated from.
-    /// Currently used: hand, in_play. Others stubbed for future card systems.
-    const Source = enum {
-        hand,
-        in_play,
-        always_available,
-        spells, // future
-        equipped, // future
-        inventory, // future
-        environment, // future
-    };
-
-    fn fromInstance(inst: *const cards.Instance, source: Source, playable: bool) CardViewData {
-        return .{
-            .id = inst.id,
-            .template = inst.template,
-            .playable = playable,
-            .source = source,
-        };
-    }
-};
-
-/// Committed play with context (for commit phase and resolution).
-const PlayViewData = struct {
-    const max_modifiers = combat.Play.max_modifiers;
-
-    // Ownership
-    owner_id: entity.ID,
-    owner_is_player: bool,
-
-    // Cards in the play
-    action: CardViewData,
-    modifier_stack_buf: [max_modifiers]CardViewData = undefined,
-    modifier_stack_len: u4 = 0,
-    stakes: cards.Stakes,
-
-    // Targeting (if offensive)
-    target_id: ?entity.ID = null,
-
-    // TODO: Resolution context (for tick_resolution animation)
-    // timing: f32,
-    // matchup: ?*const PlayViewData,
-    // outcome: Outcome,
-
-    fn modifiers(self: *const PlayViewData) []const CardViewData {
-        return self.modifier_stack_buf[0..self.modifier_stack_len];
-    }
-
-    /// Total cards in play (action + modifiers)
-    fn cardCount(self: *const PlayViewData) usize {
-        return 1 + self.modifier_stack_len;
-    }
-
-    /// Is this an offensive play?
-    fn isOffensive(self: *const PlayViewData) bool {
-        return self.action.template.tags.offensive;
-    }
-};
-
-const CardViewState = enum {
-    normal,
-    hover,
-    drag,
-    target,
-};
-
-/// Unified hit test result for cards and plays.
-/// Enables consistent interaction handling across zones.
-const HitResult = union(enum) {
-    /// Hit on a standalone card (hand, always_available, in_play during selection)
-    card: CardHit,
-    /// Hit on a card within a committed play stack
-    play: PlayHit,
-
-    const CardHit = struct {
-        id: entity.ID,
-        zone: ViewZone,
-    };
-
-    const PlayHit = struct {
-        play_index: usize,
-        card_id: entity.ID,
-        slot: Slot,
-
-        const Slot = union(enum) {
-            action,
-            modifier: u4, // index into modifier stack
-        };
-    };
-
-    /// Extract card ID regardless of hit type
-    pub fn cardId(self: HitResult) entity.ID {
-        return switch (self) {
-            .card => |c| c.id,
-            .play => |p| p.card_id,
-        };
-    }
-};
-
-const CardLayout = struct {
-    w: f32,
-    h: f32,
-    y: f32,
-    start_x: f32,
-    spacing: f32,
-};
+// Aliases for types migrated to combat/play.zig
+const PlayViewData = play_mod.Data;
+const PlayZoneView = play_mod.Zone;
 
 fn getLayout(zone: ViewZone) CardLayout {
     return .{
@@ -333,189 +223,6 @@ const CardZoneView = struct {
             else => {},
         }
         return .normal;
-    }
-};
-
-/// View over plays during commit phase (action + modifier stacks).
-/// Renders plays as solitaire-style vertical stacks.
-const PlayZoneView = struct {
-    const modifier_y_offset: f32 = 25; // vertical offset per stacked modifier
-
-    plays: []const PlayViewData,
-    layout: CardLayout,
-
-    fn init(zone: ViewZone, play_data: []const PlayViewData) PlayZoneView {
-        return .{ .plays = play_data, .layout = getLayout(zone) };
-    }
-
-    /// Hit test returns HitResult with card-level detail
-    fn hitTest(self: PlayZoneView, vs: ViewState, pt: Point) ?HitResult {
-        _ = vs;
-        // Reverse order so rightmost (last rendered) play is hit first
-        var i = self.plays.len;
-        while (i > 0) {
-            i -= 1;
-            const play = self.plays[i];
-
-            // Check modifiers first (topmost in z-order, stacked above action)
-            // Check from highest modifier down
-            var m: usize = play.modifier_stack_len;
-            while (m > 0) {
-                m -= 1;
-                const mod_rect = self.modifierRect(i, m);
-                if (mod_rect.pointIn(pt)) {
-                    return .{ .play = .{
-                        .play_index = i,
-                        .card_id = play.modifier_stack_buf[m].id,
-                        .slot = .{ .modifier = @intCast(m) },
-                    } };
-                }
-            }
-
-            // Check action card (at base position)
-            const action_rect = self.actionRect(i);
-            if (action_rect.pointIn(pt)) {
-                return .{ .play = .{
-                    .play_index = i,
-                    .card_id = play.action.id,
-                    .slot = .action,
-                } };
-            }
-        }
-        return null;
-    }
-
-    /// Hit test returning only play index (for drop targeting where card slot doesn't matter)
-    fn hitTestPlay(self: PlayZoneView, vs: ViewState, pt: Point) ?usize {
-        if (self.hitTest(vs, pt)) |result| {
-            return switch (result) {
-                .play => |p| p.play_index,
-                .card => null,
-            };
-        }
-        return null;
-    }
-
-    /// Compute rect for entire play stack (action + modifiers)
-    fn playRect(self: PlayZoneView, index: usize) Rect {
-        const play = self.plays[index];
-        const base_x = self.layout.start_x + @as(f32, @floatFromInt(index)) * self.layout.spacing;
-        // Stack grows upward: modifiers above action
-        const stack_height = self.layout.h + @as(f32, @floatFromInt(play.modifier_stack_len)) * modifier_y_offset;
-        const top_y = self.layout.y - @as(f32, @floatFromInt(play.modifier_stack_len)) * modifier_y_offset;
-        return Rect{
-            .x = base_x,
-            .y = top_y,
-            .w = self.layout.w,
-            .h = stack_height,
-        };
-    }
-
-    /// Compute rect for the action card within a play
-    fn actionRect(self: PlayZoneView, index: usize) Rect {
-        const base_x = self.layout.start_x + @as(f32, @floatFromInt(index)) * self.layout.spacing;
-        return Rect{
-            .x = base_x,
-            .y = self.layout.y,
-            .w = self.layout.w,
-            .h = self.layout.h,
-        };
-    }
-
-    /// Compute rect for a modifier card within a play (stacked above action)
-    fn modifierRect(self: PlayZoneView, play_index: usize, mod_index: usize) Rect {
-        const base_x = self.layout.start_x + @as(f32, @floatFromInt(play_index)) * self.layout.spacing;
-        const offset_y = @as(f32, @floatFromInt(mod_index + 1)) * modifier_y_offset;
-        return Rect{
-            .x = base_x,
-            .y = self.layout.y - offset_y,
-            .w = self.layout.w,
-            .h = self.layout.h,
-        };
-    }
-
-    /// Generate renderables for all plays (hovered card rendered last via `last` out param)
-    fn appendRenderables(
-        self: PlayZoneView,
-        alloc: std.mem.Allocator,
-        vs: ViewState,
-        list: *std.ArrayList(Renderable),
-        last: *?Renderable,
-    ) !void {
-        for (self.plays, 0..) |play, i| {
-            try self.appendPlayRenderables(alloc, vs, list, play, i, last);
-        }
-    }
-
-    fn appendPlayRenderables(
-        self: PlayZoneView,
-        alloc: std.mem.Allocator,
-        vs: ViewState,
-        list: *std.ArrayList(Renderable),
-        play: PlayViewData,
-        play_index: usize,
-        last: *?Renderable,
-    ) !void {
-        const ui = vs.combat orelse CombatUIState{};
-
-        const is_drop_target = if (ui.drag) |drag|
-            drag.target_play_index == play_index
-        else
-            false;
-
-        // Get hovered card ID (if any)
-        const hover_id: ?entity.ID = switch (ui.hover) {
-            .card => |id| id,
-            else => null,
-        };
-
-        // Render modifiers first (behind, top to bottom)
-        var j: usize = play.modifier_stack_len;
-        while (j > 0) {
-            j -= 1;
-            const mod = play.modifier_stack_buf[j];
-            const is_hovered = if (hover_id) |hid| hid.eql(mod.id) else false;
-            const rect = self.cardRectWithHover(self.modifierRect(play_index, j), is_hovered);
-            const mod_vm = CardViewModel.fromTemplate(mod.id, mod.template, .{
-                .target = is_drop_target,
-                .played = true,
-                .highlighted = is_hovered,
-            });
-            const item: Renderable = .{ .card = .{ .model = mod_vm, .dst = rect } };
-            if (is_hovered) {
-                last.* = item;
-            } else {
-                try list.append(alloc, item);
-            }
-        }
-
-        // Render action card (in front, at base position)
-        const is_action_hovered = if (hover_id) |hid| hid.eql(play.action.id) else false;
-        const action_rect = self.cardRectWithHover(self.actionRect(play_index), is_action_hovered);
-        const action_vm = CardViewModel.fromTemplate(play.action.id, play.action.template, .{
-            .target = is_drop_target,
-            .played = true,
-            .highlighted = is_action_hovered,
-        });
-        const action_item: Renderable = .{ .card = .{ .model = action_vm, .dst = action_rect } };
-        if (is_action_hovered) {
-            last.* = action_item;
-        } else {
-            try list.append(alloc, action_item);
-        }
-    }
-
-    /// Apply hover expansion to a rect
-    fn cardRectWithHover(self: PlayZoneView, base: Rect, is_hovered: bool) Rect {
-        _ = self;
-        if (!is_hovered) return base;
-        const pad: f32 = 3;
-        return .{
-            .x = base.x - pad,
-            .y = base.y - pad,
-            .w = base.w + pad * 2,
-            .h = base.h + pad * 2,
-        };
     }
 };
 
@@ -729,7 +436,7 @@ pub const CombatView = struct {
 
     /// Get PlayZoneView for commit phase
     fn playerPlayZone(self: *const CombatView, alloc: std.mem.Allocator) PlayZoneView {
-        return PlayZoneView.init(.player_plays, self.playerPlays(alloc));
+        return PlayZoneView.init(getLayout(.player_plays), self.playerPlays(alloc));
     }
 
     /// Enemy plays for commit phase (action + modifier stacks)

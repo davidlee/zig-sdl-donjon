@@ -1,26 +1,26 @@
-// SummaryView - encounter summary / loot screen
+// Encounter summary / loot screen
 //
 // Displays rewards, stats, loot choices after combat.
+// Access as: summary.View
 
 const std = @import("std");
-const view = @import("view.zig");
+const view_mod = @import("view.zig");
 const infra = @import("infra");
 const World = @import("../../domain/world.zig").World;
 const s = @import("sdl3");
 
-const Renderable = view.Renderable;
-const ViewState = view.ViewState;
-const InputResult = view.InputResult;
-const Command = infra.commands.Command;
+const Renderable = view_mod.Renderable;
+const ViewState = view_mod.ViewState;
+const InputResult = view_mod.InputResult;
 
-pub const SummaryView = struct {
+pub const View = struct {
     world: *const World,
 
-    pub fn init(world: *const World) SummaryView {
+    pub fn init(world: *const World) View {
         return .{ .world = world };
     }
 
-    pub fn handleInput(self: *SummaryView, event: s.events.Event, world: *const World, vs: ViewState) InputResult {
+    pub fn handleInput(self: *View, event: s.events.Event, world: *const World, vs: ViewState) InputResult {
         _ = self;
         _ = world;
         _ = vs;
@@ -36,15 +36,11 @@ pub const SummaryView = struct {
         return .{};
     }
 
-    pub fn renderables(self: *const SummaryView, alloc: std.mem.Allocator, vs: ViewState) !std.ArrayList(Renderable) {
+    pub fn renderables(self: *const View, alloc: std.mem.Allocator, vs: ViewState) !std.ArrayList(Renderable) {
         _ = self;
         _ = vs;
         const list = try std.ArrayList(Renderable).initCapacity(alloc, 16);
         // TODO: add summary renderables
-        // - victory/defeat banner
-        // - rewards list
-        // - loot choices
-        // - continue button
         return list;
     }
 };
