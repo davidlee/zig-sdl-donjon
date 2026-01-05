@@ -45,7 +45,7 @@ pub const ViewState = struct {
     }
 };
 
-const EntityRef = union(enum) {
+pub const EntityRef = union(enum) {
     none,
     card: entity.ID,
     enemy: entity.ID,

@@ -19,8 +19,7 @@ const EventProcessor = apply.EventProcessor;
 const Event = events.Event;
 const SlotMap = @import("slot_map.zig").SlotMap;
 const BeginnerDeck = card_list.BeginnerDeck;
-const BaseTechniques = card_list.BaseTechniques;
-const StarterModifiers = card_list.StarterModifiers;
+const BaseTechniques = card_list.BaseAlwaysAvailableTemplates;
 const TickResolver = tick.TickResolver;
 
 const WorldError = error{
@@ -129,7 +128,7 @@ pub const CardRegistry = struct {
     }
 
     /// Create cards from template pointers and return their IDs.
-    /// Used for BaseTechniques/StarterModifiers arrays.
+    /// Used for arrays of template pointers.
     pub fn createFromTemplatePtrs(
         self: *CardRegistry,
         templates: []const *const cards.Template,
@@ -265,8 +264,8 @@ pub const World = struct {
             try self.player.always_available.append(alloc, id);
         }
 
-        // Populate deck_cards with modifiers (StarterModifiers already has duplicates)
-        var modifier_ids = try self.card_registry.createFromTemplatePtrs(&StarterModifiers, 1);
+        // Populate deck_cards from BeginnerDeck
+        var modifier_ids = try self.card_registry.createFromTemplatePtrs(&BeginnerDeck, 1);
         defer modifier_ids.deinit(alloc);
         for (modifier_ids.items) |id| {
             try self.player.deck_cards.append(alloc, id);
@@ -364,7 +363,7 @@ test "CardRegistry: create and lookup" {
     defer registry.deinit();
 
     // Use a test template
-    const template = &card_list.BeginnerDeck[0];
+    const template = card_list.BeginnerDeck[0];
 
     // Create instance
     const instance = try registry.create(template);
@@ -381,7 +380,7 @@ test "CardRegistry: remove invalidates ID" {
     var registry = try CardRegistry.init(alloc);
     defer registry.deinit();
 
-    const template = &card_list.BeginnerDeck[0];
+    const template = card_list.BeginnerDeck[0];
     const instance = try registry.create(template);
     const id = instance.id;
 

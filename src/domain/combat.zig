@@ -1338,7 +1338,7 @@ test "addToInPlayFrom clones pool cards" {
     defer cs.deinit();
 
     // Create a master card in always_available
-    const master = try registry.create(card_list.BaseTechniques[0]);
+    const master = try registry.create(card_list.BaseAlwaysAvailableTemplates[0]);
     const master_id = master.id;
 
     // Play it from always_available source
@@ -1368,7 +1368,7 @@ test "addToInPlayFrom tracks master_id for pool cards" {
     var cs = try CombatState.init(alloc);
     defer cs.deinit();
 
-    const master = try registry.create(card_list.BaseTechniques[0]);
+    const master = try registry.create(card_list.BaseAlwaysAvailableTemplates[0]);
     const master_id = master.id;
 
     const in_play_id = try cs.addToInPlayFrom(master_id, .always_available, &registry);
@@ -1393,7 +1393,7 @@ test "removeFromInPlay destroys pool card clones" {
     var cs = try CombatState.init(alloc);
     defer cs.deinit();
 
-    const master = try registry.create(card_list.BaseTechniques[0]);
+    const master = try registry.create(card_list.BaseAlwaysAvailableTemplates[0]);
     const master_id = master.id;
 
     const clone_id = try cs.addToInPlayFrom(master_id, .always_available, &registry);

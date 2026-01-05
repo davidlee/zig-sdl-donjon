@@ -9,6 +9,7 @@ const stats = @import("stats.zig");
 const body = @import("body.zig");
 const weapon = @import("weapon.zig");
 const combat = @import("combat.zig");
+const w = @import("world.zig");
 const TechniqueEntries = @import("card_list.zig").TechniqueEntries;
 
 pub const ID = u64;
@@ -102,7 +103,7 @@ pub const TagSet = packed struct {
     }
 
     /// Check if card can be played in given phase.
-    pub fn canPlayInPhase(self: *const TagSet, phase: @import("world.zig").GameState) bool {
+    pub fn canPlayInPhase(self: *const TagSet, phase: w.GameState) bool {
         return switch (phase) {
             .player_card_selection => self.phase_selection,
             .commit_phase => self.phase_commit,
@@ -176,7 +177,6 @@ pub const Exclusivity = enum {
 pub const TechniqueID = enum {
     thrust,
     swing,
-    feint,
     deflect,
     parry,
     block,

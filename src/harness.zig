@@ -32,7 +32,7 @@ pub fn setupEncounter(world: *World) !void {
     );
 
     // Populate mob's deck_cards from card registry
-    var card_ids = try world.card_registry.createFromTemplates(&BeginnerDeck, 5);
+    var card_ids = try world.card_registry.createFromTemplatePtrs(&BeginnerDeck, 5);
     defer card_ids.deinit(world.alloc);
     for (card_ids.items) |id| {
         try mob.deck_cards.append(world.alloc, id);

@@ -22,7 +22,12 @@ const PlayableFrom = cards.PlayableFrom;
 const ID = cards.ID;
 
 pub fn byName(comptime name: []const u8) *const Template {
-    inline for (&BeginnerDeck) |*template| {
+    inline for (BeginnerDeck) |template| {
+        if (comptime std.mem.eql(u8, template.name, name)) {
+            return template;
+        }
+    }
+    inline for (BaseAlwaysAvailableTemplates) |template| {
         if (comptime std.mem.eql(u8, template.name, name)) {
             return template;
         }
@@ -80,38 +85,6 @@ pub const TechniqueEntries = [_]Technique{
         .dodge_mult = 1.2,
         .counter_mult = 1.3,
         .parry_mult = 1.2,
-    },
-
-    // Feint: deceptive attack that gains control advantage
-    // Low damage but excellent for setting up follow-ups
-    .{
-        .id = .feint,
-        .name = "feint",
-        .attack_mode = .swing, // feints use swing-like motion
-        .target_height = .high, // feints typically threaten high
-        .damage = .{
-            .instances = &.{.{ .amount = 0.3, .types = &.{.slash} }},
-            .scaling = .{
-                .ratio = 0.3,
-                .stats = .{ .stat = .speed },
-            },
-        },
-        .difficulty = 0.3, // easy to execute
-        .deflect_mult = 0.7, // hard to deflect (deceptive)
-        .dodge_mult = 1.3, // easy to dodge (not committed)
-        .counter_mult = 0.5, // very hard to counter
-        .parry_mult = 0.8, // hard to parry
-        // Feint-specific advantage: big control gain, minimal miss penalty
-        .advantage = .{
-            .on_hit = .{
-                .pressure = 0.05, // low pressure (not threatening)
-                .control = 0.25, // high control gain (initiative)
-            },
-            .on_miss = .{
-                .control = -0.05, // minimal penalty (was never committed)
-                .self_balance = -0.02,
-            },
-        },
     },
 
     // Defensive techniques - guard positions
@@ -211,29 +184,20 @@ pub const TechniqueEntries = [_]Technique{
 // -----------------------------------------------------------------------------
 // Starter deck
 // -----------------------------------------------------------------------------
-const templates = [_]Template{
-    t_thrust,
-    t_slash,
-    t_shield_block,
-    t_riposte,
-};
 
-pub const BeginnerDeck = blk: {
-    var output: [templates.len]Template = undefined;
-    for (templates, 0..) |data, idx| {
-        const template: Template = .{
-            .id = idx,
-            .name = data.name,
-            .kind = data.kind,
-            .description = data.description,
-            .rarity = data.rarity,
-            .cost = data.cost,
-            .tags = data.tags,
-            .rules = data.rules,
-        };
-        output[idx] = template;
-    }
-    break :blk output;
+pub const BeginnerDeck = [_]*const Template{
+    &m_high,
+    &m_high,
+    &m_high,
+    &m_low,
+    &m_low,
+    &m_low,
+    &m_high,
+    &m_high,
+    &m_high,
+    &m_low,
+    &m_low,
+    &m_low,
 };
 
 const t_thrust = Template{
@@ -363,13 +327,14 @@ const t_parry = Template{
 
 /// Combat techniques available to all agents by default.
 /// Populate Agent.always_available from this array.
-pub const BaseTechniques = [_]*const Template{
+pub const BaseAlwaysAvailableTemplates = [_]*const Template{
     &t_thrust,
     &t_slash,
     &t_deflect,
     &t_parry,
     &t_shield_block,
     &t_riposte,
+    &m_feint,
 };
 
 // -----------------------------------------------------------------------------
@@ -426,6 +391,7 @@ const m_feint = Template{
     .id = hashName("feint"),
     .kind = .modifier,
     .name = "feint",
+    .playable_from = .{ .always_available = true, .hand = true },
     .description = "feign commitment - no damage, gain initiative",
     .rarity = .uncommon,
     .cost = .{ .stamina = 0, .time = 0, .focus = 1 },
@@ -455,15 +421,4 @@ const m_feint = Template{
             .filter = null,
         }},
     }},
-};
-
-pub const StarterModifiers = [_]*const Template{
-    &m_high,
-    &m_high,
-    &m_high,
-    &m_low,
-    &m_low,
-    &m_low,
-    &m_feint,
-    &m_feint,
 };

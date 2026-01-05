@@ -566,7 +566,7 @@ test "getAdvantageEffect miss penalty scales with stakes" {
 test "getAdvantageEffect uses technique override when present" {
     // Technique with custom on_hit advantage
     const custom_technique = Technique{
-        .id = .feint, // use feint as test case
+        .id = .swing, // arbitrary ID for test
         .name = "test_feint",
         .damage = .{
             .instances = &.{.{ .amount = 0.5, .types = &.{.slash} }},
@@ -600,8 +600,8 @@ test "getAdvantageEffect uses technique override when present" {
 test "getAdvantageEffect falls back to default for unspecified outcomes" {
     // Technique with only on_hit override
     const partial_technique = Technique{
-        .id = .feint,
-        .name = "partial_feint",
+        .id = .swing,
+        .name = "partial_override",
         .damage = .{
             .instances = &.{.{ .amount = 0.5, .types = &.{.slash} }},
             .scaling = .{ .ratio = 0.5, .stats = .{ .stat = .speed } },
@@ -621,8 +621,8 @@ test "getAdvantageEffect falls back to default for unspecified outcomes" {
 
 test "getAdvantageEffect scales technique override by stakes" {
     const custom_technique = Technique{
-        .id = .feint,
-        .name = "scaled_feint",
+        .id = .swing,
+        .name = "scaled_override",
         .damage = .{
             .instances = &.{.{ .amount = 0.5, .types = &.{.slash} }},
             .scaling = .{ .ratio = 0.5, .stats = .{ .stat = .speed } },
