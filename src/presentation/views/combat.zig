@@ -816,14 +816,22 @@ pub const CombatView = struct {
 
     fn handleRelease(self: *CombatView, vs: ViewState) InputResult {
         const cs = vs.combat orelse CombatUIState{};
-        if (cs.drag) |_| {
-            // TODO: hit test drop zones (enemies, discard, etc.)
-
-            // std.debug.print("RELEASE card {d}:{d}\n", .{ drag.id.index, drag.id.generation });
-
-            // For now, just clear drag state (snap back)
+        if (cs.drag) |drag| {
+            // Clear drag state
             var new_cs = cs;
             new_cs.drag = null;
+
+            // If valid play target, dispatch commit_stack command
+            if (drag.target_play_index) |target_index| {
+                return .{
+                    .vs = vs.withCombat(new_cs),
+                    .command = .{ .commit_stack = .{
+                        .card_id = drag.id,
+                        .target_play_index = target_index,
+                    } },
+                };
+            }
+
             return .{ .vs = vs.withCombat(new_cs) };
         } else {
             // Mouse released: fire event, unless rolled off target since click

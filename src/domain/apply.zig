@@ -1094,20 +1094,68 @@ pub fn canModifierAttachToPlay(
 
 /// Resolve target agent IDs for a play's action (for UI display).
 /// Returns null if non-offensive or unable to resolve.
-/// Note: Currently returns null - full implementation requires const-aware target evaluation.
 pub fn resolvePlayTargetIDs(
     alloc: std.mem.Allocator,
     play: *const combat.Play,
     actor: *const Agent,
     world: *const World,
 ) !?[]const entity.ID {
-    _ = alloc;
-    _ = play;
-    _ = actor;
-    _ = world;
-    // TODO: Implement const-aware target resolution
-    // For now, return null - UI will not display target indicators
-    return null;
+    const card = world.card_registry.getConst(play.action) orelse return null;
+    if (!card.template.tags.offensive) return null;
+
+    // Get target query from card's technique expression
+    const target_query = blk: {
+        for (card.template.rules) |rule| {
+            for (rule.expressions) |expr| {
+                // Find the first expression that targets agents
+                switch (expr.target) {
+                    .all_enemies, .self, .single => break :blk expr.target,
+                    else => continue,
+                }
+            }
+        }
+        // Default for offensive cards without explicit target
+        break :blk cards.TargetQuery.all_enemies;
+    };
+
+    // Resolve targets based on query
+    return evaluateTargetIDsConst(alloc, target_query, actor, world);
+}
+
+/// Const-aware target ID resolution (for UI display, no mutation needed).
+fn evaluateTargetIDsConst(
+    alloc: std.mem.Allocator,
+    query: cards.TargetQuery,
+    actor: *const Agent,
+    world: *const World,
+) !?[]const entity.ID {
+    switch (query) {
+        .self => {
+            const ids = try alloc.alloc(entity.ID, 1);
+            ids[0] = actor.id;
+            return ids;
+        },
+        .all_enemies => {
+            if (actor.director == .player) {
+                const enc = world.encounter orelse return null;
+                const ids = try alloc.alloc(entity.ID, enc.enemies.items.len);
+                for (enc.enemies.items, 0..) |enemy, i| {
+                    ids[i] = enemy.id;
+                }
+                return ids;
+            } else {
+                const ids = try alloc.alloc(entity.ID, 1);
+                ids[0] = world.player.id;
+                return ids;
+            }
+        },
+        .single => |selector| {
+            const ids = try alloc.alloc(entity.ID, 1);
+            ids[0] = selector.id;
+            return ids;
+        },
+        else => return null,
+    }
 }
 
 /// Evaluate play-targeting queries (my_play, opponent_play)

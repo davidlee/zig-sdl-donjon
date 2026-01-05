@@ -59,65 +59,43 @@ New error variants added to `CommandError`:
 - `Play.wouldConflict` allows non-conflicting modifiers
 - `Play.wouldConflict` returns false for empty modifier stack
 
-### IN PROGRESS - UI Layer (Session 2)
+### COMPLETED - UI Layer (Session 2)
 
-#### Completed This Session:
 - `PlayZoneView` struct added to combat.zig view (lines 300-410)
 - `playerPlays()` and `buildPlayViewData()` added to CombatView (lines 572-626)
 - `DragState.target_play_index` field added (view_state.zig:74)
 - `Encounter.stateForConst()` added for read-only access (combat.zig:402-405)
-- `resolvePlayTargetIDs()` stub added to apply.zig (returns null - needs const-aware impl)
 - Rendering pipeline updated to switch between PlayZoneView (commit phase) and CardZoneView (selection phase)
-- `handleDragging()` partially updated for play-based targets
+- `handleDragging()` updated for play-based targets with validation
 
-#### RESOLVED - Const Propagation:
-Fixed by adding `.getConst()` accessors through the call chain. The view layer can now call
-validation functions with `*const World`.
+### COMPLETED - UI Layer (Session 3)
 
-#### Still TODO:
+- `handleRelease()` now dispatches `commit_stack` command when `target_play_index` is set (combat.zig:817-834)
+- `resolvePlayTargetIDs()` fully implemented in apply.zig (lines 1095-1159)
+  - Extracts target query from card's technique expression
+  - Uses const-aware `evaluateTargetIDsConst()` for UI display
+  - Returns target agent IDs for offensive plays
+- `PlayViewData.target_id` now populated correctly in `buildPlayViewData()`
 
-### TODO - UI Layer
+### TODO - Future Enhancements
 
-#### 1. PlayViewModel (combat.zig view)
+#### 1. Target Indicator Visual
+- Show which enemy a play targets (visual line, highlight, icon)
+- `PlayViewData.target_id` is now populated but not yet rendered
 
-Create play representation in UI data model:
-```zig
-const PlayViewModel = struct {
-    action_id: entity.ID,
-    action_template: *const cards.Template,
-    modifier_ids: []const entity.ID,
-    play_index: usize,
-    rect: Rect,  // computed position
-};
-```
-
-#### 2. Drop Target Highlighting
-
-When dragging a modifier, highlight valid drop targets by:
-1. Getting current plays from encounter state
-2. For each play, call `canModifierAttachToPlay()`
-3. Check `play.wouldConflict()` for existing modifiers
-4. Set drag target state on valid plays
-
-#### 3. Drop Command Dispatch
-
-On drop, dispatch `commit_stack` command with:
-- `card_id`: the dragged modifier
-- `target_play_index`: from PlayViewModel
-
-#### 4. Grouped Card Rendering (optional polish)
-
-Render plays as stacked card groups instead of flat cards:
-- Action card in front
-- Modifier cards fanned behind
+#### 2. Selection Phase Modifier Preview
+- Currently modifiers can only be attached during commit phase
+- Could allow modifier attachment during selection (preview before commit)
 
 ## Files Modified
-- `src/domain/apply.zig` - validation functions, refactored commitStack
-- `src/domain/combat.zig` - wouldConflict() on Play
+- `src/domain/apply.zig` - validation functions, refactored commitStack, resolvePlayTargetIDs
+- `src/domain/combat.zig` - wouldConflict() on Play, stateForConst()
+- `src/presentation/views/combat.zig` - PlayZoneView, handleDragging validation, handleRelease command dispatch
+- `src/presentation/view_state.zig` - DragState.target_play_index field
 
 ## Decisions Made
 1. Modifiers playable from always_available (with cooldown) - IMPLEMENTED
-2. UI shows plays as grouped/stacked cards - DEFERRED (rendering only, data model first)
+2. UI shows plays as grouped/stacked cards - IMPLEMENTED (PlayZoneView with solitaire-style stacking)
 3. Focus costs additive: base 1 + card focus cost - IMPLEMENTED
 4. Multiple targeting expressions error rather than picking first - IMPLEMENTED
 5. Conflict detection on height_override only for now - IMPLEMENTED
