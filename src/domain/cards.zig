@@ -103,12 +103,12 @@ pub const TagSet = packed struct {
         return (me & bm) != 0; // at least one bit matches
     }
 
-    /// Check if card can be played in given phase.
-    pub fn canPlayInPhase(self: *const TagSet, phase: w.GameState) bool {
+    /// Check if card can be played in given turn phase.
+    pub fn canPlayInPhase(self: *const TagSet, phase: combat.TurnPhase) bool {
         return switch (phase) {
             .player_card_selection => self.phase_selection,
             .commit_phase => self.phase_commit,
-            // TODO: reaction window checks .reaction
+            .player_reaction => self.reaction, // Future: reaction windows
             else => false,
         };
     }

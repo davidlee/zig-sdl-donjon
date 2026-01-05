@@ -1,5 +1,6 @@
 const std = @import("std");
 const lib = @import("infra");
+const zigfsm = @import("zigfsm");
 const entity = lib.entity;
 const armour = @import("armour.zig");
 const weapon = @import("weapon.zig");
@@ -88,6 +89,27 @@ pub const CombatOutcome = enum {
     flee, // player escaped (stub)
     surrender, // negotiated end (stub)
 };
+
+/// Phase within a combat turn (owned by Encounter, not World).
+pub const TurnPhase = enum {
+    draw_hand,
+    player_card_selection, // choose cards in secret
+    commit_phase, // reveal; vary or reinforce selections
+    tick_resolution, // resolve committed actions
+    player_reaction, // future: reaction windows
+    animating,
+};
+
+/// Events that trigger turn phase transitions.
+pub const TurnEvent = enum {
+    begin_player_card_selection,
+    begin_commit_phase,
+    begin_tick_resolution,
+    animate_resolution,
+    redraw,
+};
+
+pub const TurnFSM = zigfsm.StateMachine(TurnPhase, TurnEvent, .draw_hand);
 
 // ============================================================================
 // Card Containers (new architecture - see doc/card_storage_design.md)
@@ -344,7 +366,19 @@ pub const Encounter = struct {
     // Combat result (set when combat ends, for summary display)
     outcome: ?CombatOutcome = null,
 
+    // Turn phase FSM (combat flow within encounter)
+    turn_fsm: TurnFSM,
+
     pub fn init(alloc: std.mem.Allocator, player_id: entity.ID) !Encounter {
+        var fsm = TurnFSM.init();
+
+        // Turn phase transitions
+        try fsm.addEventAndTransition(.begin_player_card_selection, .draw_hand, .player_card_selection);
+        try fsm.addEventAndTransition(.begin_commit_phase, .player_card_selection, .commit_phase);
+        try fsm.addEventAndTransition(.begin_tick_resolution, .commit_phase, .tick_resolution);
+        try fsm.addEventAndTransition(.animate_resolution, .tick_resolution, .animating);
+        try fsm.addEventAndTransition(.redraw, .animating, .draw_hand);
+
         var enc = Encounter{
             .alloc = alloc,
             .enemies = try std.ArrayList(*combat.Agent).initCapacity(alloc, 5),
@@ -354,6 +388,7 @@ pub const Encounter = struct {
             .environment = try std.ArrayList(entity.ID).initCapacity(alloc, 10),
             .thrown_by = std.AutoHashMap(entity.ID, entity.ID).init(alloc),
             .outcome = null,
+            .turn_fsm = fsm,
         };
         // Initialize player's encounter state
         try enc.agent_state.put(player_id, .{});
@@ -402,6 +437,23 @@ pub const Encounter = struct {
     /// Get encounter state for an agent (const version for read-only access).
     pub fn stateForConst(self: *const Encounter, agent_id: entity.ID) ?*const AgentEncounterState {
         return self.agent_state.getPtr(agent_id);
+    }
+
+    /// Current turn phase.
+    pub fn turnPhase(self: *const Encounter) TurnPhase {
+        // Note: zigfsm.currentState requires mutable but doesn't actually mutate,
+        // so we cast away const here for read-only access.
+        const mutable_fsm: *TurnFSM = @constCast(&self.turn_fsm);
+        return mutable_fsm.currentState();
+    }
+
+    /// Transition to a new turn phase (validates transition is allowed).
+    pub fn transitionTurnTo(self: *Encounter, target: TurnPhase) !void {
+        if (self.turn_fsm.canTransitionTo(target)) {
+            try self.turn_fsm.transitionTo(target);
+        } else {
+            return error.InvalidTurnPhaseTransition;
+        }
     }
 };
 

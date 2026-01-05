@@ -176,29 +176,21 @@ pub const EntityMap = struct {
     }
 };
 
+/// Events that trigger game state transitions (high-level app/context).
+/// Turn phase transitions are handled by Encounter's turn_fsm.
 pub const GameEvent = enum {
-    start_encounter,
-    begin_player_card_selection,
-    begin_commit_phase,
-    begin_tick_resolution,
-    // continue_tick_resolution,
-    animate_resolution,
-    redraw,
-    show_loot,
-    player_died,
-    loot_collected, // player finished with summary screen
+    start_encounter, // splash -> in_encounter
+    end_encounter, // in_encounter -> encounter_summary (victory/flee/surrender)
+    player_died, // in_encounter -> splash (defeat)
+    loot_collected, // encounter_summary -> world_map
 };
 
-// TODO move the encounter-specific bits into an encounter fsm ...
+/// High-level game state (app/context level).
+/// Turn phases within combat are managed by Encounter.turn_fsm.
 pub const GameState = enum {
-    splash,
-    draw_hand,
-    player_card_selection, // choose cards in secret
-    commit_phase, // reveal; vary or reinforce selections
-    tick_resolution, //: resolve committed actions
-    player_reaction,
-    encounter_summary,
-    animating,
+    splash, // title screen / game over
+    in_encounter, // active combat (turn phase via Encounter.turnPhase())
+    encounter_summary, // post-combat loot/summary
     world_map, // between encounters (stub)
 };
 
@@ -220,19 +212,10 @@ pub const World = struct {
 
         var fsm = FSM.init();
 
-        try fsm.addEventAndTransition(.start_encounter, .splash, .draw_hand);
-
-        try fsm.addEventAndTransition(.begin_player_card_selection, .draw_hand, .player_card_selection);
-        try fsm.addEventAndTransition(.begin_commit_phase, .player_card_selection, .commit_phase);
-        try fsm.addEventAndTransition(.begin_tick_resolution, .commit_phase, .tick_resolution);
-        // try fsm.addEventAndTransition(.player_reaction_opportunity, .tick_resolution, .player_reaction);
-        // try fsm.addEventAndTransition(.continue_tick_resolution, .player_reaction, .tick_resolution);
-        try fsm.addEventAndTransition(.animate_resolution, .tick_resolution, .animating);
-        // try fsm.addEventAndTransition(.continue_tick_resolution, .animating, .tick_resolution);
-
-        try fsm.addEventAndTransition(.player_died, .animating, .splash);
-        try fsm.addEventAndTransition(.show_loot, .animating, .encounter_summary);
-        try fsm.addEventAndTransition(.redraw, .animating, .draw_hand);
+        // High-level game state transitions
+        try fsm.addEventAndTransition(.start_encounter, .splash, .in_encounter);
+        try fsm.addEventAndTransition(.end_encounter, .in_encounter, .encounter_summary);
+        try fsm.addEventAndTransition(.player_died, .in_encounter, .splash);
         try fsm.addEventAndTransition(.loot_collected, .encounter_summary, .world_map);
 
         const playerStats = stats.Block.splat(5);
@@ -310,6 +293,29 @@ pub const World = struct {
         if (self.fsm.canTransitionTo(target_state)) {
             try self.fsm.transitionTo(target_state);
             try self.events.push(Event{ .game_state_transitioned_to = target_state });
+        } else return WorldError.InvalidStateTransition;
+    }
+
+    // =========================================================================
+    // Turn phase facade (delegates to Encounter)
+    // =========================================================================
+
+    /// Current turn phase, or null if not in an encounter.
+    pub fn turnPhase(self: *const World) ?combat.TurnPhase {
+        if (self.encounter) |enc| return enc.turnPhase();
+        return null;
+    }
+
+    /// Check if currently in a specific turn phase.
+    pub fn inTurnPhase(self: *const World, phase: combat.TurnPhase) bool {
+        return self.turnPhase() == phase;
+    }
+
+    /// Transition to a new turn phase (delegates to encounter).
+    pub fn transitionTurnTo(self: *World, target: combat.TurnPhase) !void {
+        if (self.encounter) |*enc| {
+            try enc.transitionTurnTo(target);
+            try self.events.push(Event{ .turn_phase_transitioned_to = target });
         } else return WorldError.InvalidStateTransition;
     }
 

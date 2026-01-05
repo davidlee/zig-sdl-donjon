@@ -188,9 +188,13 @@ const EndTurnButton = struct {
     active: bool,
     asset_id: AssetId,
 
-    fn init(game_state: w.GameState) EndTurnButton {
+    fn init(turn_phase: ?combat.TurnPhase) EndTurnButton {
+        const active = if (turn_phase) |phase|
+            (phase == .player_card_selection or phase == .commit_phase)
+        else
+            false;
         return EndTurnButton{
-            .active = (game_state == .player_card_selection or game_state == .commit_phase),
+            .active = active,
             .asset_id = AssetId.end_turn,
             .rect = Rect{
                 .x = 50,
@@ -612,11 +616,10 @@ pub const CombatView = struct {
     end_turn_btn: EndTurnButton,
     player_avatar: PlayerAvatar,
     opposition: Opposition,
-    combat_phase: w.GameState,
+    turn_phase: ?combat.TurnPhase,
 
     pub fn init(world: *const World, arena: std.mem.Allocator) CombatView {
-        var fsm = world.fsm;
-        const phase = fsm.currentState();
+        const phase = world.turnPhase();
 
         return .{
             .world = world,
@@ -624,8 +627,13 @@ pub const CombatView = struct {
             .end_turn_btn = EndTurnButton.init(phase),
             .player_avatar = PlayerAvatar.init(),
             .opposition = Opposition.init(world.encounter.?.enemies.items),
-            .combat_phase = phase,
+            .turn_phase = phase,
         };
+    }
+
+    /// Check if currently in a specific turn phase.
+    fn inPhase(self: *const CombatView, phase: combat.TurnPhase) bool {
+        return self.turn_phase == phase;
     }
 
     // --- New query methods (use CombatState zones + card_registry) ---
@@ -759,7 +767,7 @@ pub const CombatView = struct {
         var count: usize = 0;
 
         const player = self.world.player;
-        const phase = self.combat_phase;
+        const phase = self.turn_phase orelse return &.{};
 
         for (ids) |id| {
             const inst = self.world.card_registry.getConst(id) orelse continue;
@@ -820,7 +828,7 @@ pub const CombatView = struct {
             return hit;
         }
         // During commit phase, hit test plays; during selection, hit test flat in_play
-        if (self.combat_phase == .commit_phase) {
+        if (self.inPhase(.commit_phase)) {
             if (self.playerPlayZone(self.arena).hitTest(vs, vs.mouse)) |hit| {
                 return hit;
             }
@@ -849,7 +857,7 @@ pub const CombatView = struct {
             return .{ .vs = vs.withCombat(new_cs) };
 
         // During commit phase, hit test against plays for modifier attachment
-        if (self.combat_phase == .commit_phase) {
+        if (self.inPhase(.commit_phase)) {
             const play_zone = self.playerPlayZone(self.arena);
             if (play_zone.hitTestPlay(vs, vs.mouse)) |play_index| {
                 // Validate the attachment
@@ -905,9 +913,10 @@ pub const CombatView = struct {
     }
 
     fn isCardDraggable(self: *CombatView, id: entity.ID) bool {
+        const phase = self.turn_phase orelse return false;
         var registry = self.world.card_registry;
         if (registry.get(id)) |card| {
-            const playable = apply.validateCardSelection(self.world.player, card, self.combat_phase) catch |err| {
+            const playable = apply.validateCardSelection(self.world.player, card, phase) catch |err| {
                 std.debug.print("Error validating card playability: {s} -- {}", .{ card.template.name, err });
                 return false;
             };
@@ -917,7 +926,7 @@ pub const CombatView = struct {
     }
 
     fn onClick(self: *CombatView, vs: ViewState, pos: Point) InputResult {
-        const in_commit = self.combat_phase == .commit_phase;
+        const in_commit = self.inPhase(.commit_phase);
 
         // ALWAYS AVAILABLE CARD
         if (self.alwaysZone(self.arena).hitTest(vs, pos)) |hit| {
@@ -966,7 +975,7 @@ pub const CombatView = struct {
 
         // END TURN / COMMIT DONE
         if (self.end_turn_btn.hitTest(pos)) {
-            if (self.combat_phase == .player_card_selection) {
+            if (self.inPhase(.player_card_selection)) {
                 return .{ .command = .{ .end_turn = {} } };
             } else if (in_commit) {
                 return .{ .command = .{ .commit_done = {} } };
@@ -1011,7 +1020,7 @@ pub const CombatView = struct {
         switch (keycode) {
             .q => std.process.exit(0),
             .space => {
-                if (self.combat_phase == .commit_phase) {
+                if (self.inPhase(.commit_phase)) {
                     return .{ .command = .{ .commit_done = {} } };
                 } else {
                     return .{ .command = .{ .end_turn = {} } };
@@ -1049,7 +1058,7 @@ pub const CombatView = struct {
         var last: ?Renderable = null;
 
         // During commit phase, render plays as stacked groups; otherwise flat cards
-        if (self.combat_phase == .commit_phase) {
+        if (self.inPhase(.commit_phase)) {
             try self.playerPlayZone(alloc).appendRenderables(alloc, vs, &list, &last);
         } else {
             try self.inPlayZone(alloc).appendRenderables(alloc, vs, &list, &last);
@@ -1058,7 +1067,7 @@ pub const CombatView = struct {
         try self.alwaysZone(alloc).appendRenderables(alloc, vs, &list, &last);
 
         // enemy plays (commit phase only)
-        if (self.combat_phase == .commit_phase) {
+        if (self.inPhase(.commit_phase)) {
             for (self.opposition.enemies, 0..) |enemy_agent, i| {
                 const offset = Point{
                     .x = 400 + @as(f32, @floatFromInt(i)) * 200,

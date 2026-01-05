@@ -40,6 +40,7 @@ pub const Event = union(enum) {
     card_cancelled: struct { instance: entity.ID, actor: AgentMeta },
 
     game_state_transitioned_to: world.GameState,
+    turn_phase_transitioned_to: combat.TurnPhase,
 
     card_cost_reserved: struct {
         stamina: f32,

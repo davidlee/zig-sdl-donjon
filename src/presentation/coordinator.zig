@@ -72,23 +72,13 @@ pub const Coordinator = struct {
             .encounter_summary => View{ .summary = summary.SummaryView.init(self.world) },
             // TODO: create proper WorldMapView when dungeon crawling is implemented
             .world_map => View{ .title = splash.TitleScreenView.init(self.world) },
-            // All combat-related states use CombatView
-            .draw_hand,
-            .player_card_selection,
-            .commit_phase,
-            .tick_resolution,
-            .player_reaction,
-            .animating,
-            => View{ .combat = combat_view.CombatView.init(self.world, self.frameAlloc()) },
+            // Active combat - turn phase determines sub-state within CombatView
+            .in_encounter => View{ .combat = combat_view.CombatView.init(self.world, self.frameAlloc()) },
         };
     }
 
     fn isChromeActive(self: *Coordinator) bool {
-        return switch (self.world.fsm.currentState()) {
-            .splash => false,
-            // .menu => false,
-            else => true,
-        };
+        return self.world.fsm.currentState() != .splash;
     }
 
     fn chromeView(self: *Coordinator) chrome.ChromeView {
