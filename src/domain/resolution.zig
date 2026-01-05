@@ -49,6 +49,99 @@ pub const DefenseContext = struct {
     weapon_template: *const weapon.Template,
 };
 
+// ============================================================================
+// Condition-based Combat Modifiers
+// ============================================================================
+
+/// Aggregate combat modifiers derived from active conditions
+pub const CombatModifiers = struct {
+    hit_chance: f32 = 0, // additive modifier to hit chance
+    damage_mult: f32 = 1.0, // multiplicative damage modifier
+    defense_mult: f32 = 1.0, // affects block/parry/deflect effectiveness
+    dodge_mod: f32 = 0, // additive modifier to dodge chance
+
+    /// Compute modifiers for an attacker based on their conditions and attack context
+    pub fn forAttacker(attack: AttackContext) CombatModifiers {
+        var mods = CombatModifiers{};
+
+        for (attack.attacker.conditions.items) |cond| {
+            switch (cond.condition) {
+                .blinded => {
+                    // Precision matters more when you can't see
+                    mods.hit_chance += switch (attack.technique.attack_mode) {
+                        .thrust => -0.30, // precision strike
+                        .swing => -0.20, // arc compensates somewhat
+                        .ranged => -0.45, // ranged attacks rely heavily on sight
+                        .none => -0.15, // defensive/other
+                    };
+                },
+                .stunned => {
+                    mods.hit_chance -= 0.20;
+                    mods.damage_mult *= 0.7;
+                },
+                .prone => {
+                    mods.hit_chance -= 0.15;
+                    mods.damage_mult *= 0.8;
+                },
+                .winded => {
+                    // Power attacks suffer more
+                    if (attack.stakes == .committed or attack.stakes == .reckless) {
+                        mods.damage_mult *= 0.85;
+                    }
+                },
+                .confused => {
+                    mods.hit_chance -= 0.15;
+                },
+                .shaken, .fearful => {
+                    mods.hit_chance -= 0.10;
+                    mods.damage_mult *= 0.9;
+                },
+                else => {},
+            }
+        }
+
+        return mods;
+    }
+
+    /// Compute modifiers for a defender based on their conditions and defense context
+    pub fn forDefender(defense: DefenseContext) CombatModifiers {
+        var mods = CombatModifiers{};
+
+        for (defense.defender.conditions.items) |cond| {
+            switch (cond.condition) {
+                .blinded => {
+                    // Can't see attacks coming
+                    mods.defense_mult *= 0.6;
+                    mods.dodge_mod -= 0.20;
+                },
+                .stunned => {
+                    mods.defense_mult *= 0.3;
+                    mods.dodge_mod -= 0.30;
+                },
+                .prone => {
+                    mods.dodge_mod -= 0.25;
+                    // But might be harder to hit high
+                },
+                .paralysed => {
+                    mods.defense_mult *= 0.0; // can't actively defend
+                    mods.dodge_mod -= 0.40;
+                },
+                .surprised => {
+                    mods.defense_mult *= 0.5;
+                    mods.dodge_mod -= 0.20;
+                },
+                .unconscious, .comatose => {
+                    mods.defense_mult *= 0.0;
+                    mods.dodge_mod -= 0.50;
+                },
+                else => {},
+            }
+        }
+
+        return mods;
+    }
+};
+
 /// Calculate hit probability for an attack
 pub fn calculateHitChance(attack: AttackContext, defense: DefenseContext) f32 {
     var chance: f32 = 0.5; // Base 50%
@@ -71,15 +164,22 @@ pub fn calculateHitChance(attack: AttackContext, defense: DefenseContext) f32 {
     // Attacker balance
     chance += (attack.attacker.balance - 0.5) * 0.2;
 
+    // Condition modifiers
+    const attacker_mods = CombatModifiers.forAttacker(attack);
+    const defender_mods = CombatModifiers.forDefender(defense);
+    chance += attacker_mods.hit_chance;
+
     // Defense modifiers
     if (defense.technique) |def_tech| {
         // Active defense technique modifies attacker's chance
-        const def_mult = switch (def_tech.id) {
+        var def_mult = switch (def_tech.id) {
             .parry => attack.technique.parry_mult,
             .block => attack.technique.deflect_mult, // using deflect as proxy for now
             .deflect => attack.technique.deflect_mult,
             else => 1.0,
         };
+        // Defender conditions reduce defense effectiveness
+        def_mult *= defender_mods.defense_mult;
         chance *= def_mult;
 
         // Height coverage: if guard covers the attack's target zone
@@ -102,6 +202,9 @@ pub fn calculateHitChance(attack: AttackContext, defense: DefenseContext) f32 {
 
     // Defender balance (low balance = easier to hit)
     chance += (1.0 - defense.defender.balance) * 0.15;
+
+    // Defender condition dodge penalty (passive evasion)
+    chance -= defender_mods.dodge_mod;
 
     return std.math.clamp(chance, 0.05, 0.95);
 }

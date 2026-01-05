@@ -175,6 +175,11 @@ pub const Event = union(enum) {
         condition: damage.Condition,
         actor: AgentMeta,
     },
+    condition_expired: struct {
+        agent_id: entity.ID,
+        condition: damage.Condition,
+        actor: AgentMeta,
+    },
     cooldown_applied: struct {
         agent_id: entity.ID,
         template_id: cards.ID,

@@ -1,0 +1,21 @@
+Done. Changes for "sand in the eyes":
+
+  cards.zig
+  - Changed add_condition to take damage.ActiveCondition (includes expiration info)
+
+  apply.zig
+  - executeResolvePhaseRules now handles .all_enemies targeting
+  - applyResolveEffect handles add_condition - appends to agent.conditions
+
+  events.zig
+  - Added damage import
+  - Added condition_applied event
+
+  card_list.zig
+  - Added t_sand_in_the_eyes: targets all enemies, applies blinded for 1 tick, exhausts
+    - Cost: 1 stamina, 0.15 time
+    - Tags: skill, debuff
+    - Rarity: uncommon
+  - Added 1 copy to BeginnerDeck
+
+  Note: The condition system now applies conditions but doesn't yet tick them down or remove expired ones - that would need wiring into the turn/tick cleanup. The blinded condition also doesn't affect combat mechanics yet (hit chance, etc.) - that's future work. But the scaffolding is now in place.

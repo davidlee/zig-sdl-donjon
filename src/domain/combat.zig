@@ -606,6 +606,15 @@ pub const Agent = struct {
     pub fn activeConditions(self: *const Agent, engagement: ?*const Engagement) ConditionIterator {
         return ConditionIterator.init(self, engagement);
     }
+
+    /// Check if agent has a specific stored condition.
+    /// Note: Does not check computed/relational conditions (pressured, etc.)
+    pub fn hasCondition(self: *const Agent, condition: damage.Condition) bool {
+        for (self.conditions.items) |cond| {
+            if (cond.condition == condition) return true;
+        }
+        return false;
+    }
 };
 
 // Per-engagement (one per mob, attached to mob)

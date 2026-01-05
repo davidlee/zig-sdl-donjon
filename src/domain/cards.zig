@@ -146,6 +146,9 @@ pub const Predicate = union(enum) {
     weapon_reach: struct { op: Comparator, value: combat.Reach },
     range: struct { op: Comparator, value: combat.Reach },
     advantage_threshold: struct { axis: combat.AdvantageAxis, op: Comparator, value: f32 },
+    // Condition predicates
+    has_condition: damage.Condition, // actor must have this condition
+    lacks_condition: damage.Condition, // actor must NOT have this condition
     not: *const Predicate,
     all: []const Predicate,
     any: []const Predicate,

@@ -340,6 +340,14 @@ pub const World = struct {
         // Cleanup: apply costs, move cards
         try apply.applyCommittedCosts(self.tickResolver.committed.items, &self.events);
 
+        // Tick down and expire conditions
+        try apply.tickConditions(self.player, &self.events);
+        if (self.encounter) |*enc| {
+            for (enc.enemies.items) |mob| {
+                try apply.tickConditions(mob, &self.events);
+            }
+        }
+
         // Emit tick ended event
         try self.events.push(.{ .tick_ended = {} });
 

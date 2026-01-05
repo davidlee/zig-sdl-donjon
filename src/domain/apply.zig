@@ -38,6 +38,7 @@ pub const ValidationError = error{
     InvalidPlaySource, // Card not in any source allowed by playable_from
     NotCombatPlayable, // Card has combat_playable=false
     PredicateFailed,
+    ConditionPreventsPlay, // Global condition restriction (stunned, paralysed, etc.)
     NotImplemented,
 };
 
@@ -730,6 +731,17 @@ pub fn validateCardSelection(actor: *const Agent, card: *const Instance, phase: 
     // Check if card can be played in this phase
     if (!template.tags.canPlayInPhase(phase)) return ValidationError.WrongPhase;
 
+    // Global condition restrictions - universal rules that don't need per-card predicates
+    if (actor.hasCondition(.unconscious) or actor.hasCondition(.comatose)) {
+        return ValidationError.ConditionPreventsPlay;
+    }
+    if (actor.hasCondition(.paralysed)) {
+        return ValidationError.ConditionPreventsPlay;
+    }
+    if (actor.hasCondition(.stunned) and template.tags.offensive) {
+        return ValidationError.ConditionPreventsPlay;
+    }
+
     if (actor.stamina.available < template.cost.stamina) return ValidationError.InsufficientStamina;
 
     if (actor.time_available < template.cost.time) return ValidationError.InsufficientTime;
@@ -859,6 +871,8 @@ fn evaluateValidityPredicate(p: cards.Predicate, template: *const cards.Template
         .weapon_reach => false, // TODO: needs engagement context
         .range => false, // TODO: needs engagement context
         .advantage_threshold => false, // TODO: needs engagement context
+        .has_condition => |cond| actor.hasCondition(cond),
+        .lacks_condition => |cond| !actor.hasCondition(cond),
         .not => |inner| !evaluateValidityPredicate(inner.*, template, actor),
         .all => |preds| {
             for (preds) |pred| {
@@ -912,6 +926,8 @@ fn evaluatePredicate(p: *const cards.Predicate, ctx: PredicateContext) bool {
             };
             break :blk compareF32(value, at.op, at.value);
         },
+        .has_condition => |cond| ctx.actor.hasCondition(cond),
+        .lacks_condition => |cond| !ctx.actor.hasCondition(cond),
         .not => |predicate| !evaluatePredicate(predicate, ctx),
         .all => |preds| {
             for (preds) |pred| {
@@ -1441,6 +1457,52 @@ fn applyResolveEffect(
             } });
         },
         else => {}, // Other effects not handled during resolution
+    }
+}
+
+// ============================================================================
+// Condition Expiration
+// ============================================================================
+
+/// Tick down and remove expired conditions for an agent.
+/// Called at end of tick after all effects have resolved.
+pub fn tickConditions(agent: *Agent, event_system: *EventSystem) !void {
+    const is_player = switch (agent.director) {
+        .player => true,
+        else => false,
+    };
+    const actor_meta: events.AgentMeta = .{ .id = agent.id, .player = is_player };
+
+    // Iterate backwards so we can remove while iterating
+    var i: usize = agent.conditions.items.len;
+    while (i > 0) {
+        i -= 1;
+        const cond = &agent.conditions.items[i];
+
+        var should_remove = false;
+        switch (cond.expiration) {
+            .ticks => |*remaining| {
+                remaining.* -= 1.0;
+                if (remaining.* <= 0) {
+                    should_remove = true;
+                }
+            },
+            .end_of_tick => {
+                should_remove = true;
+            },
+            .dynamic, .permanent, .end_of_action, .end_of_combat => {},
+        }
+
+        if (should_remove) {
+            const removed_condition = cond.condition;
+            _ = agent.conditions.orderedRemove(i);
+
+            try event_system.push(.{ .condition_expired = .{
+                .agent_id = agent.id,
+                .condition = removed_condition,
+                .actor = actor_meta,
+            } });
+        }
     }
 }
 
