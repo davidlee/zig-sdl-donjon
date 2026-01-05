@@ -461,24 +461,31 @@ pub const Body = struct {
 
     pub fn applyDamageWithEvents(self: *Body, event_sys: *EventSystem, part_idx: PartIndex, packet: damage.Packet) !DamageResult {
         const result = try self.applyDamageToPart(part_idx, packet);
+        const part = &self.parts.items[part_idx];
 
         if (result.wound.len > 0) {
             try event_sys.push(.{ .wound_inflicted = .{
                 .agent_id = self.agent_id,
                 .wound = result.wound,
                 .part_idx = part_idx,
+                .part_tag = part.tag,
+                .part_side = part.side,
             } });
         }
         if (result.severed) {
             try event_sys.push(.{ .body_part_severed = .{
                 .agent_id = self.agent_id,
                 .part_idx = part_idx,
+                .part_tag = part.tag,
+                .part_side = part.side,
             } });
         }
         if (result.hit_major_artery) {
             try event_sys.push(.{ .hit_major_artery = .{
                 .agent_id = self.agent_id,
                 .part_idx = part_idx,
+                .part_tag = part.tag,
+                .part_side = part.side,
             } });
         }
 

@@ -10,6 +10,8 @@ const events = @import("../domain/events.zig");
 const Event = events.Event;
 const entity = @import("infra").entity;
 const Color = @import("sdl3").pixels.Color;
+const body = @import("../domain/body.zig");
+const damage = @import("../domain/damage.zig");
 
 pub const Span = struct {
     text: []const u8,
@@ -106,49 +108,43 @@ pub fn format(event: Event, world: *const World, alloc: std.mem.Allocator) !?Ent
     return switch (event) {
         .wound_inflicted => |e| try singleSpan(
             alloc,
-            try std.fmt.allocPrint(alloc, "Wound: {s} ({s})", .{
-                agentName(e.agent_id, world),
-                @tagName(e.wound.kind),
-            }),
+            try formatWoundNarrative(alloc, e.agent_id, &e.wound, e.part_tag, e.part_side, world),
             colors.wound,
         ),
 
         .body_part_severed => |e| try singleSpan(
             alloc,
-            try std.fmt.allocPrint(alloc, "SEVERED: {s}", .{agentName(e.agent_id, world)}),
+            try formatSevered(alloc, e.agent_id, e.part_tag, e.part_side, world),
             colors.critical,
         ),
 
         .hit_major_artery => |e| try singleSpan(
             alloc,
-            try std.fmt.allocPrint(alloc, "ARTERY HIT: {s}", .{agentName(e.agent_id, world)}),
+            try formatArteryHit(alloc, e.agent_id, e.part_tag, e.part_side, world),
             colors.critical,
         ),
 
         .armour_deflected => |e| try singleSpan(
             alloc,
-            try std.fmt.allocPrint(alloc, "Deflected: {s}", .{agentName(e.agent_id, world)}),
+            try formatArmourDeflected(alloc, e.agent_id, e.part_tag, e.part_side, world),
             colors.armour,
         ),
 
         .armour_absorbed => |e| try singleSpan(
             alloc,
-            try std.fmt.allocPrint(alloc, "Absorbed: {s} (-{d:.0})", .{
-                agentName(e.agent_id, world),
-                e.damage_reduced,
-            }),
+            try formatArmourAbsorbed(alloc, e.agent_id, e.part_tag, e.part_side, e.damage_reduced, world),
             colors.armour,
         ),
 
         .armour_layer_destroyed => |e| try singleSpan(
             alloc,
-            try std.fmt.allocPrint(alloc, "Armour destroyed: {s}", .{agentName(e.agent_id, world)}),
+            try formatArmourDestroyed(alloc, e.agent_id, e.part_tag, e.part_side, world),
             colors.wound,
         ),
 
         .attack_found_gap => |e| try singleSpan(
             alloc,
-            try std.fmt.allocPrint(alloc, "Gap found: {s}", .{agentName(e.agent_id, world)}),
+            try formatGapFound(alloc, e.agent_id, e.part_tag, e.part_side, world),
             colors.wound,
         ),
 
@@ -226,6 +222,358 @@ fn actorName(is_player: bool) []const u8 {
 
 fn agentName(id: entity.ID, world: *const World) []const u8 {
     return if (world.player.id.eql(id)) "You" else "Enemy";
+}
+
+// ============================================================================
+// Narrative Formatting Helpers
+// ============================================================================
+
+/// Format body part tag to readable name
+fn partTagName(tag: body.PartTag) []const u8 {
+    return switch (tag) {
+        .head => "head",
+        .eye => "eye",
+        .nose => "nose",
+        .ear => "ear",
+        .neck => "neck",
+        .torso => "torso",
+        .abdomen => "gut",
+        .shoulder => "shoulder",
+        .groin => "groin",
+        .arm => "upper arm",
+        .elbow => "elbow",
+        .forearm => "forearm",
+        .wrist => "wrist",
+        .hand => "hand",
+        .finger => "finger",
+        .thumb => "thumb",
+        .thigh => "thigh",
+        .knee => "knee",
+        .shin => "shin",
+        .ankle => "ankle",
+        .foot => "foot",
+        .toe => "toe",
+        .brain => "brain",
+        .heart => "heart",
+        .lung => "lung",
+        .stomach => "stomach",
+        .liver => "liver",
+        .intestine => "guts",
+        .tongue => "tongue",
+        .trachea => "throat",
+        .spleen => "spleen",
+    };
+}
+
+/// Format side prefix (empty for center/none)
+fn sidePrefix(side: body.Side) []const u8 {
+    return switch (side) {
+        .left => "left ",
+        .right => "right ",
+        .center, .none => "",
+    };
+}
+
+/// Get possessive form for agent
+fn possessive(id: entity.ID, world: *const World) []const u8 {
+    return if (world.player.id.eql(id)) "your" else "the enemy's";
+}
+
+/// Action verb based on damage kind (past tense)
+fn damageVerb(kind: damage.Kind) []const u8 {
+    return switch (kind) {
+        .slash => "cuts",
+        .pierce => "pierces",
+        .bludgeon => "smashes",
+        .crush => "crushes",
+        .shatter => "shatters",
+        .fire => "burns",
+        .frost => "freezes",
+        .lightning => "jolts",
+        .corrosion => "corrodes",
+        else => "strikes",
+    };
+}
+
+/// Deeper penetration verb based on damage kind
+fn deepVerb(kind: damage.Kind) []const u8 {
+    return switch (kind) {
+        .slash => "bites into",
+        .pierce => "drives deep into",
+        .bludgeon => "crunches",
+        .crush => "compresses",
+        else => "reaches",
+    };
+}
+
+/// Tissue layer name for narrative
+fn layerName(layer: body.TissueLayer) []const u8 {
+    return switch (layer) {
+        .skin => "skin",
+        .fat => "flesh",
+        .muscle => "muscle",
+        .tendon => "sinew",
+        .nerve => "nerves",
+        .bone => "bone",
+        .cartilage => "cartilage",
+        .organ => "organs",
+    };
+}
+
+/// Severity descriptor - how bad is the damage?
+fn severityWord(sev: body.Severity) []const u8 {
+    return switch (sev) {
+        .none => "grazes",
+        .minor => "nicks",
+        .inhibited => "tears",
+        .disabled => "ruins",
+        .broken => "shatters",
+        .missing => "destroys",
+    };
+}
+
+/// Format a wound into a narrative description
+fn formatWoundNarrative(
+    alloc: std.mem.Allocator,
+    agent_id: entity.ID,
+    wound: *const body.Wound,
+    tag: body.PartTag,
+    side: body.Side,
+    world: *const World,
+) ![]const u8 {
+    const worst = wound.worstSeverity();
+    const deepest = wound.deepestLayer();
+    const poss = possessive(agent_id, world);
+    const side_str = sidePrefix(side);
+    const part = partTagName(tag);
+
+    // Minor wounds - quick description
+    if (@intFromEnum(worst) <= @intFromEnum(body.Severity.minor)) {
+        return std.fmt.allocPrint(alloc, "The blade {s} {s} {s}{s}", .{
+            severityWord(worst),
+            poss,
+            side_str,
+            part,
+        });
+    }
+
+    // Moderate wounds - mention penetration
+    if (@intFromEnum(worst) <= @intFromEnum(body.Severity.inhibited)) {
+        const verb = damageVerb(wound.kind);
+        if (deepest) |layer| {
+            return std.fmt.allocPrint(alloc, "The strike {s} through to the {s} of {s} {s}{s}", .{
+                verb,
+                layerName(layer),
+                poss,
+                side_str,
+                part,
+            });
+        }
+        return std.fmt.allocPrint(alloc, "The strike {s} {s} {s}{s}", .{
+            verb,
+            poss,
+            side_str,
+            part,
+        });
+    }
+
+    // Severe wounds - visceral detail
+    if (@intFromEnum(worst) <= @intFromEnum(body.Severity.disabled)) {
+        const verb = deepVerb(wound.kind);
+        if (deepest) |layer| {
+            return std.fmt.allocPrint(alloc, "The blow {s} {s} {s}{s}, {s} the {s}", .{
+                verb,
+                poss,
+                side_str,
+                part,
+                severityWord(worst),
+                layerName(layer),
+            });
+        }
+        return std.fmt.allocPrint(alloc, "The blow {s} {s} {s}{s}", .{
+            verb,
+            poss,
+            side_str,
+            part,
+        });
+    }
+
+    // Catastrophic wounds
+    if (deepest) |layer| {
+        return std.fmt.allocPrint(alloc, "{s} {s}{s} is mangled - {s} {s}!", .{
+            poss,
+            side_str,
+            part,
+            layerName(layer),
+            severityWord(worst),
+        });
+    }
+    return std.fmt.allocPrint(alloc, "{s} {s}{s} is mangled beyond recognition!", .{
+        poss,
+        side_str,
+        part,
+    });
+}
+
+/// Format severing event
+fn formatSevered(
+    alloc: std.mem.Allocator,
+    agent_id: entity.ID,
+    tag: body.PartTag,
+    side: body.Side,
+    world: *const World,
+) ![]const u8 {
+    const poss = possessive(agent_id, world);
+    const side_str = sidePrefix(side);
+    const part = partTagName(tag);
+
+    // Vary message by body part
+    return switch (tag) {
+        .finger, .thumb, .toe => std.fmt.allocPrint(alloc, "{s} {s}{s} goes flying!", .{
+            poss,
+            side_str,
+            part,
+        }),
+        .hand, .foot => std.fmt.allocPrint(alloc, "{s} {s}{s} is hewn clean off!", .{
+            poss,
+            side_str,
+            part,
+        }),
+        .arm, .forearm => std.fmt.allocPrint(alloc, "{s} {s}{s} is severed at the joint!", .{
+            poss,
+            side_str,
+            part,
+        }),
+        .head => std.fmt.allocPrint(alloc, "{s} head parts company with {s} shoulders!", .{
+            poss,
+            if (world.player.id.eql(agent_id)) "your" else "their",
+        }),
+        .ear, .nose => std.fmt.allocPrint(alloc, "{s} {s} is sliced clean off!", .{
+            poss,
+            part,
+        }),
+        else => std.fmt.allocPrint(alloc, "{s} {s}{s} is severed!", .{
+            poss,
+            side_str,
+            part,
+        }),
+    };
+}
+
+/// Format artery hit
+fn formatArteryHit(
+    alloc: std.mem.Allocator,
+    agent_id: entity.ID,
+    tag: body.PartTag,
+    side: body.Side,
+    world: *const World,
+) ![]const u8 {
+    const poss = possessive(agent_id, world);
+    const side_str = sidePrefix(side);
+    const part = partTagName(tag);
+
+    return switch (tag) {
+        .neck => std.fmt.allocPrint(alloc, "Blood spurts from {s} neck - the jugular is opened!", .{poss}),
+        .thigh => std.fmt.allocPrint(alloc, "The femoral artery in {s} {s}{s} is severed - blood gushes!", .{
+            poss,
+            side_str,
+            part,
+        }),
+        .shoulder => std.fmt.allocPrint(alloc, "A deep wound opens the artery in {s} {s}armpit!", .{
+            poss,
+            side_str,
+        }),
+        .groin => std.fmt.allocPrint(alloc, "A vicious blow opens {s} femoral artery!", .{poss}),
+        else => std.fmt.allocPrint(alloc, "Blood pumps from a major vessel in {s} {s}{s}!", .{
+            poss,
+            side_str,
+            part,
+        }),
+    };
+}
+
+/// Format armour deflection
+fn formatArmourDeflected(
+    alloc: std.mem.Allocator,
+    agent_id: entity.ID,
+    tag: body.PartTag,
+    side: body.Side,
+    world: *const World,
+) ![]const u8 {
+    const poss = possessive(agent_id, world);
+    const side_str = sidePrefix(side);
+    const part = partTagName(tag);
+
+    return std.fmt.allocPrint(alloc, "Armour on {s} {s}{s} deflects the blow", .{
+        poss,
+        side_str,
+        part,
+    });
+}
+
+/// Format armour absorption
+fn formatArmourAbsorbed(
+    alloc: std.mem.Allocator,
+    agent_id: entity.ID,
+    tag: body.PartTag,
+    side: body.Side,
+    dmg_reduced: f32,
+    world: *const World,
+) ![]const u8 {
+    const poss = possessive(agent_id, world);
+    const side_str = sidePrefix(side);
+    const part = partTagName(tag);
+
+    if (dmg_reduced > 1.5) {
+        return std.fmt.allocPrint(alloc, "Armour absorbs the brunt of the strike to {s} {s}{s}", .{
+            poss,
+            side_str,
+            part,
+        });
+    }
+    return std.fmt.allocPrint(alloc, "Armour on {s} {s}{s} softens the blow", .{
+        poss,
+        side_str,
+        part,
+    });
+}
+
+/// Format gap found in armour
+fn formatGapFound(
+    alloc: std.mem.Allocator,
+    agent_id: entity.ID,
+    tag: body.PartTag,
+    side: body.Side,
+    world: *const World,
+) ![]const u8 {
+    const poss = possessive(agent_id, world);
+    const side_str = sidePrefix(side);
+    const part = partTagName(tag);
+
+    return std.fmt.allocPrint(alloc, "The strike finds a gap in {s} armour at the {s}{s}!", .{
+        poss,
+        side_str,
+        part,
+    });
+}
+
+/// Format armour destruction
+fn formatArmourDestroyed(
+    alloc: std.mem.Allocator,
+    agent_id: entity.ID,
+    tag: body.PartTag,
+    side: body.Side,
+    world: *const World,
+) ![]const u8 {
+    const poss = possessive(agent_id, world);
+    const side_str = sidePrefix(side);
+    const part = partTagName(tag);
+
+    return std.fmt.allocPrint(alloc, "Armour protecting {s} {s}{s} is destroyed!", .{
+        poss,
+        side_str,
+        part,
+    });
 }
 
 // Tests

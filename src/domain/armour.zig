@@ -330,6 +330,8 @@ pub fn resolveThroughArmourWithEvents(
     agent_id: entity.ID,
     stack: *const Stack,
     part_idx: body.PartIndex,
+    part_tag: body.PartTag,
+    part_side: body.Side,
     packet: damage.Packet,
 ) !AbsorptionResult {
     var remaining = packet;
@@ -357,6 +359,8 @@ pub fn resolveThroughArmourWithEvents(
             try w.events.push(.{ .attack_found_gap = .{
                 .agent_id = agent_id,
                 .part_idx = part_idx,
+                .part_tag = part_tag,
+                .part_side = part_side,
                 .layer = layer_u8,
             } });
             continue;
@@ -375,6 +379,8 @@ pub fn resolveThroughArmourWithEvents(
             try w.events.push(.{ .armour_deflected = .{
                 .agent_id = agent_id,
                 .part_idx = part_idx,
+                .part_tag = part_tag,
+                .part_side = part_side,
                 .layer = layer_u8,
             } });
 
@@ -383,6 +389,8 @@ pub fn resolveThroughArmourWithEvents(
                 try w.events.push(.{ .armour_layer_destroyed = .{
                     .agent_id = agent_id,
                     .part_idx = part_idx,
+                    .part_tag = part_tag,
+                    .part_side = part_side,
                     .layer = layer_u8,
                 } });
             }
@@ -398,6 +406,8 @@ pub fn resolveThroughArmourWithEvents(
                 try w.events.push(.{ .armour_layer_destroyed = .{
                     .agent_id = agent_id,
                     .part_idx = part_idx,
+                    .part_tag = part_tag,
+                    .part_side = part_side,
                     .layer = layer_u8,
                 } });
             }
@@ -413,6 +423,8 @@ pub fn resolveThroughArmourWithEvents(
             try w.events.push(.{ .armour_layer_destroyed = .{
                 .agent_id = agent_id,
                 .part_idx = part_idx,
+                .part_tag = part_tag,
+                .part_side = part_side,
                 .layer = layer_u8,
             } });
         }
@@ -434,6 +446,8 @@ pub fn resolveThroughArmourWithEvents(
         try w.events.push(.{ .armour_absorbed = .{
             .agent_id = agent_id,
             .part_idx = part_idx,
+            .part_tag = part_tag,
+            .part_side = part_side,
             .damage_reduced = damage_reduced,
             .layers_hit = layers_hit,
         } });

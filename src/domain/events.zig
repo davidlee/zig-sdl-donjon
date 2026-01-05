@@ -64,38 +64,51 @@ pub const Event = union(enum) {
         agent_id: entity.ID,
         wound: body.Wound,
         part_idx: body.PartIndex,
-        // actor: AgentMeta,
+        part_tag: body.PartTag,
+        part_side: body.Side,
     },
 
     body_part_severed: struct {
         agent_id: entity.ID,
         part_idx: body.PartIndex,
+        part_tag: body.PartTag,
+        part_side: body.Side,
     },
     hit_major_artery: struct {
         agent_id: entity.ID,
         part_idx: body.PartIndex,
+        part_tag: body.PartTag,
+        part_side: body.Side,
     },
 
     // Armour events
     armour_deflected: struct {
         agent_id: entity.ID,
         part_idx: body.PartIndex,
+        part_tag: body.PartTag,
+        part_side: body.Side,
         layer: u8, // inventory.Layer as int
     },
     armour_absorbed: struct {
         agent_id: entity.ID,
         part_idx: body.PartIndex,
+        part_tag: body.PartTag,
+        part_side: body.Side,
         damage_reduced: f32,
         layers_hit: u8,
     },
     armour_layer_destroyed: struct {
         agent_id: entity.ID,
         part_idx: body.PartIndex,
+        part_tag: body.PartTag,
+        part_side: body.Side,
         layer: u8,
     },
     attack_found_gap: struct {
         agent_id: entity.ID,
         part_idx: body.PartIndex,
+        part_tag: body.PartTag,
+        part_side: body.Side,
         layer: u8,
     },
 

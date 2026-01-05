@@ -370,11 +370,14 @@ pub fn resolveTechniqueVsDefense(
         );
 
         // Resolve through armor
+        const target_body_part = &attack.defender.body.parts.items[target_part];
         armour_result = try armour.resolveThroughArmourWithEvents(
             w,
             attack.defender.id,
             &attack.defender.armour,
             target_part,
+            target_body_part.tag,
+            target_body_part.side,
             dmg_packet.?,
         );
 
