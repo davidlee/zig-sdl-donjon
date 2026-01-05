@@ -244,8 +244,8 @@ pub const Effect = union(enum) {
         ratio: f32,
     },
     move_card: struct { from: Zone, to: Zone },
-    add_condition: damage.Condition,
-    remove_condition: damage.Condition,
+    add_condition: damage.ActiveCondition,
+    remove_condition: damage.Condition, // TODO: update to ActiveCondition if needed
     exhaust_card: entity.ID,
     return_exhausted_card: entity.ID,
     interrupt,

@@ -202,6 +202,7 @@ pub const BeginnerDeck = [_]*const Template{
     &t_breath_work,
     &t_probing_stare,
     &t_probing_stare,
+    &t_sand_in_the_eyes,
 };
 
 const t_thrust = Template{
@@ -467,6 +468,29 @@ const t_probing_stare = Template{
             .effect = .{ .modify_focus = .{ .amount = 1, .ratio = 0 } },
             .filter = null,
             .target = .self,
+        }},
+    }},
+};
+
+const t_sand_in_the_eyes = Template{
+    .id = hashName("sand in the eyes"),
+    .kind = .action,
+    .name = "sand in the eyes",
+    .description = "a handful of grit to blind your foe",
+    .rarity = .uncommon,
+    .cost = .{ .stamina = 1, .time = 0.15, .exhausts = true },
+    .tags = .{ .skill = true, .debuff = true, .phase_selection = true, .phase_commit = true },
+    .playable_from = PlayableFrom.hand_only,
+    .rules = &.{.{
+        .trigger = .on_resolve,
+        .valid = .always,
+        .expressions = &.{.{
+            .effect = .{ .add_condition = .{
+                .condition = .blinded,
+                .expiration = .{ .ticks = 1.0 },
+            } },
+            .filter = null,
+            .target = .all_enemies,
         }},
     }},
 };

@@ -1324,27 +1324,49 @@ pub fn executeCommitPhaseRules(world: *World, actor: *Agent) !void {
 
 /// Execute all on_resolve rules for cards in play.
 /// Called during tick resolution for non-technique effects (e.g., stamina/focus recovery).
+/// Cards with on_resolve rules that have cost.exhausts=true are moved to exhaust zone.
 pub fn executeResolvePhaseRules(world: *World, actor: *Agent) !void {
     const cs = actor.combat_state orelse return;
     const is_player = switch (actor.director) {
         .player => true,
         else => false,
     };
+    const actor_meta: events.AgentMeta = .{ .id = actor.id, .player = is_player };
+
+    // Track cards that resolved on_resolve rules and should exhaust
+    var to_exhaust = try std.ArrayList(entity.ID).initCapacity(world.alloc, 4);
+    defer to_exhaust.deinit(world.alloc);
 
     for (cs.in_play.items) |card_id| {
         const card = world.card_registry.get(card_id) orelse continue;
 
+        var rule_fired = false;
         for (card.template.rules) |rule| {
             if (rule.trigger != .on_resolve) continue;
 
             // Check rule validity predicate
             if (!rulePredicatesSatisfied(card.template, actor)) continue;
 
+            rule_fired = true;
+
             // Execute expressions
             for (rule.expressions) |expr| {
                 switch (expr.target) {
                     .self => {
-                        try applyResolveEffect(expr.effect, actor, is_player, &world.events);
+                        try applyResolveEffect(expr.effect, actor, is_player, world);
+                    },
+                    .all_enemies => {
+                        // Get enemy targets
+                        var targets = try evaluateTargets(world.alloc, .all_enemies, actor, world);
+                        defer targets.deinit(world.alloc);
+
+                        for (targets.items) |target| {
+                            const target_is_player = switch (target.director) {
+                                .player => true,
+                                else => false,
+                            };
+                            try applyResolveEffect(expr.effect, target, target_is_player, world);
+                        }
                     },
                     else => {
                         // Other targets not yet implemented for resolve effects
@@ -1352,6 +1374,24 @@ pub fn executeResolvePhaseRules(world: *World, actor: *Agent) !void {
                 }
             }
         }
+
+        // Track exhausting cards that had on_resolve rules fire
+        if (rule_fired and card.template.cost.exhausts) {
+            try to_exhaust.append(world.alloc, card_id);
+        }
+    }
+
+    // Move exhausting cards to exhaust zone
+    for (to_exhaust.items) |card_id| {
+        cs.moveCard(card_id, .in_play, .exhaust) catch continue;
+        try world.events.push(.{
+            .card_moved = .{
+                .instance = card_id,
+                .from = .in_play,
+                .to = .exhaust,
+                .actor = actor_meta,
+            },
+        });
     }
 }
 
@@ -1360,7 +1400,7 @@ fn applyResolveEffect(
     effect: cards.Effect,
     agent: *Agent,
     is_player: bool,
-    event_system: *events.EventSystem,
+    world: *World,
 ) !void {
     const actor_meta: events.AgentMeta = .{ .id = agent.id, .player = is_player };
 
@@ -1371,7 +1411,7 @@ fn applyResolveEffect(
             agent.stamina.current = @min(agent.stamina.current + delta, agent.stamina.max);
             agent.stamina.available = @min(agent.stamina.available + delta, agent.stamina.current);
 
-            try event_system.push(.{ .stamina_recovered = .{
+            try world.events.push(.{ .stamina_recovered = .{
                 .agent_id = agent.id,
                 .amount = agent.stamina.current - old_value,
                 .new_value = agent.stamina.current,
@@ -1384,10 +1424,19 @@ fn applyResolveEffect(
             agent.focus.current = @min(agent.focus.current + delta, agent.focus.max);
             agent.focus.available = @min(agent.focus.available + delta, agent.focus.current);
 
-            try event_system.push(.{ .focus_recovered = .{
+            try world.events.push(.{ .focus_recovered = .{
                 .agent_id = agent.id,
                 .amount = agent.focus.current - old_value,
                 .new_value = agent.focus.current,
+                .actor = actor_meta,
+            } });
+        },
+        .add_condition => |active_cond| {
+            try agent.conditions.append(world.alloc, active_cond);
+
+            try world.events.push(.{ .condition_applied = .{
+                .agent_id = agent.id,
+                .condition = active_cond.condition,
                 .actor = actor_meta,
             } });
         },

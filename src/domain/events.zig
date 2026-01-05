@@ -4,6 +4,7 @@ const entity = lib.entity;
 const RandomStreamID = @import("random.zig").RandomStreamID;
 const Slot = void; // TODO what's this look like?
 const cards = @import("cards.zig");
+const damage = @import("damage.zig");
 const world = @import("world.zig");
 const body = @import("body.zig");
 const combat = @import("combat.zig");
@@ -167,6 +168,11 @@ pub const Event = union(enum) {
         agent_id: entity.ID,
         amount: f32,
         new_value: f32,
+        actor: AgentMeta,
+    },
+    condition_applied: struct {
+        agent_id: entity.ID,
+        condition: damage.Condition,
         actor: AgentMeta,
     },
     cooldown_applied: struct {
