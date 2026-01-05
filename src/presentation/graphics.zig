@@ -123,7 +123,7 @@ pub const UX = struct {
         const font_normal = try s.ttf.Font.init(normal_font_path, 18);
         // try font_normal.setSdf(true);
         errdefer font_normal.deinit();
-        const font_small = try s.ttf.Font.init(small_font_path, 14);
+        const font_small = try s.ttf.Font.init(small_font_path, 18);
         // try font_small.setSdf(true);
         errdefer font_small.deinit();
 
@@ -302,7 +302,7 @@ pub const UX = struct {
         };
 
         // Render text to surface, then texture
-        // const surface = font.renderTextLcd(text.content, color, s.ttf.Color{ .r = 0, .g = 0, .b = 0, .a = 0 }) catch return;
+        // const surface = try font.renderTextLcd(text.content, color, s.ttf.Color{ .r = 0, .g = 0, .b = 0, .a = 0 });
         const surface = font.renderTextBlended(text.content, color) catch return;
         const tex = textureFromSurface(self.renderer, surface) catch return;
         defer tex.deinit();
@@ -389,7 +389,9 @@ pub const UX = struct {
                     .a = span.color.a,
                 };
 
-                const text_surface = self.font_small.renderTextBlended(span.text, color) catch continue;
+                const text_surface = self.font_small.renderTextSolid(span.text, color) catch continue;
+                // const text_surface = try self.font_small.renderTextLcd(span.text, color, s.ttf.Color{ .r = 0, .g = 0, .b = 0, .a = 255 });
+
                 defer text_surface.deinit();
 
                 const text_w: i32 = @intCast(text_surface.getWidth());

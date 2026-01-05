@@ -104,28 +104,6 @@ fn singleSpan(alloc: std.mem.Allocator, text: []const u8, color: Color) !Entry {
 /// Returns null for events that shouldn't be logged.
 pub fn format(event: Event, world: *const World, alloc: std.mem.Allocator) !?Entry {
     return switch (event) {
-        .played_action_card => |e| try singleSpan(
-            alloc,
-            try std.fmt.allocPrint(alloc, "{s}: played card", .{actorName(e.actor.player)}),
-            if (e.actor.player) colors.player_action else colors.enemy_action,
-        ),
-
-        .card_moved => |e| try singleSpan(
-            alloc,
-            try std.fmt.allocPrint(alloc, "{s}: {s} → {s}", .{
-                actorName(e.actor.player),
-                @tagName(e.from),
-                @tagName(e.to),
-            }),
-            if (e.actor.player) colors.player_action else colors.enemy_action,
-        ),
-
-        .card_cancelled => |e| try singleSpan(
-            alloc,
-            try std.fmt.allocPrint(alloc, "{s}: cancelled card", .{actorName(e.actor.player)}),
-            if (e.actor.player) colors.player_action else colors.enemy_action,
-        ),
-
         .wound_inflicted => |e| try singleSpan(
             alloc,
             try std.fmt.allocPrint(alloc, "Wound: {s} ({s})", .{
@@ -199,33 +177,6 @@ pub fn format(event: Event, world: *const World, alloc: std.mem.Allocator) !?Ent
             );
         },
 
-        .stamina_deducted => |e| try singleSpan(
-            alloc,
-            try std.fmt.allocPrint(alloc, "{s}: stamina -{d:.1}", .{
-                agentName(e.agent_id, world),
-                e.amount,
-            }),
-            colors.default,
-        ),
-
-        .card_cost_reserved => |e| try singleSpan(
-            alloc,
-            try std.fmt.allocPrint(alloc, "{s}: reserved {d:.1} stamina", .{
-                actorName(e.actor.player),
-                e.stamina,
-            }),
-            if (e.actor.player) colors.player_action else colors.enemy_action,
-        ),
-
-        .card_cost_returned => |e| try singleSpan(
-            alloc,
-            try std.fmt.allocPrint(alloc, "{s}: returned {d:.1} stamina", .{
-                actorName(e.actor.player),
-                e.stamina,
-            }),
-            if (e.actor.player) colors.player_action else colors.enemy_action,
-        ),
-
         .mob_died => |id| try singleSpan(
             alloc,
             try std.fmt.allocPrint(alloc, "DIED: {s}", .{agentName(id, world)}),
@@ -245,6 +196,12 @@ pub fn format(event: Event, world: *const World, alloc: std.mem.Allocator) !?Ent
         ),
 
         // Events not worth logging
+        .played_action_card,
+        .card_moved,
+        .card_cancelled,
+        .card_cost_reserved,
+        .card_cost_returned,
+        .stamina_deducted,
         .entity_died,
         .played_reaction,
         .equipped_item,
