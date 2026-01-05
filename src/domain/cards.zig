@@ -70,6 +70,7 @@ pub const Trigger = union(enum) {
     on_tick,
     on_event: EventTag,
     on_commit, // fires during commit phase (e.g., Feint)
+    on_resolve, // fires during tick resolution (e.g., recovery effects)
 };
 
 pub const TagSet = packed struct {
@@ -235,6 +236,10 @@ pub const ModifyPlay = struct {
 pub const Effect = union(enum) {
     combat_technique: Technique,
     modify_stamina: struct {
+        amount: i32,
+        ratio: f32,
+    },
+    modify_focus: struct {
         amount: i32,
         ratio: f32,
     },

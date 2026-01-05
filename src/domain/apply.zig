@@ -1321,6 +1321,83 @@ pub fn executeCommitPhaseRules(world: *World, actor: *Agent) !void {
 }
 
 // ============================================================================
+// Resolution Phase Effect Execution
+// ============================================================================
+
+/// Execute all on_resolve rules for cards in play.
+/// Called during tick resolution for non-technique effects (e.g., stamina/focus recovery).
+pub fn executeResolvePhaseRules(world: *World, actor: *Agent) !void {
+    const cs = actor.combat_state orelse return;
+    const is_player = switch (actor.director) {
+        .player => true,
+        else => false,
+    };
+
+    for (cs.in_play.items) |card_id| {
+        const card = world.card_registry.get(card_id) orelse continue;
+
+        for (card.template.rules) |rule| {
+            if (rule.trigger != .on_resolve) continue;
+
+            // Check rule validity predicate
+            if (!rulePredicatesSatisfied(card.template, actor)) continue;
+
+            // Execute expressions
+            for (rule.expressions) |expr| {
+                switch (expr.target) {
+                    .self => {
+                        try applyResolveEffect(expr.effect, actor, is_player, &world.events);
+                    },
+                    else => {
+                        // Other targets not yet implemented for resolve effects
+                    },
+                }
+            }
+        }
+    }
+}
+
+/// Apply a resolution phase effect to an agent.
+fn applyResolveEffect(
+    effect: cards.Effect,
+    agent: *Agent,
+    is_player: bool,
+    event_system: *events.EventSystem,
+) !void {
+    const actor_meta: events.AgentMeta = .{ .id = agent.id, .player = is_player };
+
+    switch (effect) {
+        .modify_stamina => |mod| {
+            const old_value = agent.stamina.current;
+            const delta: f32 = @as(f32, @floatFromInt(mod.amount)) + (agent.stamina.max * mod.ratio);
+            agent.stamina.current = @min(agent.stamina.current + delta, agent.stamina.max);
+            agent.stamina.available = @min(agent.stamina.available + delta, agent.stamina.current);
+
+            try event_system.push(.{ .stamina_recovered = .{
+                .agent_id = agent.id,
+                .amount = agent.stamina.current - old_value,
+                .new_value = agent.stamina.current,
+                .actor = actor_meta,
+            } });
+        },
+        .modify_focus => |mod| {
+            const old_value = agent.focus.current;
+            const delta: f32 = @as(f32, @floatFromInt(mod.amount)) + (agent.focus.max * mod.ratio);
+            agent.focus.current = @min(agent.focus.current + delta, agent.focus.max);
+            agent.focus.available = @min(agent.focus.available + delta, agent.focus.current);
+
+            try event_system.push(.{ .focus_recovered = .{
+                .agent_id = agent.id,
+                .amount = agent.focus.current - old_value,
+                .new_value = agent.focus.current,
+                .actor = actor_meta,
+            } });
+        },
+        else => {}, // Other effects not handled during resolution
+    }
+}
+
+// ============================================================================
 // Tick Cleanup (cost enforcement, card zone transitions, cooldowns)
 // ============================================================================
 

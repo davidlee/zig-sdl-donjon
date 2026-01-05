@@ -329,6 +329,14 @@ pub const World = struct {
         // Resolve all actions
         const result = try self.tickResolver.resolve(self);
 
+        // Execute on_resolve effects (stamina/focus recovery, etc.)
+        try apply.executeResolvePhaseRules(self, self.player);
+        if (self.encounter) |*enc| {
+            for (enc.enemies.items) |mob| {
+                try apply.executeResolvePhaseRules(self, mob);
+            }
+        }
+
         // Cleanup: apply costs, move cards
         try apply.applyCommittedCosts(self.tickResolver.committed.items, &self.events);
 

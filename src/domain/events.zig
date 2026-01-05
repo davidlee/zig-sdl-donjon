@@ -156,6 +156,19 @@ pub const Event = union(enum) {
         amount: f32,
         new_value: f32,
     },
+    // Resolution phase resource recovery
+    stamina_recovered: struct {
+        agent_id: entity.ID,
+        amount: f32,
+        new_value: f32,
+        actor: AgentMeta,
+    },
+    focus_recovered: struct {
+        agent_id: entity.ID,
+        amount: f32,
+        new_value: f32,
+        actor: AgentMeta,
+    },
     cooldown_applied: struct {
         agent_id: entity.ID,
         template_id: cards.ID,

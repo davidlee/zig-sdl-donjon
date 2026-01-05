@@ -198,6 +198,10 @@ pub const BeginnerDeck = [_]*const Template{
     &m_low,
     &m_low,
     &m_low,
+    &t_breath_work,
+    &t_breath_work,
+    &t_probing_stare,
+    &t_probing_stare,
 };
 
 const t_thrust = Template{
@@ -419,6 +423,50 @@ const m_feint = Template{
             },
             .target = .{ .my_play = .{ .has_tag = .{ .offensive = true } } },
             .filter = null,
+        }},
+    }},
+};
+
+// -----------------------------------------------------------------------------
+// Recovery cards - utility actions that recover resources
+// -----------------------------------------------------------------------------
+
+const t_breath_work = Template{
+    .id = hashName("breath work"),
+    .kind = .action,
+    .name = "breath work",
+    .description = "steady your breathing, recover stamina",
+    .rarity = .common,
+    .cost = .{ .stamina = 0, .time = 0.1, .exhausts = true },
+    .tags = .{ .skill = true, .phase_selection = true, .phase_commit = true },
+    .playable_from = PlayableFrom.hand_only,
+    .rules = &.{.{
+        .trigger = .on_resolve,
+        .valid = .always,
+        .expressions = &.{.{
+            .effect = .{ .modify_stamina = .{ .amount = 2, .ratio = 0 } },
+            .filter = null,
+            .target = .self,
+        }},
+    }},
+};
+
+const t_probing_stare = Template{
+    .id = hashName("probing stare"),
+    .kind = .action,
+    .name = "probing stare",
+    .description = "read your opponent, sharpen your focus",
+    .rarity = .common,
+    .cost = .{ .stamina = 0, .time = 0.1, .exhausts = true },
+    .tags = .{ .skill = true, .phase_selection = true, .phase_commit = true },
+    .playable_from = PlayableFrom.hand_only,
+    .rules = &.{.{
+        .trigger = .on_resolve,
+        .valid = .always,
+        .expressions = &.{.{
+            .effect = .{ .modify_focus = .{ .amount = 1, .ratio = 0 } },
+            .filter = null,
+            .target = .self,
         }},
     }},
 };
