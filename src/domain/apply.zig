@@ -845,12 +845,18 @@ pub fn playValidCardReservingCosts(
 
     if (actor.inAlwaysAvailable(card.id)) {
         in_play_id = try cs.addToInPlayFrom(card.id, .always_available, registry);
+        try evs.push(Event{
+            .card_cloned = .{ .clone_id = in_play_id, .master_id = card.id, .actor = actor_meta },
+        });
         // Set cooldown immediately if template has one
         if (card.template.cooldown) |cd| {
             try cs.setCooldown(card.id, cd);
         }
     } else if (actor.inSpellsKnown(card.id)) {
         in_play_id = try cs.addToInPlayFrom(card.id, .spells_known, registry);
+        try evs.push(Event{
+            .card_cloned = .{ .clone_id = in_play_id, .master_id = card.id, .actor = actor_meta },
+        });
         if (card.template.cooldown) |cd| {
             try cs.setCooldown(card.id, cd);
         }

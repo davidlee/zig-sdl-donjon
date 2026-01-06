@@ -520,15 +520,14 @@ pub const View = struct {
         if (self.alwaysZone(self.arena).hitTest(vs, pos)) |hit| {
             const id = hit.cardId();
             if (self.isCardDraggable(id)) {
-                std.debug.print("yes is drag\n", .{});
                 var cs = vs.combat orelse CombatUIState{};
                 cs.drag = .{ .original_pos = pos, .id = id };
                 return .{ .vs = vs.withCombat(cs) };
-            } else if (in_commit) {
+            }
+            if (in_commit) {
                 return .{ .command = .{ .commit_add = id } };
             } else {
-                // Selection phase: play card with animation (clone case)
-                return self.startCardAnimation(vs, id, hit.card.rect, true);
+                return self.startCardAnimation(vs, id, hit.card.rect);
             }
         }
 
@@ -542,8 +541,7 @@ pub const View = struct {
             } else if (in_commit) {
                 return .{ .command = .{ .commit_add = id } };
             } else {
-                // Selection phase: play card with animation
-                return self.startCardAnimation(vs, id, hit.card.rect, false);
+                return self.startCardAnimation(vs, id, hit.card.rect);
             }
         }
 
@@ -624,17 +622,14 @@ pub const View = struct {
     }
 
     /// Start a card animation and return play_card command with updated viewstate
-    fn startCardAnimation(_: *View, vs: ViewState, card_id: entity.ID, from_rect: Rect, from_always_available: bool) InputResult {
+    fn startCardAnimation(_: *View, vs: ViewState, card_id: entity.ID, from_rect: Rect) InputResult {
         var cs = vs.combat orelse CombatUIState{};
-        std.debug.print("startCardAnimation: id={d}/{d} from_aa={} count_before={d}\n", .{ card_id.index, card_id.generation, from_always_available, cs.card_animation_len });
         cs.addAnimation(.{
             .card_id = card_id,
             .from_rect = from_rect,
             .to_rect = null, // filled in by effect processing
             .progress = 0,
-            .from_always_available = from_always_available,
         });
-        std.debug.print("  -> count_after={d}\n", .{cs.card_animation_len});
         return .{
             .vs = vs.withCombat(cs),
             .command = .{ .play_card = card_id },

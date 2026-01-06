@@ -146,6 +146,9 @@ pub const Coordinator = struct {
     // Process domain events into presentation effects
     pub fn processWorldEvents(self: *Coordinator) !void {
         for (self.world.events.current_events.items) |event| {
+            // Handle card_cloned: update animation's card_id from master to clone
+            self.handleCardCloned(event);
+
             if (EffectMapper.map(event)) |effect| {
                 try self.effect_system.push(effect);
                 // For card_played effects, fill in destination rect in ViewState animation
@@ -159,6 +162,23 @@ pub const Coordinator = struct {
         try self.effect_system.spawnAnimations(self.current_time);
     }
 
+    /// When a card is cloned (pool cards), update the animation's card_id to the clone
+    fn handleCardCloned(self: *Coordinator, event: events.Event) void {
+        const data = switch (event) {
+            .card_cloned => |d| d,
+            else => return,
+        };
+
+        var cs = self.vs.combat orelse return;
+        const master_eid = entity.ID{ .index = data.master_id.index, .generation = data.master_id.generation };
+
+        if (cs.findAnimation(master_eid)) |anim| {
+            // Update animation to track the clone instead of the master
+            anim.card_id = .{ .index = data.clone_id.index, .generation = data.clone_id.generation };
+            self.vs.combat = cs;
+        }
+    }
+
     /// When a card_played effect is seen, find the matching animation and set its destination
     fn finalizeCardAnimation(self: *Coordinator, effect: Effect) void {
         const card_id = switch (effect) {
@@ -166,30 +186,10 @@ pub const Coordinator = struct {
             else => return,
         };
 
-        std.debug.print("finalizeCardAnimation: card_id={d}/{d}\n", .{ card_id.index, card_id.generation });
-
-        var cs = self.vs.combat orelse {
-            std.debug.print("  -> no combat state\n", .{});
-            return;
-        };
+        var cs = self.vs.combat orelse return;
         const eid = entity.ID{ .index = card_id.index, .generation = card_id.generation };
 
-        std.debug.print("  -> animations in state: {d}\n", .{cs.card_animation_len});
-        for (cs.card_animations[0..cs.card_animation_len]) |a| {
-            std.debug.print("     - id={d}/{d} from_aa={} to_rect={}\n", .{ a.card_id.index, a.card_id.generation, a.from_always_available, a.to_rect != null });
-        }
-
-        // Try exact match first, fall back to always_available animation (clone case)
-        const anim = cs.findAnimation(eid) orelse cs.findAlwaysAvailableAnimation() orelse {
-            std.debug.print("  -> no animation found\n", .{});
-            return;
-        };
-        std.debug.print("  -> found animation\n", .{});
-
-        // For always_available clones, update the animation's card_id to the clone's ID
-        if (anim.from_always_available) {
-            anim.card_id = eid;
-        }
+        const anim = cs.findAnimation(eid) orelse return;
 
         // Calculate destination rect based on card's position in in_play zone
         const player = self.world.player;

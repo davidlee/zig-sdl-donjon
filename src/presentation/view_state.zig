@@ -81,14 +81,6 @@ pub const CombatUIState = struct {
         return null;
     }
 
-    /// Find animation from always_available zone (for clone case where card_id changes)
-    pub fn findAlwaysAvailableAnimation(self: *CombatUIState) ?*CardAnimation {
-        for (self.card_animations[0..self.card_animation_len]) |*anim| {
-            if (anim.from_always_available and anim.to_rect == null) return anim;
-        }
-        return null;
-    }
-
     pub fn isAnimating(self: *const CombatUIState, card_id: entity.ID) bool {
         for (self.activeAnimations()) |anim| {
             if (anim.card_id.eql(card_id)) return true;
@@ -116,7 +108,6 @@ pub const CardAnimation = struct {
     from_rect: Rect,
     to_rect: ?Rect, // null until effect processing sets destination
     progress: f32, // 0.0 to 1.0
-    from_always_available: bool, // true if animation started from always_available zone (clone case)
 
     pub fn currentRect(self: CardAnimation) Rect {
         const to = self.to_rect orelse return self.from_rect;
