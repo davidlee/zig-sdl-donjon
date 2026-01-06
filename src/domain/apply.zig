@@ -39,6 +39,8 @@ pub const ValidationError = error{
     NotCombatPlayable, // Card has combat_playable=false
     PredicateFailed,
     ConditionPreventsPlay, // Global condition restriction (stunned, paralysed, etc.)
+    ChannelConflict, // Technique uses same channel as existing play
+    OutOfRange, // Melee card but no enemy within weapon reach
     NotImplemented,
 };
 
@@ -221,7 +223,11 @@ pub const CommandHandler = struct {
         if (turn_phase != .player_card_selection)
             return CommandError.InvalidGameState;
 
-        if (try validateCardSelection(player, card, turn_phase)) {
+        if (try validateCardSelection(player, card, turn_phase, self.world.encounterPtr())) {
+            // Check channel conflicts with existing plays
+            if (wouldConflictWithInPlay(card, cs, &self.world.card_registry))
+                return ValidationError.ChannelConflict;
+
             _ = try playValidCardReservingCosts(&self.world.events, player, card, &self.world.card_registry);
         } else {
             return CommandError.CommandInvalid;
@@ -247,7 +253,7 @@ pub const CommandHandler = struct {
             return CommandError.CardNotInPlay;
 
         // Validate: play has no modifiers
-        const play = &enc_state.current.plays()[play_index];
+        const play = &enc_state.current.slots()[play_index].play;
         if (!canWithdrawPlay(play))
             return CommandError.CommandInvalid;
 
@@ -279,6 +285,8 @@ pub const CommandHandler = struct {
             return CommandError.InvalidGameState;
 
         const cs = player.combat_state orelse return CommandError.BadInvariant;
+        const enc = &(self.world.encounter orelse return CommandError.BadInvariant);
+        const enc_state = enc.stateFor(player.id) orelse return CommandError.BadInvariant;
 
         // Validate: card is in hand or available
         if (!cs.isInZone(card_id, .hand) and !player.poolContains(card_id))
@@ -289,8 +297,13 @@ pub const CommandHandler = struct {
             return CommandError.BadInvariant;
 
         // Validate: card selection rules (phase, costs, predicates)
-        if (!try validateCardSelection(player, card, .commit_phase))
+        if (!try validateCardSelection(player, card, .commit_phase, self.world.encounterPtr()))
             return CommandError.PredicateFailed;
+
+        // Validate: channel conflicts with existing plays
+        const new_channels = getCardChannels(card.template);
+        if (enc_state.current.wouldConflictOnChannel(new_channels, &self.world.card_registry))
+            return ValidationError.ChannelConflict;
 
         // Validate: sufficient focus
         if (player.focus.available < FOCUS_COST)
@@ -303,12 +316,10 @@ pub const CommandHandler = struct {
         const in_play_id = try playValidCardReservingCosts(&self.world.events, player, card, &self.world.card_registry);
 
         // Add to plays with added_in_commit flag
-        const enc = &(self.world.encounter orelse return CommandError.BadInvariant);
-        const enc_state = enc.stateFor(player.id) orelse return CommandError.BadInvariant;
         try enc_state.current.addPlay(.{
             .action = in_play_id,
             .added_in_commit = true, // Cannot be stacked this turn
-        });
+        }, &self.world.card_registry);
 
         enc_state.current.focus_spent += FOCUS_COST;
     }
@@ -362,10 +373,10 @@ pub const CommandHandler = struct {
         const cs = player.combat_state orelse return CommandError.BadInvariant;
 
         // Validate target play exists
-        if (target_play_index >= enc_state.current.plays_len)
+        if (target_play_index >= enc_state.current.slots().len)
             return CommandError.CommandInvalid;
 
-        const target_play = &enc_state.current.plays()[target_play_index];
+        const target_play = &enc_state.current.slots()[target_play_index].play;
 
         // Cannot stack on plays added this commit phase
         if (!target_play.canStack())
@@ -427,7 +438,7 @@ pub const CommandHandler = struct {
         paid_base_focus: bool,
         total_focus: f32,
     ) !void {
-        const target_play = &enc_state.current.playsMut()[target_play_index];
+        const target_play = &enc_state.current.slotsMut()[target_play_index].play;
 
         // Move card to in_play first - this creates a clone for pool cards
         // Returns the ID that ends up in in_play (clone for pool cards, original for hand)
@@ -562,13 +573,12 @@ pub const EventProcessor = struct {
     }
 
     fn buildPlaysForAgent(self: *EventProcessor, agent: *Agent, enc: *combat.Encounter) !void {
-        _ = self;
         const enc_state = enc.stateFor(agent.id) orelse return;
         enc_state.current.clear();
 
         const cs = agent.combat_state orelse return;
         for (cs.in_play.items) |card_id| {
-            try enc_state.current.addPlay(.{ .action = card_id });
+            try enc_state.current.addPlay(.{ .action = card_id }, &self.world.card_registry);
         }
     }
 
@@ -738,18 +748,23 @@ pub fn canPlayerPlayCard(world: *World, card_id: entity.ID) bool {
 
     // Look up card via card_registry (new system)
     const card = world.card_registry.get(card_id) orelse return false;
-    return validateCardSelection(player, card, phase) catch false;
+    return validateCardSelection(player, card, phase, world.encounterPtrConst()) catch false;
 }
 
 /// Is it valid to play this card in the selection phase?
 /// Convenience wrapper for AI directors that always play during selection.
-pub fn isCardSelectionValid(actor: *const Agent, card: *const Instance) bool {
-    return validateCardSelection(actor, card, .player_card_selection) catch false;
+pub fn isCardSelectionValid(actor: *const Agent, card: *const Instance, encounter: ?*const combat.Encounter) bool {
+    return validateCardSelection(actor, card, .player_card_selection, encounter) catch false;
 }
 
 /// Check if card can be played: combat_playable, phase flags, source location,
 /// costs, and rule predicates.
-pub fn validateCardSelection(actor: *const Agent, card: *const Instance, phase: combat.TurnPhase) !bool {
+pub fn validateCardSelection(
+    actor: *const Agent,
+    card: *const Instance,
+    phase: combat.TurnPhase,
+    encounter: ?*const combat.Encounter,
+) !bool {
     const cs = actor.combat_state orelse return ValidationError.InvalidGameState;
     const template = card.template;
 
@@ -787,7 +802,42 @@ pub fn validateCardSelection(actor: *const Agent, card: *const Instance, phase: 
     // check rule.valid predicates (weapon requirements, etc.)
     if (!rulePredicatesSatisfied(template, actor)) return ValidationError.PredicateFailed;
 
+    // Melee cards require weapon reach to at least one enemy
+    if (template.tags.melee) {
+        const enc = encounter orelse return ValidationError.OutOfRange;
+        if (!validateMeleeReach(template, actor, enc)) return ValidationError.OutOfRange;
+    }
+
     return true;
+}
+
+/// Check if actor's weapon can reach at least one enemy with the technique's attack mode.
+/// For .melee cards, validates that (weapon_mode.reach >= engagement.range) for some enemy.
+fn validateMeleeReach(
+    template: *const cards.Template,
+    actor: *const Agent,
+    encounter: *const combat.Encounter,
+) bool {
+    const technique = template.getTechnique() orelse {
+        // .melee card without technique is unexpected; warn and allow play
+        std.debug.print("warning: .melee card '{s}' has no technique\n", .{template.name});
+        return true;
+    };
+    const attack_mode = technique.attack_mode;
+
+    // Defensive techniques (.none) have no reach requirement
+    if (attack_mode == .none) return true;
+
+    // Get weapon's offensive mode for this attack type
+    const weapon_mode = actor.weapons.getOffensiveMode(attack_mode) orelse return false;
+
+    // Check if any enemy is within reach (Option A: short-circuit true on first valid)
+    for (encounter.enemies.items) |enemy| {
+        const engagement = encounter.getPlayerEngagementConst(enemy.id) orelse continue;
+        // weapon.reach >= engagement.range means we can hit them
+        if (@intFromEnum(weapon_mode.reach) >= @intFromEnum(engagement.range)) return true;
+    }
+    return false;
 }
 
 /// Check if card_id is in any container allowed by playable_from.
@@ -821,6 +871,32 @@ fn isInPlayableSource(actor: *const Agent, cs: *const combat.CombatState, card_i
     // TODO: environment requires checking Encounter.environment (needs World access)
 
     return false;
+}
+
+/// Check if a card's channels conflict with any card already in play.
+/// Phase 1: conservative - any channel overlap is a conflict.
+fn wouldConflictWithInPlay(
+    new_card: *const Instance,
+    cs: *const combat.CombatState,
+    registry: *const w.CardRegistry,
+) bool {
+    const new_channels = getCardChannels(new_card.template);
+    if (new_channels.isEmpty()) return false;
+
+    for (cs.in_play.items) |in_play_id| {
+        const in_play_card = registry.getConst(in_play_id) orelse continue;
+        const existing_channels = getCardChannels(in_play_card.template);
+        if (new_channels.conflicts(existing_channels)) return true;
+    }
+    return false;
+}
+
+/// Get channels occupied by a card's technique (empty if no technique).
+fn getCardChannels(template: *const cards.Template) cards.ChannelSet {
+    if (template.getTechnique()) |technique| {
+        return technique.channels;
+    }
+    return .{};
 }
 
 /// Doesn't perform validation. Just moves card, reserves costs, emits events.
@@ -1273,8 +1349,8 @@ pub fn evaluatePlayTargets(
     switch (query) {
         .my_play => |predicate| {
             const enc_state = enc.stateFor(actor.id) orelse return targets;
-            for (enc_state.current.plays(), 0..) |play, i| {
-                if (playMatchesPredicate(&play, predicate, world)) {
+            for (enc_state.current.slots(), 0..) |slot, i| {
+                if (playMatchesPredicate(&slot.play, predicate, world)) {
                     try targets.append(alloc, .{ .agent = actor, .play_index = i });
                 }
             }
@@ -1284,16 +1360,16 @@ pub fn evaluatePlayTargets(
             if (actor.director == .player) {
                 for (enc.enemies.items) |mob| {
                     const mob_state = enc.stateFor(mob.id) orelse continue;
-                    for (mob_state.current.plays(), 0..) |play, i| {
-                        if (playMatchesPredicate(&play, predicate, world)) {
+                    for (mob_state.current.slots(), 0..) |slot, i| {
+                        if (playMatchesPredicate(&slot.play, predicate, world)) {
                             try targets.append(alloc, .{ .agent = mob, .play_index = i });
                         }
                     }
                 }
             } else {
                 const player_state = enc.stateFor(world.player.id) orelse return targets;
-                for (player_state.current.plays(), 1..) |play, i| {
-                    if (playMatchesPredicate(&play, predicate, world)) {
+                for (player_state.current.slots(), 0..) |slot, i| {
+                    if (playMatchesPredicate(&slot.play, predicate, world)) {
                         try targets.append(alloc, .{ .agent = world.player, .play_index = i });
                     }
                 }
@@ -1316,8 +1392,8 @@ pub fn applyCommitPhaseEffect(
 
     switch (effect) {
         .modify_play => |mod| {
-            if (play_target.play_index >= enc_state.current.plays_len) return;
-            var play = &enc_state.current.playsMut()[play_target.play_index];
+            if (play_target.play_index >= enc_state.current.slots().len) return;
+            var play = &enc_state.current.slotsMut()[play_target.play_index].play;
             if (mod.cost_mult) |m| play.cost_mult *= m;
             if (mod.damage_mult) |m| play.damage_mult *= m;
             if (mod.replace_advantage) |adv| play.advantage_override = adv;
@@ -1806,4 +1882,97 @@ test "canWithdrawPlay returns false for play with modifiers attached" {
     try play.addModifier(testId(1));
 
     try testing.expect(!canWithdrawPlay(&play));
+}
+
+// ============================================================================
+// Melee Reach Validation Tests
+// ============================================================================
+
+fn makeTestEncounterWithEnemy(alloc: std.mem.Allocator, player_id: entity.ID, enemy: *Agent, range: combat.Reach) !combat.Encounter {
+    var enc = try combat.Encounter.init(alloc, player_id);
+    try enc.enemies.append(alloc, enemy);
+    try enc.setEngagement(player_id, enemy.id, combat.Engagement{ .range = range });
+    try enc.agent_state.put(enemy.id, .{});
+    return enc;
+}
+
+test "validateMeleeReach passes when weapon reach >= engagement range" {
+    const alloc = testing.allocator;
+
+    // Setup: player with longsword (swing reach = .longsword)
+    var sword_instance = weapon.Instance{ .id = testId(0), .template = &weapon_list.knights_sword };
+    var player = makeTestAgent(.{ .single = &sword_instance });
+    player.id = testId(1);
+
+    // Enemy
+    var enemy_sword = weapon.Instance{ .id = testId(2), .template = &weapon_list.knights_sword };
+    var enemy = makeTestAgent(.{ .single = &enemy_sword });
+    enemy.id = testId(3);
+
+    // Encounter with enemy at sabre range (longsword.swing.reach = .sabre, so can hit)
+    var enc = try makeTestEncounterWithEnemy(alloc, player.id, &enemy, .sabre);
+    defer enc.engagements.deinit();
+    defer enc.agent_state.deinit();
+    defer enc.enemies.deinit(alloc);
+    defer enc.environment.deinit(alloc);
+    defer enc.thrown_by.deinit();
+
+    // Thrust card (melee, uses thrust mode with .sabre reach)
+    const thrust_template = card_list.byName("thrust");
+
+    try testing.expect(validateMeleeReach(thrust_template, &player, &enc));
+}
+
+test "validateMeleeReach fails when weapon reach < engagement range" {
+    const alloc = testing.allocator;
+
+    // Setup: player with dirk (thrust reach = .dagger)
+    var dirk_instance = weapon.Instance{ .id = testId(0), .template = &weapon_list.dirk };
+    var player = makeTestAgent(.{ .single = &dirk_instance });
+    player.id = testId(1);
+
+    // Enemy
+    var enemy_sword = weapon.Instance{ .id = testId(2), .template = &weapon_list.knights_sword };
+    var enemy = makeTestAgent(.{ .single = &enemy_sword });
+    enemy.id = testId(3);
+
+    // Encounter with enemy at longsword range (dirk can't reach)
+    var enc = try makeTestEncounterWithEnemy(alloc, player.id, &enemy, .longsword);
+    defer enc.engagements.deinit();
+    defer enc.agent_state.deinit();
+    defer enc.enemies.deinit(alloc);
+    defer enc.environment.deinit(alloc);
+    defer enc.thrown_by.deinit();
+
+    // Thrust card
+    const thrust_template = card_list.byName("thrust");
+
+    try testing.expect(!validateMeleeReach(thrust_template, &player, &enc));
+}
+
+test "validateMeleeReach fails when at abstract far distance" {
+    const alloc = testing.allocator;
+
+    // Setup: player with spear (longest melee reach)
+    var spear_instance = weapon.Instance{ .id = testId(0), .template = &weapon_list.spear };
+    var player = makeTestAgent(.{ .single = &spear_instance });
+    player.id = testId(1);
+
+    // Enemy
+    var enemy_sword = weapon.Instance{ .id = testId(2), .template = &weapon_list.knights_sword };
+    var enemy = makeTestAgent(.{ .single = &enemy_sword });
+    enemy.id = testId(3);
+
+    // Encounter at .far (abstract distance beyond all melee weapons)
+    var enc = try makeTestEncounterWithEnemy(alloc, player.id, &enemy, .far);
+    defer enc.engagements.deinit();
+    defer enc.agent_state.deinit();
+    defer enc.enemies.deinit(alloc);
+    defer enc.environment.deinit(alloc);
+    defer enc.thrown_by.deinit();
+
+    const thrust_template = card_list.byName("thrust");
+
+    // Even spear can't reach .far - need to close distance first
+    try testing.expect(!validateMeleeReach(thrust_template, &player, &enc));
 }

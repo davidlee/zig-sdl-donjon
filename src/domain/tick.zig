@@ -111,21 +111,20 @@ pub const TickResolver = struct {
 
     /// Extract committed actions from player's plays (with modifiers from commit phase)
     pub fn commitPlayerCards(self: *TickResolver, player: *Agent, w: *World) !void {
-        // Get plays from AgentEncounterState (populated during commit phase)
+        // Get slots from AgentEncounterState (populated during commit phase)
         const enc = &(w.encounter orelse return);
         const enc_state = enc.stateFor(player.id) orelse return;
-        const plays = enc_state.current.plays();
 
-        var time_cursor: f32 = 0.0;
+        for (enc_state.current.slots()) |slot| {
+            const play = slot.play;
 
-        for (plays) |play| {
             // Look up card via card_registry (new system)
             const card_instance = w.card_registry.get(play.action) orelse continue;
             const template = card_instance.template;
             const tech_expr = template.getTechniqueWithExpression() orelse continue;
 
-            // Apply cost_mult to time
-            const time_cost = template.cost.time * play.cost_mult;
+            // Recalculate duration from current play state (includes modifier effects)
+            const duration = combat.getPlayDuration(play, &w.card_registry);
 
             try self.addAction(.{
                 .actor = player,
@@ -133,13 +132,11 @@ pub const TickResolver = struct {
                 .technique = tech_expr.technique,
                 .expression = tech_expr.expression,
                 .stakes = play.effectiveStakes(),
-                .time_start = time_cursor,
-                .time_end = time_cursor + time_cost,
+                .time_start = slot.time_start,
+                .time_end = slot.time_start + duration,
                 .damage_mult = play.damage_mult,
                 .advantage_override = play.advantage_override,
             });
-
-            time_cursor += time_cost;
         }
     }
 

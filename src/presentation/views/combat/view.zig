@@ -269,11 +269,12 @@ pub const View = struct {
         const enc = &(self.world.encounter orelse return &.{});
         const enc_state = enc.stateForConst(self.world.player.id) orelse return &.{};
 
-        const result = alloc.alloc(PlayViewData, enc_state.current.plays_len) catch return &.{};
+        const slots = enc_state.current.slots();
+        const result = alloc.alloc(PlayViewData, slots.len) catch return &.{};
         var count: usize = 0;
 
-        for (enc_state.current.plays()) |*play| {
-            if (self.buildPlayViewData(alloc, play, self.world.player)) |pvd| {
+        for (slots) |slot| {
+            if (self.buildPlayViewData(alloc, &slot.play, self.world.player)) |pvd| {
                 result[count] = pvd;
                 count += 1;
             }
@@ -324,12 +325,12 @@ pub const View = struct {
     fn enemyPlays(self: *const View, alloc: std.mem.Allocator, agent: *const Agent) []const PlayViewData {
         const enc = self.world.encounter orelse return &.{};
         const enc_state = enc.stateForConst(agent.id) orelse return &.{};
-        const plays = enc_state.current.plays();
+        const slots = enc_state.current.slots();
 
-        const result = alloc.alloc(PlayViewData, plays.len) catch return &.{};
+        const result = alloc.alloc(PlayViewData, slots.len) catch return &.{};
         var count: usize = 0;
-        for (plays) |*play| {
-            if (self.buildPlayViewData(alloc, play, agent)) |pvd| {
+        for (slots) |slot| {
+            if (self.buildPlayViewData(alloc, &slot.play, agent)) |pvd| {
                 result[count] = pvd;
                 count += 1;
             }
@@ -359,7 +360,7 @@ pub const View = struct {
 
         for (ids) |id| {
             const inst = self.world.card_registry.getConst(id) orelse continue;
-            const playable = apply.validateCardSelection(player, inst, phase) catch false;
+            const playable = apply.validateCardSelection(player, inst, phase, self.world.encounterPtrConst()) catch false;
             result[count] = CardViewData.fromInstance(inst, source, playable);
             count += 1;
         }
@@ -452,11 +453,11 @@ pub const View = struct {
                 const enc = &(self.world.encounter orelse return .{ .vs = vs.withCombat(new_cs) });
                 const enc_state = enc.stateForConst(self.world.player.id) orelse
                     return .{ .vs = vs.withCombat(new_cs) };
-                const plays = enc_state.current.plays();
-                if (play_index >= plays.len)
+                const slots = enc_state.current.slots();
+                if (play_index >= slots.len)
                     return .{ .vs = vs.withCombat(new_cs) };
 
-                const play = &plays[play_index];
+                const play = &slots[play_index].play;
 
                 // Check predicate match
                 const can_attach = apply.canModifierAttachToPlay(card.template, play, self.world) catch false;
@@ -504,7 +505,7 @@ pub const View = struct {
         const phase = self.turn_phase orelse return false;
         var registry = self.world.card_registry;
         if (registry.get(id)) |card| {
-            const playable = apply.validateCardSelection(self.world.player, card, phase) catch |err| {
+            const playable = apply.validateCardSelection(self.world.player, card, phase, self.world.encounterPtrConst()) catch |err| {
                 std.debug.print("Error validating card playability: {s} -- {}", .{ card.template.name, err });
                 return false;
             };

@@ -178,6 +178,38 @@ pub const Exclusivity = enum {
     concentration, // eyes, voice, brain. Spells, taunts, etc. needs a value?
 };
 
+/// Which resource channels a technique occupies. Techniques using different
+/// channels can be executed simultaneously (e.g., footwork + weapon).
+pub const ChannelSet = packed struct {
+    weapon: bool = false, // primary weapon arm(s)
+    off_hand: bool = false, // shield, off-hand weapon, etc.
+    footwork: bool = false, // legs, stance, movement
+    concentration: bool = false, // spells, taunts, analysis
+
+    /// Returns true if any channel is used by both sets.
+    pub fn conflicts(self: ChannelSet, other: ChannelSet) bool {
+        return (self.weapon and other.weapon) or
+            (self.off_hand and other.off_hand) or
+            (self.footwork and other.footwork) or
+            (self.concentration and other.concentration);
+    }
+
+    /// Returns true if no channels are occupied.
+    pub fn isEmpty(self: ChannelSet) bool {
+        return !self.weapon and !self.off_hand and !self.footwork and !self.concentration;
+    }
+
+    /// Combines two channel sets (union of occupied channels).
+    pub fn merge(self: ChannelSet, other: ChannelSet) ChannelSet {
+        return .{
+            .weapon = self.weapon or other.weapon,
+            .off_hand = self.off_hand or other.off_hand,
+            .footwork = self.footwork or other.footwork,
+            .concentration = self.concentration or other.concentration,
+        };
+    }
+};
+
 pub const TechniqueID = enum {
     thrust,
     swing,
@@ -201,6 +233,7 @@ pub const Technique = struct {
     damage: damage.Base,
     difficulty: f32,
     exclusivity: Exclusivity = .weapon,
+    channels: ChannelSet = .{ .weapon = true }, // resource channels occupied
     attack_mode: AttackMode = .swing, // which weapon profile to use
 
     // Hit location targeting
@@ -369,3 +402,68 @@ pub const Stakes = enum {
         };
     }
 };
+
+// =============================================================================
+// Tests
+// =============================================================================
+
+const testing = std.testing;
+
+test "ChannelSet.conflicts detects overlap" {
+    const weapon_only: ChannelSet = .{ .weapon = true };
+    const footwork_only: ChannelSet = .{ .footwork = true };
+    const weapon_and_footwork: ChannelSet = .{ .weapon = true, .footwork = true };
+
+    // Same channel conflicts
+    try testing.expect(weapon_only.conflicts(weapon_only));
+    try testing.expect(footwork_only.conflicts(footwork_only));
+
+    // Different channels don't conflict
+    try testing.expect(!weapon_only.conflicts(footwork_only));
+    try testing.expect(!footwork_only.conflicts(weapon_only));
+
+    // Partial overlap conflicts
+    try testing.expect(weapon_only.conflicts(weapon_and_footwork));
+    try testing.expect(weapon_and_footwork.conflicts(weapon_only));
+}
+
+test "ChannelSet.conflicts is symmetric" {
+    const a: ChannelSet = .{ .weapon = true, .off_hand = true };
+    const b: ChannelSet = .{ .off_hand = true, .concentration = true };
+    const c: ChannelSet = .{ .footwork = true };
+
+    // Symmetry: a.conflicts(b) == b.conflicts(a)
+    try testing.expectEqual(a.conflicts(b), b.conflicts(a));
+    try testing.expectEqual(a.conflicts(c), c.conflicts(a));
+    try testing.expectEqual(b.conflicts(c), c.conflicts(b));
+}
+
+test "ChannelSet.merge combines flags" {
+    const a: ChannelSet = .{ .weapon = true };
+    const b: ChannelSet = .{ .footwork = true };
+    const merged = a.merge(b);
+
+    try testing.expect(merged.weapon);
+    try testing.expect(merged.footwork);
+    try testing.expect(!merged.off_hand);
+    try testing.expect(!merged.concentration);
+}
+
+test "empty ChannelSet has no conflicts" {
+    const empty: ChannelSet = .{};
+    const weapon_ch: ChannelSet = .{ .weapon = true };
+    const all: ChannelSet = .{ .weapon = true, .off_hand = true, .footwork = true, .concentration = true };
+
+    try testing.expect(!empty.conflicts(weapon_ch));
+    try testing.expect(!empty.conflicts(all));
+    try testing.expect(!empty.conflicts(empty));
+    try testing.expect(empty.isEmpty());
+}
+
+test "ChannelSet.isEmpty" {
+    const empty: ChannelSet = .{};
+    const weapon_ch: ChannelSet = .{ .weapon = true };
+
+    try testing.expect(empty.isEmpty());
+    try testing.expect(!weapon_ch.isEmpty());
+}

@@ -300,6 +300,15 @@ pub const World = struct {
     // Turn phase facade (delegates to Encounter)
     // =========================================================================
 
+    /// Get pointer to encounter if present (for passing to functions expecting ?*const Encounter).
+    pub fn encounterPtr(self: *World) ?*combat.Encounter {
+        return if (self.encounter != null) &self.encounter.? else null;
+    }
+
+    pub fn encounterPtrConst(self: *const World) ?*const combat.Encounter {
+        return if (self.encounter != null) &self.encounter.? else null;
+    }
+
     /// Current turn phase, or null if not in an encounter.
     pub fn turnPhase(self: *const World) ?combat.TurnPhase {
         if (self.encounter) |enc| return enc.turnPhase();

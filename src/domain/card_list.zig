@@ -134,6 +134,7 @@ pub const TechniqueEntries = [_]Technique{
         .id = .block,
         .name = "block",
         .attack_mode = .none,
+        .channels = .{ .off_hand = true }, // shield technique
         .guard_height = .mid, // shield covers mid
         .covers_adjacent = true, // shields cover wide area
         .damage = .{
