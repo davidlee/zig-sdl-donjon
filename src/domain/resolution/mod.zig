@@ -13,6 +13,7 @@ pub const outcome = @import("outcome.zig");
 pub const Outcome = outcome.Outcome;
 pub const AttackContext = context.AttackContext;
 pub const DefenseContext = context.DefenseContext;
+pub const ComputedCombatState = context.ComputedCombatState;
 pub const CombatModifiers = context.CombatModifiers;
 pub const AggregatedOverlay = context.AggregatedOverlay;
 pub const ResolutionResult = outcome.ResolutionResult;

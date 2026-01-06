@@ -12,9 +12,22 @@ const world = @import("../world.zig");
 
 const Agent = combat.Agent;
 const Engagement = combat.Engagement;
+const FlankingStatus = combat.FlankingStatus;
 const Technique = cards.Technique;
 const Stakes = cards.Stakes;
 const World = world.World;
+
+// ============================================================================
+// Computed Combat State
+// ============================================================================
+
+/// Transient combat state computed per-agent in the resolver pipeline.
+/// Captures encounter-level derived conditions that require full context.
+pub const ComputedCombatState = struct {
+    flanking: FlankingStatus = .none,
+    is_stationary: bool = false, // no footwork in timeline this tick
+    // Future: momentum, facing, stance_broken, etc.
+};
 
 // ============================================================================
 // Attack and Defense Contexts
@@ -30,6 +43,8 @@ pub const AttackContext = struct {
     // Timing for overlay bonus calculation
     time_start: f32 = 0,
     time_end: f32 = 1.0,
+    // Attention penalty when attacking non-primary target (derived from AttentionState)
+    attention_penalty: f32 = 0,
 };
 
 pub const DefenseContext = struct {
@@ -37,7 +52,7 @@ pub const DefenseContext = struct {
     technique: ?*const Technique, // null = passive defense
     weapon_template: *const weapon.Template,
     engagement: ?*const Engagement = null, // for computed conditions
-    is_stationary: bool = false, // no footwork in timeline
+    computed: ComputedCombatState = .{}, // encounter-level derived state
     // Timing for overlay bonus calculation
     time_start: f32 = 0,
     time_end: f32 = 1.0,
@@ -99,6 +114,9 @@ pub const CombatModifiers = struct {
             }
         }
 
+        // Apply attention penalty for attacking non-primary target
+        mods.hit_chance -= attack.attention_penalty;
+
         return mods;
     }
 
@@ -106,10 +124,23 @@ pub const CombatModifiers = struct {
     pub fn forDefender(defense: DefenseContext) CombatModifiers {
         var mods = CombatModifiers{};
 
-        // Check stationary flag (computed from timeline at resolver level)
-        if (defense.is_stationary) {
+        // Apply computed combat state modifiers
+        if (defense.computed.is_stationary) {
             // Stationary defender is easier to hit (+10% for attacker)
             mods.dodge_mod -= 0.10;
+        }
+
+        switch (defense.computed.flanking) {
+            .partial => {
+                // Partial flanking: one enemy with angle advantage
+                mods.dodge_mod -= 0.10;
+            },
+            .surrounded => {
+                // Surrounded: 3+ enemies or 2+ with angle advantage
+                mods.dodge_mod -= 0.20;
+                mods.defense_mult *= 0.85;
+            },
+            .none => {},
         }
 
         var iter = defense.defender.activeConditions(defense.engagement);
@@ -383,12 +414,12 @@ test "CombatModifiers.forDefender applies stationary penalty" {
     // Add to encounter so cleanup happens
     try w.encounter.?.addEnemy(defender);
 
-    // Create defense context with is_stationary = true
+    // Create defense context with is_stationary = true via computed state
     const defense = DefenseContext{
         .defender = defender,
         .technique = null,
         .weapon_template = &@import("../weapon_list.zig").knights_sword,
-        .is_stationary = true,
+        .computed = .{ .is_stationary = true },
     };
 
     const mods = CombatModifiers.forDefender(defense);
@@ -407,16 +438,122 @@ test "CombatModifiers.forDefender no penalty when not stationary" {
     // Add to encounter so cleanup happens
     try w.encounter.?.addEnemy(defender);
 
-    // Create defense context with is_stationary = false
+    // Create defense context with is_stationary = false (default)
     const defense = DefenseContext{
         .defender = defender,
         .technique = null,
         .weapon_template = &@import("../weapon_list.zig").knights_sword,
-        .is_stationary = false,
+        // computed defaults to .{ .is_stationary = false, .flanking = .none }
     };
 
     const mods = CombatModifiers.forDefender(defense);
 
     // No stationary penalty
     try testing.expectEqual(@as(f32, 0), mods.dodge_mod);
+}
+
+test "CombatModifiers.forAttacker applies attention penalty for non-primary target" {
+    const alloc = testing.allocator;
+
+    var w = try makeTestWorld(alloc);
+    defer w.deinit();
+
+    const attacker = w.player;
+    const defender = try makeTestAgent(alloc, w.entities.agents, ai.noop());
+    try w.encounter.?.addEnemy(defender);
+
+    const engagement = w.encounter.?.getPlayerEngagement(defender.id).?;
+    const technique = &cards.Technique.byID(.thrust);
+
+    // Set attention penalty to 0.15 (simulating non-primary target)
+    const attack = AttackContext{
+        .attacker = attacker,
+        .defender = defender,
+        .technique = technique,
+        .weapon_template = &@import("../weapon_list.zig").knights_sword,
+        .stakes = .guarded,
+        .engagement = engagement,
+        .attention_penalty = 0.15,
+    };
+
+    const mods = CombatModifiers.forAttacker(attack);
+
+    // Attention penalty should reduce hit_chance by 0.15
+    try testing.expectApproxEqAbs(@as(f32, -0.15), mods.hit_chance, 0.001);
+}
+
+test "CombatModifiers.forAttacker no penalty when attention_penalty is zero" {
+    const alloc = testing.allocator;
+
+    var w = try makeTestWorld(alloc);
+    defer w.deinit();
+
+    const attacker = w.player;
+    const defender = try makeTestAgent(alloc, w.entities.agents, ai.noop());
+    try w.encounter.?.addEnemy(defender);
+
+    const engagement = w.encounter.?.getPlayerEngagement(defender.id).?;
+    const technique = &cards.Technique.byID(.thrust);
+
+    // No attention penalty (primary target)
+    const attack = AttackContext{
+        .attacker = attacker,
+        .defender = defender,
+        .technique = technique,
+        .weapon_template = &@import("../weapon_list.zig").knights_sword,
+        .stakes = .guarded,
+        .engagement = engagement,
+        .attention_penalty = 0,
+    };
+
+    const mods = CombatModifiers.forAttacker(attack);
+
+    // No penalty = 0 hit_chance modifier (assuming no conditions)
+    try testing.expectEqual(@as(f32, 0), mods.hit_chance);
+}
+
+test "CombatModifiers.forDefender applies partial flanking penalty" {
+    const alloc = testing.allocator;
+
+    var w = try makeTestWorld(alloc);
+    defer w.deinit();
+
+    const defender = try makeTestAgent(alloc, w.entities.agents, ai.noop());
+    try w.encounter.?.addEnemy(defender);
+
+    const defense = DefenseContext{
+        .defender = defender,
+        .technique = null,
+        .weapon_template = &@import("../weapon_list.zig").knights_sword,
+        .computed = .{ .flanking = .partial },
+    };
+
+    const mods = CombatModifiers.forDefender(defense);
+
+    // Partial flanking: -10% dodge
+    try testing.expectApproxEqAbs(@as(f32, -0.10), mods.dodge_mod, 0.001);
+    try testing.expectApproxEqAbs(@as(f32, 1.0), mods.defense_mult, 0.001);
+}
+
+test "CombatModifiers.forDefender applies surrounded penalty" {
+    const alloc = testing.allocator;
+
+    var w = try makeTestWorld(alloc);
+    defer w.deinit();
+
+    const defender = try makeTestAgent(alloc, w.entities.agents, ai.noop());
+    try w.encounter.?.addEnemy(defender);
+
+    const defense = DefenseContext{
+        .defender = defender,
+        .technique = null,
+        .weapon_template = &@import("../weapon_list.zig").knights_sword,
+        .computed = .{ .flanking = .surrounded },
+    };
+
+    const mods = CombatModifiers.forDefender(defense);
+
+    // Surrounded: -20% dodge and 0.85x defense_mult
+    try testing.expectApproxEqAbs(@as(f32, -0.20), mods.dodge_mod, 0.001);
+    try testing.expectApproxEqAbs(@as(f32, 0.85), mods.defense_mult, 0.001);
 }

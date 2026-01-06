@@ -55,6 +55,13 @@ pub const Engagement = struct {
     }
 };
 
+/// Flanking status derived from engagement count and position values.
+pub const FlankingStatus = enum {
+    none, // single opponent or controlled positioning
+    partial, // 2 opponents with some angle disadvantage
+    surrounded, // 3+ opponents or severe angle disadvantage
+};
+
 // ============================================================================
 // Tests
 // ============================================================================

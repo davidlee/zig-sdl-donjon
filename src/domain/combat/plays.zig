@@ -522,14 +522,40 @@ pub const TurnHistory = struct {
 };
 
 /// Per-agent state within an encounter.
+
+// ============================================================================
+// Attention State
+// ============================================================================
+
+/// Tracks which enemy an agent is focused on and peripheral awareness.
+/// Attacking non-primary targets incurs penalties reduced by awareness.
+pub const AttentionState = struct {
+    primary: ?entity.ID = null, // current focus target
+    awareness: f32, // base awareness from acuity (0-1 scale)
+
+    pub fn init(acuity: f32) AttentionState {
+        return .{ .primary = null, .awareness = acuity * 0.1 };
+    }
+
+    /// Penalty for acting against non-primary target.
+    /// Returns 0 for primary target, up to 0.2 for others (reduced by awareness).
+    pub fn penaltyFor(self: AttentionState, target: entity.ID) f32 {
+        if (self.primary == null) return 0;
+        if (self.primary.?.eql(target)) return 0;
+        return @max(0, 0.2 - self.awareness);
+    }
+};
+
 pub const AgentEncounterState = struct {
     current: TurnState = .{},
     history: TurnHistory = .{},
+    attention: AttentionState = .{ .awareness = 0.1 }, // default awareness
 
-    /// End current turn: push to history and clear.
+    /// End current turn: push to history, clear turn state, reset attention primary.
     pub fn endTurn(self: *AgentEncounterState) void {
         self.history.push(self.current);
         self.current.clear();
+        self.attention.primary = null; // reset primary target each turn
     }
 };
 
@@ -541,6 +567,44 @@ const testing = std.testing;
 
 fn testId(index: u32) entity.ID {
     return .{ .index = index, .generation = 0 };
+}
+
+// AttentionState tests
+
+test "AttentionState.init derives awareness from acuity" {
+    const state = AttentionState.init(0.5);
+    try testing.expectEqual(@as(f32, 0.05), state.awareness);
+    try testing.expectEqual(@as(?entity.ID, null), state.primary);
+}
+
+test "AttentionState.init with high acuity" {
+    const state = AttentionState.init(1.0);
+    try testing.expectEqual(@as(f32, 0.1), state.awareness);
+}
+
+test "AttentionState.penaltyFor returns 0 for primary target" {
+    var state = AttentionState.init(0.5);
+    state.primary = testId(1);
+    try testing.expectEqual(@as(f32, 0), state.penaltyFor(testId(1)));
+}
+
+test "AttentionState.penaltyFor returns 0 when no primary set" {
+    const state = AttentionState.init(0.5);
+    try testing.expectEqual(@as(f32, 0), state.penaltyFor(testId(1)));
+}
+
+test "AttentionState.penaltyFor returns penalty for non-primary" {
+    var state = AttentionState.init(0.5); // awareness = 0.05
+    state.primary = testId(1);
+    // Penalty = max(0, 0.2 - 0.05) = 0.15
+    try testing.expectEqual(@as(f32, 0.15), state.penaltyFor(testId(2)));
+}
+
+test "AttentionState.penaltyFor reduced by high awareness" {
+    var state = AttentionState.init(2.0); // awareness = 0.2
+    state.primary = testId(1);
+    // Penalty = max(0, 0.2 - 0.2) = 0
+    try testing.expectEqual(@as(f32, 0), state.penaltyFor(testId(2)));
 }
 
 test "Play.effectiveStakes escalates with modifiers" {

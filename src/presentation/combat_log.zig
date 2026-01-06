@@ -335,6 +335,8 @@ fn conditionName(condition: damage.Condition) []const u8 {
         .weapon_bound => "weapon bound",
         .unbalanced => "unbalanced",
         .stationary => "stationary",
+        .flanked => "flanked",
+        .surrounded => "surrounded",
     };
 }
 

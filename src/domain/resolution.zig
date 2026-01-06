@@ -14,6 +14,7 @@ pub const outcome = resolution_mod.outcome;
 pub const Outcome = resolution_mod.Outcome;
 pub const AttackContext = resolution_mod.AttackContext;
 pub const DefenseContext = resolution_mod.DefenseContext;
+pub const ComputedCombatState = resolution_mod.ComputedCombatState;
 pub const CombatModifiers = resolution_mod.CombatModifiers;
 pub const AggregatedOverlay = resolution_mod.AggregatedOverlay;
 pub const ResolutionResult = resolution_mod.ResolutionResult;

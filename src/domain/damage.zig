@@ -88,6 +88,10 @@ pub const Condition = enum {
     weapon_bound,
     unbalanced,
     stationary, // no footwork in timeline this tick
+
+    // computed: multi-opponent positioning
+    flanked, // 1+ enemy with angle advantage
+    surrounded, // 3+ enemies or 2+ with angle advantage
 };
 
 pub const DoTEffect = union(enum) {

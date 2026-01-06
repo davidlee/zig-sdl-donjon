@@ -53,6 +53,7 @@ pub const hasFootworkInTimeline = combat_mod.hasFootworkInTimeline;
 // From engagement.zig
 pub const AgentPair = combat_mod.AgentPair;
 pub const Engagement = combat_mod.Engagement;
+pub const FlankingStatus = combat_mod.FlankingStatus;
 
 // From agent.zig
 pub const Agent = combat_mod.Agent;

@@ -260,6 +260,7 @@ pub const World = struct {
         }
 
         self.encounter = try combat.Encounter.init(alloc, self.player.id);
+        self.encounter.?.initAttentionFor(self.player.id, self.player.stats.acuity);
         return self;
     }
 

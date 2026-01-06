@@ -19,8 +19,10 @@ pub const TurnEvent = types.TurnEvent;
 pub const TurnFSM = types.TurnFSM;
 pub const CombatOutcome = types.CombatOutcome;
 pub const AgentEncounterState = plays.AgentEncounterState;
+pub const AttentionState = plays.AttentionState;
 pub const AgentPair = engagement_mod.AgentPair;
 pub const Engagement = engagement_mod.Engagement;
+pub const FlankingStatus = engagement_mod.FlankingStatus;
 pub const Agent = agent_mod.Agent;
 
 // Forward reference for combat.Agent in deinit
@@ -115,6 +117,7 @@ pub const Encounter = struct {
         try self.enemies.append(self.alloc, enemy);
         try self.setEngagement(self.player_id, enemy.id, Engagement{});
         try self.agent_state.put(enemy.id, .{});
+        self.initAttentionFor(enemy.id, enemy.stats.acuity);
     }
 
     /// Get encounter state for an agent.
@@ -125,6 +128,13 @@ pub const Encounter = struct {
     /// Get encounter state for an agent (const version for read-only access).
     pub fn stateForConst(self: *const Encounter, agent_id: entity.ID) ?*const AgentEncounterState {
         return self.agent_state.getPtr(agent_id);
+    }
+
+    /// Initialize attention state for an agent from their acuity stat.
+    pub fn initAttentionFor(self: *Encounter, agent_id: entity.ID, acuity: f32) void {
+        if (self.agent_state.getPtr(agent_id)) |state| {
+            state.attention = AttentionState.init(acuity);
+        }
     }
 
     /// Current turn phase.
@@ -143,4 +153,173 @@ pub const Encounter = struct {
             return error.InvalidTurnPhaseTransition;
         }
     }
+
+    /// Assess flanking status for an agent based on engagement count and position values.
+    /// Position < 0.35 means the *other* agent has angle advantage on us.
+    pub fn assessFlanking(self: *const Encounter, agent_id: entity.ID) FlankingStatus {
+        // Get list of opponents for this agent
+        const is_player = agent_id.eql(self.player_id);
+        const opponents: []const *combat.Agent = if (is_player) self.enemies.items else &[_]*combat.Agent{};
+
+        if (!is_player) {
+            // For enemies, they're engaged with the player only (for now)
+            if (self.getEngagementConst(agent_id, self.player_id)) |eng| {
+                // From enemy's perspective, check inverted position
+                const inverted = eng.invert();
+                if (inverted.position < 0.35) {
+                    return .partial; // Player has angle on this enemy
+                }
+            }
+            return .none;
+        }
+
+        // Player case: check all enemy engagements
+        const active_count = opponents.len;
+        if (active_count <= 1) return .none;
+
+        var flanking_enemies: u8 = 0;
+        for (opponents) |enemy| {
+            if (self.getEngagementConst(self.player_id, enemy.id)) |eng| {
+                // Position < 0.35 means enemy has angle advantage on player
+                if (eng.position < 0.35) flanking_enemies += 1;
+            }
+        }
+
+        if (flanking_enemies >= 2 or active_count >= 3) return .surrounded;
+        if (flanking_enemies >= 1) return .partial;
+        return .none;
+    }
 };
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+const testing = std.testing;
+const stats = @import("../stats.zig");
+const body = @import("../body.zig");
+const ai = @import("../ai.zig");
+
+fn makeTestEncounter(alloc: std.mem.Allocator, agents: *SlotMap(*Agent)) !struct { enc: *Encounter, player: *Agent } {
+    const agent_stats = stats.Block.splat(5);
+    const agent_body = try body.Body.fromPlan(alloc, &body.HumanoidPlan);
+
+    const player = try Agent.init(
+        alloc,
+        agents,
+        .player,
+        .shuffled_deck,
+        agent_stats,
+        agent_body,
+        stats.Resource.init(10.0, 10.0, 2.0),
+        stats.Resource.init(3.0, 5.0, 3.0),
+        undefined,
+    );
+
+    const enc = try Encounter.init(alloc, player.id);
+    return .{ .enc = enc, .player = player };
+}
+
+fn makeTestEnemy(alloc: std.mem.Allocator, agents: *SlotMap(*Agent)) !*Agent {
+    const agent_stats = stats.Block.splat(5);
+    const agent_body = try body.Body.fromPlan(alloc, &body.HumanoidPlan);
+
+    return Agent.init(
+        alloc,
+        agents,
+        ai.noop(),
+        .shuffled_deck,
+        agent_stats,
+        agent_body,
+        stats.Resource.init(10.0, 10.0, 2.0),
+        stats.Resource.init(3.0, 5.0, 3.0),
+        undefined,
+    );
+}
+
+test "assessFlanking returns none for single opponent" {
+    const alloc = testing.allocator;
+    var agents = try SlotMap(*Agent).init(alloc);
+    defer agents.deinit();
+
+    const setup = try makeTestEncounter(alloc, &agents);
+    defer setup.enc.deinit(&agents);
+    defer setup.player.deinit();
+
+    const enemy = try makeTestEnemy(alloc, &agents);
+    try setup.enc.addEnemy(enemy);
+
+    // Single opponent = no flanking
+    try testing.expectEqual(FlankingStatus.none, setup.enc.assessFlanking(setup.player.id));
+}
+
+test "assessFlanking returns partial when one enemy has angle advantage" {
+    const alloc = testing.allocator;
+    var agents = try SlotMap(*Agent).init(alloc);
+    defer agents.deinit();
+
+    const setup = try makeTestEncounter(alloc, &agents);
+    defer setup.enc.deinit(&agents);
+    defer setup.player.deinit();
+
+    // Add two enemies
+    const enemy1 = try makeTestEnemy(alloc, &agents);
+    const enemy2 = try makeTestEnemy(alloc, &agents);
+    try setup.enc.addEnemy(enemy1);
+    try setup.enc.addEnemy(enemy2);
+
+    // Set one engagement to have enemy advantage (position < 0.35)
+    if (setup.enc.getEngagement(setup.player.id, enemy1.id)) |eng| {
+        eng.position = 0.30; // enemy1 has angle
+    }
+    // enemy2 has neutral position (default 0.5)
+
+    try testing.expectEqual(FlankingStatus.partial, setup.enc.assessFlanking(setup.player.id));
+}
+
+test "assessFlanking returns surrounded with 3+ enemies" {
+    const alloc = testing.allocator;
+    var agents = try SlotMap(*Agent).init(alloc);
+    defer agents.deinit();
+
+    const setup = try makeTestEncounter(alloc, &agents);
+    defer setup.enc.deinit(&agents);
+    defer setup.player.deinit();
+
+    // Add three enemies
+    const enemy1 = try makeTestEnemy(alloc, &agents);
+    const enemy2 = try makeTestEnemy(alloc, &agents);
+    const enemy3 = try makeTestEnemy(alloc, &agents);
+    try setup.enc.addEnemy(enemy1);
+    try setup.enc.addEnemy(enemy2);
+    try setup.enc.addEnemy(enemy3);
+
+    // 3+ enemies = surrounded regardless of position
+    try testing.expectEqual(FlankingStatus.surrounded, setup.enc.assessFlanking(setup.player.id));
+}
+
+test "assessFlanking returns surrounded when 2+ enemies have angle advantage" {
+    const alloc = testing.allocator;
+    var agents = try SlotMap(*Agent).init(alloc);
+    defer agents.deinit();
+
+    const setup = try makeTestEncounter(alloc, &agents);
+    defer setup.enc.deinit(&agents);
+    defer setup.player.deinit();
+
+    // Add two enemies
+    const enemy1 = try makeTestEnemy(alloc, &agents);
+    const enemy2 = try makeTestEnemy(alloc, &agents);
+    try setup.enc.addEnemy(enemy1);
+    try setup.enc.addEnemy(enemy2);
+
+    // Both enemies have angle advantage
+    if (setup.enc.getEngagement(setup.player.id, enemy1.id)) |eng| {
+        eng.position = 0.25;
+    }
+    if (setup.enc.getEngagement(setup.player.id, enemy2.id)) |eng| {
+        eng.position = 0.30;
+    }
+
+    try testing.expectEqual(FlankingStatus.surrounded, setup.enc.assessFlanking(setup.player.id));
+}

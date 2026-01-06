@@ -160,6 +160,14 @@ pub const TickResolver = struct {
                     }
                 }
 
+                // Compute attention penalty for non-primary target
+                const attention_penalty = if (w.encounter) |enc| blk: {
+                    if (enc.stateForConst(action.actor.id)) |state| {
+                        break :blk state.attention.penaltyFor(defender.id);
+                    }
+                    break :blk @as(f32, 0);
+                } else 0;
+
                 // Build contexts and resolve
                 const attack_ctx = resolution.AttackContext{
                     .attacker = action.actor,
@@ -170,22 +178,28 @@ pub const TickResolver = struct {
                     .engagement = engagement,
                     .time_start = action.time_start,
                     .time_end = action.time_end,
+                    .attention_penalty = attention_penalty,
                 };
 
-                // Check if defender is stationary (no footwork in their timeline)
-                const defender_stationary = if (w.encounter) |enc| blk: {
-                    if (enc.stateFor(defender.id)) |state| {
-                        break :blk !combat.hasFootworkInTimeline(&state.current.timeline, &w.card_registry);
-                    }
-                    break :blk true; // No timeline = stationary
-                } else true;
+                // Compute defender's combat state (stationary, flanking)
+                const defender_computed = if (w.encounter) |enc| blk: {
+                    const is_stationary = if (enc.stateFor(defender.id)) |state|
+                        !combat.hasFootworkInTimeline(&state.current.timeline, &w.card_registry)
+                    else
+                        true; // No timeline = stationary
+
+                    break :blk resolution.ComputedCombatState{
+                        .is_stationary = is_stationary,
+                        .flanking = enc.assessFlanking(defender.id),
+                    };
+                } else resolution.ComputedCombatState{ .is_stationary = true };
 
                 const defense_ctx = resolution.DefenseContext{
                     .defender = defender,
                     .technique = defense_tech,
                     .weapon_template = self.getWeaponTemplate(defender),
                     .engagement = engagement,
-                    .is_stationary = defender_stationary,
+                    .computed = defender_computed,
                     // Use attack time window - defender's manoeuvres during this window provide bonus
                     .time_start = action.time_start,
                     .time_end = action.time_end,

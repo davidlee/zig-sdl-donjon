@@ -45,6 +45,7 @@ pub const PendingTarget = plays.PendingTarget;
 pub const TurnState = plays.TurnState;
 pub const TurnHistory = plays.TurnHistory;
 pub const AgentEncounterState = plays.AgentEncounterState;
+pub const AttentionState = plays.AttentionState;
 pub const getPlayDuration = plays.getPlayDuration;
 pub const getPlayChannels = plays.getPlayChannels;
 pub const hasFootworkInTimeline = plays.hasFootworkInTimeline;
@@ -52,6 +53,7 @@ pub const hasFootworkInTimeline = plays.hasFootworkInTimeline;
 // From engagement.zig
 pub const AgentPair = engagement.AgentPair;
 pub const Engagement = engagement.Engagement;
+pub const FlankingStatus = engagement.FlankingStatus;
 
 // From agent.zig
 pub const Agent = agent.Agent;
