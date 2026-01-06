@@ -9,6 +9,12 @@ const infra = @import("infra");
 const entity = infra.entity;
 const Event = events.Event;
 const ID = infra.commands.ID;
+const World = @import("../domain/world.zig").World;
+const view_state = @import("view_state.zig");
+const ViewState = view_state.ViewState;
+const CombatUIState = view_state.CombatUIState;
+const Rect = view_state.Rect;
+const card_renderer = @import("card_renderer.zig");
 
 // Presentation effects - what the UI should show
 pub const Effect = union(enum) {
@@ -139,4 +145,77 @@ pub const EffectSystem = struct {
     pub fn activeAnimations(self: *const EffectSystem) []const Tween {
         return self.animations.items;
     }
+
+    // --- Card Animation Handling (updates ViewState) ---
+
+    const card_animation_duration: f32 = 0.3; // seconds
+
+    /// Process a domain event, updating card animations in ViewState
+    pub fn processEvent(self: *EffectSystem, event: Event, vs: *ViewState, world: *const World) void {
+        _ = self;
+        switch (event) {
+            .card_cloned => |data| handleCardCloned(vs, data.master_id, data.clone_id),
+            .played_action_card => |data| finalizeCardAnimation(vs, data.instance, world),
+            else => {},
+        }
+    }
+
+    /// Tick card animations in ViewState
+    pub fn tickCardAnimations(self: *EffectSystem, dt: f32, vs: *ViewState) void {
+        _ = self;
+        var cs = vs.combat orelse return;
+        const progress_delta = dt / card_animation_duration;
+
+        for (cs.card_animations[0..cs.card_animation_len]) |*anim| {
+            anim.progress = @min(1.0, anim.progress + progress_delta);
+        }
+
+        cs.removeCompletedAnimations();
+        vs.combat = cs;
+    }
 };
+
+/// When a card is cloned (pool cards), update the animation's card_id to the clone
+fn handleCardCloned(vs: *ViewState, master_id: entity.ID, clone_id: entity.ID) void {
+    var cs = vs.combat orelse return;
+
+    if (cs.findAnimation(master_id)) |anim| {
+        anim.card_id = clone_id;
+        vs.combat = cs;
+    }
+}
+
+/// When a card is played, find the matching animation and set its destination rect
+fn finalizeCardAnimation(vs: *ViewState, card_id: entity.ID, world: *const World) void {
+    var cs = vs.combat orelse return;
+    const anim = cs.findAnimation(card_id) orelse return;
+
+    // Calculate destination rect based on card's position in in_play zone
+    const player = world.player;
+    const combat_state = player.combat_state orelse return;
+    const in_play = combat_state.in_play.items;
+
+    // Find index of the card in in_play
+    var card_index: ?usize = null;
+    for (in_play, 0..) |id, i| {
+        if (id.index == card_id.index and id.generation == card_id.generation) {
+            card_index = i;
+            break;
+        }
+    }
+
+    if (card_index) |idx| {
+        const start_x: f32 = 10;
+        const spacing: f32 = card_renderer.CARD_WIDTH + 10;
+        const y: f32 = 200; // in_play zone y position
+
+        anim.to_rect = .{
+            .x = start_x + @as(f32, @floatFromInt(idx)) * spacing,
+            .y = y,
+            .w = card_renderer.CARD_WIDTH,
+            .h = card_renderer.CARD_HEIGHT,
+        };
+    }
+
+    vs.combat = cs;
+}

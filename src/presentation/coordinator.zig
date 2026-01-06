@@ -8,7 +8,6 @@ const std = @import("std");
 const s = @import("sdl3");
 
 const World = @import("../domain/world.zig").World;
-const events = @import("../domain/events.zig");
 const GameState = World.GameState;
 
 const effects = @import("effects.zig");
@@ -23,18 +22,13 @@ const combat_log = @import("combat_log.zig");
 
 const EffectSystem = effects.EffectSystem;
 const EffectMapper = effects.EffectMapper;
-const Effect = effects.Effect;
 const CombatLog = combat_log.CombatLog;
 const View = view.View;
 const ViewState = view_state.ViewState;
-const CombatUIState = view_state.CombatUIState;
-const Rect = view_state.Rect;
 const Point = view_state.Point;
 const UX = graphics.UX;
 const infra = @import("infra");
-const entity = infra.entity;
 const Command = infra.commands.Command;
-const card_renderer = @import("card_renderer.zig");
 
 pub const Coordinator = struct {
     alloc: std.mem.Allocator,
@@ -146,13 +140,11 @@ pub const Coordinator = struct {
     // Process domain events into presentation effects
     pub fn processWorldEvents(self: *Coordinator) !void {
         for (self.world.events.current_events.items) |event| {
-            // Handle card_cloned: update animation's card_id from master to clone
-            self.handleCardCloned(event);
+            // Delegate animation handling to EffectSystem
+            self.effect_system.processEvent(event, &self.vs, self.world);
 
             if (EffectMapper.map(event)) |effect| {
                 try self.effect_system.push(effect);
-                // For card_played effects, fill in destination rect in ViewState animation
-                self.finalizeCardAnimation(effect);
             }
             // Format event for combat log
             if (try combat_log.format(event, self.world, self.alloc)) |text| {
@@ -162,87 +154,11 @@ pub const Coordinator = struct {
         try self.effect_system.spawnAnimations(self.current_time);
     }
 
-    /// When a card is cloned (pool cards), update the animation's card_id to the clone
-    fn handleCardCloned(self: *Coordinator, event: events.Event) void {
-        const data = switch (event) {
-            .card_cloned => |d| d,
-            else => return,
-        };
-
-        var cs = self.vs.combat orelse return;
-        const master_eid = entity.ID{ .index = data.master_id.index, .generation = data.master_id.generation };
-
-        if (cs.findAnimation(master_eid)) |anim| {
-            // Update animation to track the clone instead of the master
-            anim.card_id = .{ .index = data.clone_id.index, .generation = data.clone_id.generation };
-            self.vs.combat = cs;
-        }
-    }
-
-    /// When a card_played effect is seen, find the matching animation and set its destination
-    fn finalizeCardAnimation(self: *Coordinator, effect: Effect) void {
-        const card_id = switch (effect) {
-            .card_played => |data| data.card_id,
-            else => return,
-        };
-
-        var cs = self.vs.combat orelse return;
-        const eid = entity.ID{ .index = card_id.index, .generation = card_id.generation };
-
-        const anim = cs.findAnimation(eid) orelse return;
-
-        // Calculate destination rect based on card's position in in_play zone
-        const player = self.world.player;
-        const combat_state = player.combat_state orelse return;
-        const in_play = combat_state.in_play.items;
-
-        // Find index of the card in in_play
-        var card_index: ?usize = null;
-        for (in_play, 0..) |id, i| {
-            if (id.index == card_id.index and id.generation == card_id.generation) {
-                card_index = i;
-                break;
-            }
-        }
-
-        if (card_index) |idx| {
-            const start_x: f32 = 10;
-            const spacing: f32 = card_renderer.CARD_WIDTH + 10;
-            const y: f32 = 200; // in_play zone y position
-
-            anim.to_rect = .{
-                .x = start_x + @as(f32, @floatFromInt(idx)) * spacing,
-                .y = y,
-                .w = card_renderer.CARD_WIDTH,
-                .h = card_renderer.CARD_HEIGHT,
-            };
-        }
-
-        self.vs.combat = cs;
-    }
-
     // Tick animations
     pub fn update(self: *Coordinator, dt: f32) !void {
         self.current_time += dt;
         self.effect_system.tick(dt);
-        self.tickCardAnimations(dt);
-    }
-
-    const card_animation_duration: f32 = 0.3; // seconds
-
-    fn tickCardAnimations(self: *Coordinator, dt: f32) void {
-        var cs = self.vs.combat orelse return;
-        const progress_delta = dt / card_animation_duration;
-
-        for (cs.card_animations[0..cs.card_animation_len]) |*anim| {
-            // Always advance progress (stale animations will be cleaned up)
-            anim.progress = @min(1.0, anim.progress + progress_delta);
-        }
-
-        // Remove completed animations (and stale ones via the check in removeCompletedAnimations)
-        cs.removeCompletedAnimations();
-
-        self.vs.combat = cs;
+        self.effect_system.tickCardAnimations(dt, &self.vs);
     }
 
     // Render current state
