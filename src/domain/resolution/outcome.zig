@@ -1,0 +1,499 @@
+const std = @import("std");
+const lib = @import("infra");
+const entity = lib.entity;
+const combat = @import("../combat.zig");
+const cards = @import("../cards.zig");
+const weapon = @import("../weapon.zig");
+const damage_mod = @import("../damage.zig");
+const armour = @import("../armour.zig");
+const body = @import("../body.zig");
+const world = @import("../world.zig");
+
+// Import from sibling modules
+const context = @import("context.zig");
+const advantage = @import("advantage.zig");
+const damage = @import("damage.zig");
+
+pub const AttackContext = context.AttackContext;
+pub const DefenseContext = context.DefenseContext;
+pub const CombatModifiers = context.CombatModifiers;
+pub const getOverlayBonuses = context.getOverlayBonuses;
+pub const AggregatedOverlay = context.AggregatedOverlay;
+
+pub const AdvantageEffect = advantage.AdvantageEffect;
+pub const TechniqueAdvantage = advantage.TechniqueAdvantage;
+pub const getAdvantageEffect = advantage.getAdvantageEffect;
+pub const applyAdvantageWithEvents = advantage.applyAdvantageWithEvents;
+
+pub const createDamagePacket = damage.createDamagePacket;
+pub const getWeaponOffensive = damage.getWeaponOffensive;
+
+const Agent = combat.Agent;
+const Engagement = combat.Engagement;
+const Technique = cards.Technique;
+const TechniqueID = cards.TechniqueID;
+const Stakes = cards.Stakes;
+const World = world.World;
+
+// ============================================================================
+// Outcome Determination
+// ============================================================================
+
+pub const Outcome = enum {
+    hit,
+    miss,
+    blocked,
+    parried,
+    deflected,
+    dodged,
+    countered,
+};
+
+/// Calculate hit probability for an attack
+pub fn calculateHitChance(attack: AttackContext, defense: DefenseContext) f32 {
+    var chance: f32 = 0.5; // Base 50%
+
+    // Technique difficulty (higher = harder to land)
+    chance -= attack.technique.difficulty * 0.1;
+
+    // Weapon accuracy modifier
+    if (getWeaponOffensive(attack.weapon_template, attack.technique)) |weapon_off| {
+        chance += weapon_off.accuracy * 0.1;
+    }
+
+    // Stakes modifier
+    chance += attack.stakes.hitChanceBonus();
+
+    // Engagement advantage (pressure, control, position)
+    const engagement_bonus = (attack.engagement.playerAdvantage() - 0.5) * 0.3;
+    chance += if (attack.attacker.director == .player) engagement_bonus else -engagement_bonus;
+
+    // Attacker balance
+    chance += (attack.attacker.balance - 0.5) * 0.2;
+
+    // Condition modifiers
+    const attacker_mods = CombatModifiers.forAttacker(attack);
+    const defender_mods = CombatModifiers.forDefender(defense);
+    chance += attacker_mods.hit_chance;
+
+    // Defense modifiers
+    if (defense.technique) |def_tech| {
+        // Active defense technique modifies attacker's chance
+        var def_mult = switch (def_tech.id) {
+            .parry => attack.technique.parry_mult,
+            .block => attack.technique.deflect_mult, // using deflect as proxy for now
+            .deflect => attack.technique.deflect_mult,
+            else => 1.0,
+        };
+        // Defender conditions reduce defense effectiveness
+        def_mult *= defender_mods.defense_mult;
+        chance *= def_mult;
+
+        // Height coverage: if guard covers the attack's target zone
+        if (def_tech.guard_height) |gh| {
+            if (gh == attack.technique.target_height) {
+                // Guard directly covers attack zone - significant penalty
+                chance -= 0.15;
+            } else if (def_tech.covers_adjacent and gh.adjacent(attack.technique.target_height)) {
+                // Guard partially covers adjacent zone
+                chance -= 0.08;
+            } else {
+                // Attacking an opening (unguarded zone) - slight bonus
+                chance += 0.05;
+            }
+        }
+
+        // Defender weapon defensive modifiers
+        chance -= defense.weapon_template.defence.parry * 0.1;
+    }
+
+    // Defender balance (low balance = easier to hit)
+    chance += (1.0 - defense.defender.balance) * 0.15;
+
+    // Defender condition dodge penalty (passive evasion)
+    chance -= defender_mods.dodge_mod;
+
+    return std.math.clamp(chance, 0.05, 0.95);
+}
+
+/// Determine outcome of attack vs defense
+pub fn resolveOutcome(
+    w: *World,
+    attack: AttackContext,
+    defense: DefenseContext,
+) !Outcome {
+    const hit_chance = calculateHitChance(attack, defense);
+
+    // Apply attacker's overlay bonuses (from overlapping manoeuvres)
+    const attacker_overlay = getOverlayBonuses(w, attack.attacker.id, attack.time_start, attack.time_end, true);
+
+    // Apply defender's overlay bonuses (from overlapping manoeuvres)
+    const defender_overlay = getOverlayBonuses(w, defense.defender.id, defense.time_start, defense.time_end, false);
+
+    // defense_bonus reduces hit chance (defender's movement makes them harder to hit)
+    const final_chance = std.math.clamp(
+        hit_chance + attacker_overlay.to_hit_bonus - defender_overlay.defense_bonus,
+        0.05,
+        0.95,
+    );
+
+    const roll = try w.drawRandom(.combat);
+
+    if (roll > final_chance) {
+        // Attack failed - determine how based on defense
+        if (defense.technique) |def_tech| {
+            return switch (def_tech.id) {
+                .parry => .parried,
+                .block => .blocked,
+                .deflect => .deflected,
+                else => .miss,
+            };
+        }
+        return .miss;
+    }
+
+    return .hit;
+}
+
+// ============================================================================
+// Full Resolution
+// ============================================================================
+
+pub const ResolutionResult = struct {
+    outcome: Outcome,
+    advantage_applied: AdvantageEffect,
+    damage_packet: ?damage_mod.Packet,
+    armour_result: ?armour.AbsorptionResult,
+    body_result: ?body.Body.DamageResult,
+};
+
+/// Resolve a single technique against a defense, applying all effects
+pub fn resolveTechniqueVsDefense(
+    w: *World,
+    attack: AttackContext,
+    defense: DefenseContext,
+    target_part: body.PartIndex,
+) !ResolutionResult {
+    // 1. Determine outcome (hit/miss/blocked/etc)
+    const outcome = try resolveOutcome(w, attack, defense);
+
+    // 2. Calculate and apply advantage effects (with events)
+    const adv_effect = getAdvantageEffect(attack.technique, outcome, attack.stakes);
+    try applyAdvantageWithEvents(adv_effect, w, attack.engagement, attack.attacker, attack.defender);
+
+    // 3. If hit, create damage packet and resolve through armor/body
+    var dmg_packet: ?damage_mod.Packet = null;
+    var armour_result: ?armour.AbsorptionResult = null;
+    var body_result: ?body.Body.DamageResult = null;
+
+    if (outcome == .hit) {
+        dmg_packet = createDamagePacket(
+            attack.technique,
+            attack.weapon_template,
+            attack.attacker,
+            attack.stakes,
+        );
+
+        // Apply overlay damage multiplier from overlapping manoeuvres
+        const attacker_overlay = getOverlayBonuses(w, attack.attacker.id, attack.time_start, attack.time_end, true);
+        dmg_packet.?.amount *= attacker_overlay.damage_mult;
+
+        // Resolve through armor
+        const target_body_part = &attack.defender.body.parts.items[target_part];
+        armour_result = try armour.resolveThroughArmourWithEvents(
+            w,
+            attack.defender.id,
+            &attack.defender.armour,
+            target_part,
+            target_body_part.tag,
+            target_body_part.side,
+            dmg_packet.?,
+        );
+
+        // Apply remaining damage to body (emits wound_inflicted, severed, etc.)
+        if (armour_result.?.remaining.amount > 0) {
+            body_result = try attack.defender.body.applyDamageWithEvents(
+                &w.events,
+                target_part,
+                armour_result.?.remaining,
+            );
+        }
+    }
+
+    // Emit technique_resolved event
+    try w.events.push(.{ .technique_resolved = .{
+        .attacker_id = attack.attacker.id,
+        .defender_id = attack.defender.id,
+        .technique_id = attack.technique.id,
+        .outcome = outcome,
+    } });
+
+    return ResolutionResult{
+        .outcome = outcome,
+        .advantage_applied = adv_effect,
+        .damage_packet = dmg_packet,
+        .armour_result = armour_result,
+        .body_result = body_result,
+    };
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+const ai = @import("../ai.zig");
+const stats = @import("../stats.zig");
+const weapon_list = @import("../weapon_list.zig");
+const slot_map = @import("../slot_map.zig");
+
+fn makeTestWorld(alloc: std.mem.Allocator) !*World {
+    return World.init(alloc);
+}
+
+fn makeTestAgent(
+    alloc: std.mem.Allocator,
+    agents: *slot_map.SlotMap(*Agent),
+    director: combat.Director,
+) !*Agent {
+    const agent_stats = stats.Block.splat(5);
+    const agent_body = try body.Body.fromPlan(alloc, &body.HumanoidPlan);
+
+    return Agent.init(
+        alloc,
+        agents,
+        director,
+        .shuffled_deck,
+        agent_stats,
+        agent_body,
+        stats.Resource.init(10.0, 10.0, 2.0),
+        stats.Resource.init(3.0, 5.0, 3.0),
+        undefined,
+    );
+}
+
+test "calculateHitChance base case" {
+    // Would need mock agents/engagement - placeholder for now
+}
+
+test "resolveTechniqueVsDefense emits technique_resolved event" {
+    const alloc = std.testing.allocator;
+
+    var w = try makeTestWorld(alloc);
+    defer w.deinit();
+    w.attachEventHandlers();
+
+    // Create attacker (player) and defender (mob)
+    const attacker = w.player;
+    const defender = try makeTestAgent(alloc, w.entities.agents, ai.noop());
+    // Add to encounter (creates engagement)
+    try w.encounter.?.addEnemy(defender);
+
+    // Get engagement from encounter
+    const engagement = w.encounter.?.getPlayerEngagement(defender.id).?;
+
+    // Get thrust technique
+    const technique = &cards.Technique.byID(.thrust);
+
+    // Create attack and defense contexts
+    const attack = AttackContext{
+        .attacker = attacker,
+        .defender = defender,
+        .technique = technique,
+        .weapon_template = &weapon_list.knights_sword,
+        .stakes = .guarded,
+        .engagement = engagement,
+    };
+
+    const defense = DefenseContext{
+        .defender = defender,
+        .technique = null, // passive defense
+        .weapon_template = &weapon_list.knights_sword,
+    };
+
+    // Get a target body part
+    const target_part: body.PartIndex = 0; // torso
+
+    // Resolve the technique
+    const result = try resolveTechniqueVsDefense(w, attack, defense, target_part);
+
+    // Swap buffers to make events readable
+    w.events.swap_buffers();
+
+    // Check that technique_resolved event was emitted
+    var found_technique_resolved = false;
+    while (w.events.pop()) |event| {
+        switch (event) {
+            .technique_resolved => |data| {
+                try std.testing.expectEqual(attacker.id, data.attacker_id);
+                try std.testing.expectEqual(defender.id, data.defender_id);
+                try std.testing.expectEqual(TechniqueID.thrust, data.technique_id);
+                try std.testing.expectEqual(result.outcome, data.outcome);
+                found_technique_resolved = true;
+            },
+            else => {},
+        }
+    }
+
+    try std.testing.expect(found_technique_resolved);
+}
+
+test "resolveTechniqueVsDefense emits advantage_changed events on hit" {
+    const alloc = std.testing.allocator;
+
+    var w = try makeTestWorld(alloc);
+    defer w.deinit();
+    w.attachEventHandlers();
+
+    const attacker = w.player;
+    const defender = try makeTestAgent(alloc, w.entities.agents, ai.noop());
+    try w.encounter.?.addEnemy(defender);
+
+    const engagement = w.encounter.?.getPlayerEngagement(defender.id).?;
+
+    const technique = &cards.Technique.byID(.swing);
+
+    const attack = AttackContext{
+        .attacker = attacker,
+        .defender = defender,
+        .technique = technique,
+        .weapon_template = &weapon_list.knights_sword,
+        .stakes = .committed, // higher stakes = bigger advantage swings
+        .engagement = engagement,
+    };
+
+    const defense = DefenseContext{
+        .defender = defender,
+        .technique = null,
+        .weapon_template = &weapon_list.knights_sword,
+    };
+
+    const target_part: body.PartIndex = 0;
+
+    // Force a hit by setting defender balance very low
+    defender.balance = 0.1;
+
+    const result = try resolveTechniqueVsDefense(w, attack, defense, target_part);
+
+    w.events.swap_buffers();
+
+    // Count advantage_changed events
+    var advantage_events: u32 = 0;
+    var found_balance_event = false;
+
+    while (w.events.pop()) |event| {
+        switch (event) {
+            .advantage_changed => |data| {
+                advantage_events += 1;
+                if (data.axis == .balance) {
+                    found_balance_event = true;
+                    // Balance changes should have engagement_with = null (intrinsic)
+                    try std.testing.expectEqual(@as(?entity.ID, null), data.engagement_with);
+                }
+            },
+            else => {},
+        }
+    }
+
+    // Hit or miss, we should get advantage events based on outcome
+    if (result.outcome == .hit) {
+        // Hit should change pressure, control, and target_balance
+        try std.testing.expect(advantage_events >= 2);
+    } else {
+        // Miss should change control and self_balance
+        try std.testing.expect(advantage_events >= 1);
+    }
+}
+
+test "resolveTechniqueVsDefense applies damage on hit" {
+    const alloc = std.testing.allocator;
+
+    var w = try makeTestWorld(alloc);
+    defer w.deinit();
+    w.attachEventHandlers();
+
+    const attacker = w.player;
+    const defender = try makeTestAgent(alloc, w.entities.agents, ai.noop());
+    try w.encounter.?.addEnemy(defender);
+
+    const engagement = w.encounter.?.getPlayerEngagement(defender.id).?;
+
+    const technique = &cards.Technique.byID(.thrust);
+
+    const attack = AttackContext{
+        .attacker = attacker,
+        .defender = defender,
+        .technique = technique,
+        .weapon_template = &weapon_list.knights_sword,
+        .stakes = .reckless, // maximum damage
+        .engagement = engagement,
+    };
+
+    const defense = DefenseContext{
+        .defender = defender,
+        .technique = null,
+        .weapon_template = &weapon_list.knights_sword,
+    };
+
+    const target_part: body.PartIndex = 0;
+
+    // Stack odds for a hit
+    defender.balance = 0.0;
+    engagement.pressure = 0.9; // player advantage
+    engagement.control = 0.9;
+    engagement.position = 0.9;
+
+    const result = try resolveTechniqueVsDefense(w, attack, defense, target_part);
+
+    if (result.outcome == .hit) {
+        // Should have created a damage packet
+        try std.testing.expect(result.damage_packet != null);
+
+        const packet = result.damage_packet.?;
+        try std.testing.expect(packet.amount > 0);
+        try std.testing.expectEqual(damage_mod.Kind.pierce, packet.kind);
+
+        // Reckless stakes should give 2x damage multiplier
+        // Base damage is technique.damage * stat_mult * weapon_mult * stakes_mult
+    }
+}
+
+test "AdvantageEffect.apply modifies engagement and balance" {
+    var engagement = Engagement{
+        .pressure = 0.5,
+        .control = 0.5,
+        .position = 0.5,
+    };
+
+    const alloc = std.testing.allocator;
+    const agents = try alloc.create(slot_map.SlotMap(*Agent));
+    agents.* = try slot_map.SlotMap(*Agent).init(alloc);
+    defer {
+        agents.deinit();
+        alloc.destroy(agents);
+    }
+
+    var attacker = try makeTestAgent(alloc, agents, .player);
+    defer attacker.deinit();
+
+    var defender = try makeTestAgent(alloc, agents, ai.noop());
+    defer defender.deinit();
+
+    attacker.balance = 1.0;
+    defender.balance = 1.0;
+
+    const effect = AdvantageEffect{
+        .pressure = 0.1,
+        .control = -0.1,
+        .position = 0.05,
+        .self_balance = -0.1,
+        .target_balance = -0.2,
+    };
+
+    effect.apply(&engagement, attacker, defender);
+
+    try std.testing.expectApproxEqAbs(@as(f32, 0.6), engagement.pressure, 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.4), engagement.control, 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.55), engagement.position, 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.9), attacker.balance, 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.8), defender.balance, 0.001);
+}

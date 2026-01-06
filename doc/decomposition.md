@@ -239,7 +239,14 @@ combat/mod.zig re-exports.
 - [x] Extract `tick/resolver.zig` with TickResolver (depends on apply/targeting, not full apply)
 - [x] Create `tick/mod.zig`
 - [x] Update `tick.zig` to re-export from `tick/mod.zig`
-- [ ] Update imports in resolution.zig as needed (future work)
+- [x] Create `src/domain/resolution/` directory
+- [x] Extract `resolution/context.zig` with AttackContext, DefenseContext, CombatModifiers, overlay
+- [x] Extract `resolution/advantage.zig` with AdvantageEffect, getAdvantageEffect, defaults
+- [x] Extract `resolution/damage.zig` with createDamagePacket, getWeaponOffensive
+- [x] Extract `resolution/height.zig` with hit location selection
+- [x] Extract `resolution/outcome.zig` with Outcome, resolveTechniqueVsDefense orchestrator
+- [x] Create `resolution/mod.zig`
+- [x] Update `resolution.zig` to re-export from submodules
 
 ### Completed (2026-01-06)
 
@@ -273,5 +280,37 @@ Decoupled tick resolver from full apply module:
 - `TickResolver` now imports `apply/targeting.zig` directly instead of full `apply.zig`
 - Data types (CommittedAction, ResolutionEntry, TickResult) extracted to separate file
 - `tick.zig` is now a thin re-export module
+- All existing imports continue to work (backward compatible)
+- Build and tests pass
+
+---
+
+### Step 4 Completed (2026-01-06)
+
+Isolated resolution pipelines into focused modules:
+
+**New files created:**
+- `src/domain/resolution/context.zig` - AttackContext, DefenseContext, CombatModifiers, overlay bonuses
+- `src/domain/resolution/advantage.zig` - AdvantageEffect, getAdvantageEffect, default effects, applyAdvantageWithEvents
+- `src/domain/resolution/damage.zig` - createDamagePacket, getWeaponOffensive
+- `src/domain/resolution/height.zig` - Hit location selection (height weights, selectHitLocation)
+- `src/domain/resolution/outcome.zig` - Outcome enum, calculateHitChance, resolveOutcome, resolveTechniqueVsDefense
+- `src/domain/resolution/mod.zig` - Resolution module re-exports
+
+**Module structure:**
+```
+resolution/
+├── context.zig    # Attack/defense contexts, combat modifiers
+├── advantage.zig  # Advantage effects and scaling
+├── damage.zig     # Damage packet creation
+├── height.zig     # Hit location selection
+├── outcome.zig    # Orchestrator (imports all above)
+└── mod.zig        # Re-exports public API
+```
+
+**Key changes:**
+- Each resolution step can now be unit tested independently
+- `outcome.zig` is the single orchestrator that imports smaller helpers
+- `resolution.zig` is now a thin re-export module
 - All existing imports continue to work (backward compatible)
 - Build and tests pass
