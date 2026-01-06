@@ -41,12 +41,18 @@ pub const AttackContext = struct {
     weapon_template: *const weapon.Template,
     stakes: Stakes,
     engagement: *Engagement,
+    // Timing for overlay bonus calculation
+    time_start: f32 = 0,
+    time_end: f32 = 1.0,
 };
 
 pub const DefenseContext = struct {
     defender: *Agent,
     technique: ?*const Technique, // null = passive defense
     weapon_template: *const weapon.Template,
+    // Timing for overlay bonus calculation
+    time_start: f32 = 0,
+    time_end: f32 = 1.0,
 };
 
 // ============================================================================
@@ -142,6 +148,55 @@ pub const CombatModifiers = struct {
     }
 };
 
+// ============================================================================
+// Manoeuvre Overlay Bonuses
+// ============================================================================
+
+/// Aggregated overlay bonuses from overlapping manoeuvres
+pub const AggregatedOverlay = struct {
+    to_hit_bonus: f32 = 0,
+    damage_mult: f32 = 1.0,
+    defense_bonus: f32 = 0,
+};
+
+/// Scan an agent's timeline for overlapping manoeuvres and aggregate their bonuses.
+/// Returns bonuses applicable to offensive or defensive techniques.
+pub fn getOverlayBonuses(
+    w: *const World,
+    agent_id: entity.ID,
+    time_start: f32,
+    time_end: f32,
+    for_offensive: bool,
+) AggregatedOverlay {
+    var result = AggregatedOverlay{};
+
+    const enc = w.encounter orelse return result;
+    const enc_state = enc.stateForConst(agent_id) orelse return result;
+
+    for (enc_state.current.slots()) |slot| {
+        // Check time overlap
+        if (!slot.overlapsWith(time_start, time_end, &w.card_registry)) continue;
+
+        // Get the card and check if it's a manoeuvre with overlay bonus
+        const card = w.card_registry.getConst(slot.play.action) orelse continue;
+        if (!card.template.tags.manoeuvre) continue;
+
+        // Get technique info for overlay bonus
+        const tech_expr = card.template.getTechniqueWithExpression() orelse continue;
+        const overlay = tech_expr.technique.overlay_bonus orelse continue;
+
+        // Aggregate bonuses based on what we're applying to
+        if (for_offensive) {
+            result.to_hit_bonus += overlay.offensive.to_hit_bonus;
+            result.damage_mult *= overlay.offensive.damage_mult;
+        } else {
+            result.defense_bonus += overlay.defensive.defense_bonus;
+        }
+    }
+
+    return result;
+}
+
 /// Calculate hit probability for an attack
 pub fn calculateHitChance(attack: AttackContext, defense: DefenseContext) f32 {
     var chance: f32 = 0.5; // Base 50%
@@ -216,9 +271,23 @@ pub fn resolveOutcome(
     defense: DefenseContext,
 ) !Outcome {
     const hit_chance = calculateHitChance(attack, defense);
+
+    // Apply attacker's overlay bonuses (from overlapping manoeuvres)
+    const attacker_overlay = getOverlayBonuses(w, attack.attacker.id, attack.time_start, attack.time_end, true);
+
+    // Apply defender's overlay bonuses (from overlapping manoeuvres)
+    const defender_overlay = getOverlayBonuses(w, defense.defender.id, defense.time_start, defense.time_end, false);
+
+    // defense_bonus reduces hit chance (defender's movement makes them harder to hit)
+    const final_chance = std.math.clamp(
+        hit_chance + attacker_overlay.to_hit_bonus - defender_overlay.defense_bonus,
+        0.05,
+        0.95,
+    );
+
     const roll = try w.drawRandom(.combat);
 
-    if (roll > hit_chance) {
+    if (roll > final_chance) {
         // Attack failed - determine how based on defense
         if (defense.technique) |def_tech| {
             return switch (def_tech.id) {
@@ -471,6 +540,10 @@ pub fn resolveTechniqueVsDefense(
             attack.attacker,
             attack.stakes,
         );
+
+        // Apply overlay damage multiplier from overlapping manoeuvres
+        const attacker_overlay = getOverlayBonuses(w, attack.attacker.id, attack.time_start, attack.time_end, true);
+        dmg_packet.?.amount *= attacker_overlay.damage_mult;
 
         // Resolve through armor
         const target_body_part = &attack.defender.body.parts.items[target_part];

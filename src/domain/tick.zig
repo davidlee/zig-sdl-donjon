@@ -218,12 +218,17 @@ pub const TickResolver = struct {
                     .weapon_template = self.getWeaponTemplate(action.actor),
                     .stakes = action.stakes,
                     .engagement = engagement,
+                    .time_start = action.time_start,
+                    .time_end = action.time_end,
                 };
 
                 const defense_ctx = resolution.DefenseContext{
                     .defender = defender,
                     .technique = defense_tech,
                     .weapon_template = self.getWeaponTemplate(defender),
+                    // Use attack time window - defender's manoeuvres during this window provide bonus
+                    .time_start = action.time_start,
+                    .time_end = action.time_end,
                 };
 
                 // Select hit location

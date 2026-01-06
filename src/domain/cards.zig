@@ -227,6 +227,20 @@ pub const AttackMode = enum {
     none, // defensive technique, no weapon profile
 };
 
+/// Bonuses applied to overlapping techniques when this manoeuvre is active.
+/// Used by footwork cards to modify concurrent weapon techniques.
+pub const OverlayBonus = struct {
+    /// Applied to overlapping offensive techniques
+    offensive: struct {
+        to_hit_bonus: f32 = 0,
+        damage_mult: f32 = 1.0,
+    } = .{},
+    /// Applied to overlapping defensive techniques
+    defensive: struct {
+        defense_bonus: f32 = 0,
+    } = .{},
+};
+
 pub const Technique = struct {
     id: TechniqueID,
     name: []const u8,
@@ -252,6 +266,9 @@ pub const Technique = struct {
 
     // technique-specific advantage overrides (null = use defaults)
     advantage: ?combat.TechniqueAdvantage = null,
+
+    // Manoeuvre overlay bonuses (applied to concurrent techniques)
+    overlay_bonus: ?OverlayBonus = null,
 
     pub fn byID(comptime id: TechniqueID) Technique {
         inline for (TechniqueEntries) |tn| {
@@ -289,6 +306,11 @@ pub const Effect = union(enum) {
     // Commit phase play manipulation
     modify_play: ModifyPlay,
     cancel_play, // removes target play
+    // Manoeuvre effects (engagement-targeted)
+    modify_range: struct {
+        steps: i8, // negative = closer, positive = farther
+        propagate: bool = true, // apply n-1 to other engagements
+    },
 };
 
 pub const Expression = struct {

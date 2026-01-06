@@ -332,6 +332,9 @@ pub const World = struct {
             try self.tickResolver.commitMobActions(enc.enemies.items, self);
         }
 
+        // Execute manoeuvre effects (range modification) before combat resolution
+        try apply.executeManoeuvreEffects(self);
+
         // Resolve all actions
         const result = try self.tickResolver.resolve(self);
 
