@@ -87,7 +87,8 @@ pub const SimpleDeckDirector = struct {
             const card = w.card_registry.get(card_id) orelse continue;
             if (apply.isCardSelectionValid(agent, card, w.encounter)) {
                 // playValidCardReservingCosts already emits played_action_card event
-                _ = try apply.playValidCardReservingCosts(&w.events, agent, card, &w.card_registry);
+                // AI doesn't select targets yet (uses all_enemies or auto-target)
+                _ = try apply.playValidCardReservingCosts(&w.events, agent, card, &w.card_registry, null);
                 to_play -= 1;
             }
         }
@@ -124,7 +125,8 @@ pub const PoolDirector = struct {
 
             // Check if playable (not on cooldown, meets requirements)
             if (apply.isCardSelectionValid(agent, card, w.encounter)) {
-                _ = try apply.playValidCardReservingCosts(&w.events, agent, card, &w.card_registry);
+                // AI doesn't select targets yet (uses all_enemies or auto-target)
+                _ = try apply.playValidCardReservingCosts(&w.events, agent, card, &w.card_registry, null);
                 played += 1;
             }
         }

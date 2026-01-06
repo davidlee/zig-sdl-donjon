@@ -516,19 +516,33 @@ pub const View = struct {
 
     fn onClick(self: *View, vs: ViewState, pos: Point) InputResult {
         const in_commit = self.inPhase(.commit_phase);
+        const cs = vs.combat orelse CombatUIState{};
+        const in_targeting = cs.isTargeting();
+
+        // If in targeting mode, only allow enemy selection or cancellation
+        if (in_targeting) {
+            if (self.opposition.hitTest(pos)) |sprite| {
+                // Complete targeting with selected enemy
+                // Use a default rect for animation (card is already conceptually "selected")
+                const default_rect = Rect{ .x = 400, .y = 300, .w = 100, .h = 140 };
+                return self.completeTargeting(vs, sprite.id, default_rect);
+            }
+            // Click anywhere else cancels targeting
+            return self.cancelTargeting(vs);
+        }
 
         // ALWAYS AVAILABLE CARD
         if (self.alwaysZone(self.arena).hitTest(vs, pos)) |hit| {
             const id = hit.cardId();
             if (self.isCardDraggable(id)) {
-                var cs = vs.combat orelse CombatUIState{};
-                cs.drag = .{ .original_pos = pos, .id = id };
-                return .{ .vs = vs.withCombat(cs) };
+                var new_cs = cs;
+                new_cs.drag = .{ .original_pos = pos, .id = id };
+                return .{ .vs = vs.withCombat(new_cs) };
             }
             if (in_commit) {
-                return .{ .command = .{ .commit_add = id } };
+                return self.commitAddCard(vs, id);
             } else {
-                return self.startCardAnimation(vs, id, hit.card.rect);
+                return self.playCard(vs, id, hit.card.rect);
             }
         }
 
@@ -536,13 +550,13 @@ pub const View = struct {
         if (self.handZone(self.arena).hitTest(vs, pos)) |hit| {
             const id = hit.cardId();
             if (self.isCardDraggable(id)) {
-                var cs = vs.combat orelse CombatUIState{};
-                cs.drag = .{ .original_pos = pos, .id = id };
-                return .{ .vs = vs.withCombat(cs) };
+                var new_cs = cs;
+                new_cs.drag = .{ .original_pos = pos, .id = id };
+                return .{ .vs = vs.withCombat(new_cs) };
             } else if (in_commit) {
-                return .{ .command = .{ .commit_add = id } };
+                return self.commitAddCard(vs, id);
             } else {
-                return self.startCardAnimation(vs, id, hit.card.rect);
+                return self.playCard(vs, id, hit.card.rect);
             }
         }
 
@@ -607,9 +621,15 @@ pub const View = struct {
     }
 
     fn handleKey(self: *View, keycode: Keycode, vs: ViewState) InputResult {
-        _ = vs;
+        const cs = vs.combat orelse CombatUIState{};
+
         switch (keycode) {
             .q => std.process.exit(0),
+            .escape => {
+                if (cs.isTargeting()) {
+                    return self.cancelTargeting(vs);
+                }
+            },
             .space => {
                 if (self.inPhase(.commit_phase)) {
                     return .{ .command = .{ .commit_done = {} } };
@@ -623,7 +643,7 @@ pub const View = struct {
     }
 
     /// Start a card animation and return play_card command with updated viewstate
-    fn startCardAnimation(_: *View, vs: ViewState, card_id: entity.ID, from_rect: Rect) InputResult {
+    fn startCardAnimation(_: *View, vs: ViewState, card_id: entity.ID, from_rect: Rect, target: ?entity.ID) InputResult {
         var cs = vs.combat orelse CombatUIState{};
         cs.addAnimation(.{
             .card_id = card_id,
@@ -633,8 +653,82 @@ pub const View = struct {
         });
         return .{
             .vs = vs.withCombat(cs),
-            .command = .{ .play_card = .{ .card_id = card_id } },
+            .command = .{ .play_card = .{ .card_id = card_id, .target = target } },
         };
+    }
+
+    /// Enter targeting mode - store card_id pending target selection
+    fn enterTargetingMode(_: *View, vs: ViewState, card_id: entity.ID, for_commit: bool) InputResult {
+        var cs = vs.combat orelse CombatUIState{};
+        cs.pending_target_card = card_id;
+        cs.targeting_for_commit = for_commit;
+        return .{ .vs = vs.withCombat(cs) };
+    }
+
+    /// Complete targeting - play the pending card with selected target
+    fn completeTargeting(self: *View, vs: ViewState, target_id: entity.ID, from_rect: Rect) InputResult {
+        const cs = vs.combat orelse return .{};
+        const card_id = cs.pending_target_card orelse return .{};
+        const for_commit = cs.targeting_for_commit;
+
+        // Clear targeting state
+        var new_cs = cs;
+        new_cs.pending_target_card = null;
+        new_cs.targeting_for_commit = false;
+
+        if (for_commit) {
+            // Commit phase: issue commit_add with target
+            return .{
+                .vs = vs.withCombat(new_cs),
+                .command = .{ .commit_add = .{ .card_id = card_id, .target = target_id } },
+            };
+        } else {
+            // Selection phase: play card with target (animated)
+            return self.startCardAnimation(vs.withCombat(new_cs), card_id, from_rect, target_id);
+        }
+    }
+
+    /// Cancel targeting mode without playing
+    fn cancelTargeting(_: *View, vs: ViewState) InputResult {
+        var cs = vs.combat orelse return .{};
+        cs.pending_target_card = null;
+        cs.targeting_for_commit = false;
+        return .{ .vs = vs.withCombat(cs) };
+    }
+
+    /// Handle playing a card - checks if targeting is required
+    fn playCard(self: *View, vs: ViewState, card_id: entity.ID, from_rect: Rect) InputResult {
+        const card = self.world.card_registry.getConst(card_id) orelse
+            return self.startCardAnimation(vs, card_id, from_rect, null);
+
+        if (card.template.requiresSingleTarget()) {
+            const enemy_count = self.opposition.enemies.len;
+            if (enemy_count == 1) {
+                // Auto-assign single enemy
+                const target_id = self.opposition.enemies[0].id;
+                return self.startCardAnimation(vs, card_id, from_rect, target_id);
+            }
+            return self.enterTargetingMode(vs, card_id, false); // selection phase
+        }
+        return self.startCardAnimation(vs, card_id, from_rect, null);
+    }
+
+    /// Commit phase: add a card from hand/available (costs 1 Focus).
+    /// Prompts for target selection if card requires single target.
+    fn commitAddCard(self: *View, vs: ViewState, card_id: entity.ID) InputResult {
+        const card = self.world.card_registry.getConst(card_id) orelse
+            return .{ .command = .{ .commit_add = .{ .card_id = card_id } } };
+
+        if (card.template.requiresSingleTarget()) {
+            const enemy_count = self.opposition.enemies.len;
+            if (enemy_count == 1) {
+                // Auto-assign single enemy
+                const target_id = self.opposition.enemies[0].id;
+                return .{ .command = .{ .commit_add = .{ .card_id = card_id, .target = target_id } } };
+            }
+            return self.enterTargetingMode(vs, card_id, true); // commit phase
+        }
+        return .{ .command = .{ .commit_add = .{ .card_id = card_id } } };
     }
 
     // --- Zone helpers (use CardZoneView with CardViewData) ---
@@ -659,6 +753,27 @@ pub const View = struct {
 
         try list.append(alloc, self.player_avatar.renderable());
         try self.opposition.appendRenderables(alloc, &list);
+
+        // Targeting mode: highlight valid targets with red border
+        if (cs.isTargeting()) {
+            for (self.opposition.enemies, 0..) |enemy, i| {
+                const sprite = combat_mod.Enemy.init(enemy.id, i);
+                const border: f32 = 3;
+                try list.append(alloc, .{
+                    .filled_rect = .{
+                        .rect = .{
+                            .x = sprite.rect.x - border,
+                            .y = sprite.rect.y - border,
+                            .w = sprite.rect.w + border * 2,
+                            .h = sprite.rect.h + border * 2,
+                        },
+                        .color = .{ .r = 200, .g = 50, .b = 50, .a = 255 },
+                    },
+                });
+            }
+            // Re-render enemies on top of highlight boxes
+            try self.opposition.appendRenderables(alloc, &list);
+        }
 
         // Player cards - render in_play first (behind), then hand (in front)
         var last: ?Renderable = null;

@@ -484,7 +484,7 @@ const t_sand_in_the_eyes = Template{
     .playable_from = PlayableFrom.hand_only,
     .rules = &.{.{
         .trigger = .on_resolve,
-        .valid = .{ .range = .{ .op = .lte, .value = .dagger } }, // must be close
+        .valid = .{ .range = .{ .op = .lte, .value = .sabre } }, // must be close
         .expressions = &.{.{
             .effect = .{ .add_condition = .{
                 .condition = .blinded,

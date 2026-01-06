@@ -35,7 +35,7 @@ pub const Event = union(enum) {
     entity_died: u32, // Payload: just the ID
     mob_died: entity.ID,
 
-    played_action_card: struct { instance: entity.ID, template: u64, actor: AgentMeta },
+    played_action_card: struct { instance: entity.ID, template: u64, actor: AgentMeta, target: ?entity.ID = null },
     card_moved: struct { instance: entity.ID, from: Zone, to: Zone, actor: AgentMeta },
     card_cloned: struct { clone_id: entity.ID, master_id: entity.ID, actor: AgentMeta },
     card_cancelled: struct { instance: entity.ID, actor: AgentMeta },

@@ -56,6 +56,8 @@ pub const EntityRef = union(enum) {
 pub const CombatUIState = struct {
     drag: ?DragState = null,
     selected_card: ?entity.ID = null,
+    pending_target_card: ?entity.ID = null, // card awaiting target selection
+    targeting_for_commit: bool = false, // true = commit_add, false = play_card
     hover: EntityRef = .none,
     log_scroll: i32 = 0, // pixel scroll offset for combat log (0 = bottom/most recent)
     card_animations: [max_card_animations]CardAnimation = undefined,
@@ -99,6 +101,10 @@ pub const CombatUIState = struct {
             }
         }
         self.card_animation_len = write_idx;
+    }
+
+    pub fn isTargeting(self: *const CombatUIState) bool {
+        return self.pending_target_card != null;
     }
 };
 

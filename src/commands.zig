@@ -29,7 +29,7 @@ pub const Command = union(enum) {
 
     // Combat - commit phase (Focus spending)
     commit_withdraw: ID, // 1F: remove card from play, refund stamina
-    commit_add: ID, // 1F: add card from hand as new play
+    commit_add: struct { card_id: ID, target: ?ID = null }, // 1F: add card from hand as new play
     commit_stack: struct { card_id: ID, target_play_index: usize }, // 1F total: reinforce plays (first stack pays)
     commit_done: void, // finish commit phase
 

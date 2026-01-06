@@ -141,8 +141,8 @@ pub const CommandHandler = struct {
             .commit_withdraw => |id| {
                 try self.commitWithdraw(id);
             },
-            .commit_add => |id| {
-                try self.commitAdd(id);
+            .commit_add => |data| {
+                try self.commitAdd(data.card_id, data.target);
             },
             .commit_stack => |data| {
                 try self.commitStack(data.card_id, data.target_play_index);
@@ -235,13 +235,13 @@ pub const CommandHandler = struct {
             if (wouldConflictWithInPlay(card, cs, &self.world.card_registry))
                 return ValidationError.ChannelConflict;
 
-            _ = try playValidCardReservingCosts(&self.world.events, player, card, &self.world.card_registry);
+            const in_play_id = try playValidCardReservingCosts(&self.world.events, player, card, &self.world.card_registry, target);
 
             // Store pending target if provided (for .single targeting cards)
             if (target) |target_id| {
                 const enc = self.world.encounter orelse return CommandError.BadInvariant;
                 const enc_state = enc.stateFor(player.id) orelse return CommandError.BadInvariant;
-                enc_state.current.setPendingTarget(id, target_id);
+                enc_state.current.setPendingTarget(in_play_id, target_id);
             }
         } else {
             return CommandError.CommandInvalid;
@@ -293,7 +293,7 @@ pub const CommandHandler = struct {
 
     /// Commit phase: Add a new card from hand (costs 1 Focus).
     /// Card is marked as added_in_commit (cannot be stacked).
-    pub fn commitAdd(self: *CommandHandler, card_id: entity.ID) !void {
+    pub fn commitAdd(self: *CommandHandler, card_id: entity.ID, target: ?entity.ID) !void {
         const player = self.world.player;
         if (!self.world.inTurnPhase(.commit_phase))
             return CommandError.InvalidGameState;
@@ -327,7 +327,12 @@ pub const CommandHandler = struct {
         _ = player.focus.spend(FOCUS_COST);
 
         // Play card (move to in_play, commit stamina)
-        const in_play_id = try playValidCardReservingCosts(&self.world.events, player, card, &self.world.card_registry);
+        const in_play_id = try playValidCardReservingCosts(&self.world.events, player, card, &self.world.card_registry, target);
+
+        // Store pending target if provided (for .single targeting cards)
+        if (target) |target_id| {
+            enc_state.current.setPendingTarget(in_play_id, target_id);
+        }
 
         // Add to plays with added_in_commit flag
         try enc_state.current.addPlay(.{
@@ -456,7 +461,8 @@ pub const CommandHandler = struct {
 
         // Move card to in_play first - this creates a clone for pool cards
         // Returns the ID that ends up in in_play (clone for pool cards, original for hand)
-        const in_play_id = try playValidCardReservingCosts(&self.world.events, player, validation.stack_card, &self.world.card_registry);
+        // Modifiers don't target enemies
+        const in_play_id = try playValidCardReservingCosts(&self.world.events, player, validation.stack_card, &self.world.card_registry, null);
 
         // Add the in_play ID (clone if pool card) to modifier stack
         try target_play.addModifier(in_play_id);
@@ -817,8 +823,8 @@ pub fn validateCardSelection(
         return ValidationError.InvalidPlaySource;
     }
 
-    // check rule.valid predicates (weapon requirements, etc.)
-    if (!rulePredicatesSatisfied(template, actor)) return ValidationError.PredicateFailed;
+    // check rule.valid predicates (weapon requirements, range, etc.)
+    if (!rulePredicatesSatisfied(template, actor, encounter)) return ValidationError.PredicateFailed;
 
     // Melee cards require weapon reach to at least one enemy
     if (template.tags.melee) {
@@ -925,6 +931,7 @@ pub fn playValidCardReservingCosts(
     actor: *Agent,
     card: *Instance,
     registry: *w.CardRegistry,
+    target: ?entity.ID,
 ) !entity.ID {
     const cs = actor.combat_state orelse return error.InvalidGameState;
     const is_player = switch (actor.director) {
@@ -963,7 +970,7 @@ pub fn playValidCardReservingCosts(
 
     // sink an event for the card being played (use in_play_id for the clone)
     try evs.push(Event{
-        .played_action_card = .{ .instance = in_play_id, .template = card.template.id, .actor = actor_meta },
+        .played_action_card = .{ .instance = in_play_id, .template = card.template.id, .actor = actor_meta, .target = target },
     });
 
     // put a hold on the time & stamina costs for the UI to display / player state
@@ -983,34 +990,52 @@ pub fn playValidCardReservingCosts(
 
 /// Check if all rule.valid predicates pass for this actor.
 /// Does NOT check costs, phase, or zone - only weapon/equipment requirements.
-pub fn rulePredicatesSatisfied(template: *const cards.Template, actor: *const Agent) bool {
+pub fn rulePredicatesSatisfied(
+    template: *const cards.Template,
+    actor: *const Agent,
+    encounter: ?*const combat.Encounter,
+) bool {
     for (template.rules) |rule| {
-        if (!evaluateValidityPredicate(rule.valid, template, actor)) return false;
+        if (!evaluateValidityPredicate(rule.valid, template, actor, encounter)) return false;
     }
     return true;
 }
 
 /// Evaluate a predicate for card validity (no target context)
-fn evaluateValidityPredicate(p: cards.Predicate, template: *const cards.Template, actor: *const Agent) bool {
+fn evaluateValidityPredicate(
+    p: cards.Predicate,
+    template: *const cards.Template,
+    actor: *const Agent,
+    encounter: ?*const combat.Encounter,
+) bool {
     return switch (p) {
         .always => true,
         .has_tag => |tag| template.tags.hasTag(tag),
         .weapon_category => |cat| actor.weapons.hasCategory(cat),
-        .weapon_reach => false, // TODO: needs engagement context
-        .range => false, // TODO: needs engagement context
+        .weapon_reach => false, // TODO: needs weapon context
+        .range => |r| blk: {
+            const enc = encounter orelse break :blk false;
+            // Check if ANY enemy engagement satisfies the range predicate
+            for (enc.enemies.items) |enemy| {
+                if (enc.getPlayerEngagementConst(enemy.id)) |eng| {
+                    if (compareReach(eng.range, r.op, r.value)) break :blk true;
+                }
+            }
+            break :blk false;
+        },
         .advantage_threshold => false, // TODO: needs engagement context
         .has_condition => |cond| actor.hasCondition(cond),
         .lacks_condition => |cond| !actor.hasCondition(cond),
-        .not => |inner| !evaluateValidityPredicate(inner.*, template, actor),
+        .not => |inner| !evaluateValidityPredicate(inner.*, template, actor, encounter),
         .all => |preds| {
             for (preds) |pred| {
-                if (!evaluateValidityPredicate(pred, template, actor)) return false;
+                if (!evaluateValidityPredicate(pred, template, actor, encounter)) return false;
             }
             return true;
         },
         .any => |preds| {
             for (preds) |pred| {
-                if (evaluateValidityPredicate(pred, template, actor)) return true;
+                if (evaluateValidityPredicate(pred, template, actor, encounter)) return true;
             }
             return false;
         },
@@ -1458,8 +1483,8 @@ pub fn executeCommitPhaseRules(world: *World, actor: *Agent) !void {
         for (card.template.rules) |rule| {
             if (rule.trigger != .on_commit) continue;
 
-            // Check rule validity predicate (weapon requirements, etc.)
-            if (!rulePredicatesSatisfied(card.template, actor)) continue;
+            // Check rule validity predicate (weapon requirements, range, etc.)
+            if (!rulePredicatesSatisfied(card.template, actor, world.encounter)) continue;
 
             // Execute expressions
             for (rule.expressions) |expr| {
@@ -1508,8 +1533,8 @@ pub fn executeResolvePhaseRules(world: *World, actor: *Agent) !void {
         for (card.template.rules) |rule| {
             if (rule.trigger != .on_resolve) continue;
 
-            // Check rule validity predicate
-            if (!rulePredicatesSatisfied(card.template, actor)) continue;
+            // Check rule validity predicate (weapon requirements, range, etc.)
+            if (!rulePredicatesSatisfied(card.template, actor, world.encounter)) continue;
 
             rule_fired = true;
 
@@ -1753,7 +1778,7 @@ test "rulePredicatesSatisfied allows card with always predicate" {
     var sword_instance = weapon.Instance{ .id = testId(0), .template = &weapon_list.knights_sword };
     const agent = makeTestAgent(.{ .single = &sword_instance });
 
-    try testing.expect(rulePredicatesSatisfied(thrust_template, &agent));
+    try testing.expect(rulePredicatesSatisfied(thrust_template, &agent, null));
 }
 
 test "rulePredicatesSatisfied allows shield block with shield equipped" {
@@ -1761,7 +1786,7 @@ test "rulePredicatesSatisfied allows shield block with shield equipped" {
     var buckler_instance = weapon.Instance{ .id = testId(0), .template = &weapon_list.buckler };
     const agent = makeTestAgent(.{ .single = &buckler_instance });
 
-    try testing.expect(rulePredicatesSatisfied(shield_block, &agent));
+    try testing.expect(rulePredicatesSatisfied(shield_block, &agent, null));
 }
 
 test "rulePredicatesSatisfied denies shield block without shield" {
@@ -1769,7 +1794,7 @@ test "rulePredicatesSatisfied denies shield block without shield" {
     var sword_instance = weapon.Instance{ .id = testId(0), .template = &weapon_list.knights_sword };
     const agent = makeTestAgent(.{ .single = &sword_instance });
 
-    try testing.expect(!rulePredicatesSatisfied(shield_block, &agent));
+    try testing.expect(!rulePredicatesSatisfied(shield_block, &agent, null));
 }
 
 test "rulePredicatesSatisfied allows shield block with sword and shield dual wield" {
@@ -1781,7 +1806,7 @@ test "rulePredicatesSatisfied allows shield block with sword and shield dual wie
         .secondary = &buckler_instance,
     } });
 
-    try testing.expect(rulePredicatesSatisfied(shield_block, &agent));
+    try testing.expect(rulePredicatesSatisfied(shield_block, &agent, null));
 }
 
 // ============================================================================

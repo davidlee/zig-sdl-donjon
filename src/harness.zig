@@ -16,9 +16,9 @@ const Templates = card_list.BaseAlwaysAvailableTemplates;
 const World = @import("domain/world.zig").World;
 
 pub fn setupEncounter(world: *World) !void {
-    var buckler = try world.alloc.create(weapon.Instance);
-    buckler.id = try world.entities.weapons.insert(buckler);
-    buckler.template = weapon_list.byName("buckler");
+    var wpn = try world.alloc.create(weapon.Instance);
+    wpn.id = try world.entities.weapons.insert(wpn);
+    wpn.template = weapon_list.byName("falchion");
 
     const mob = try combat.Agent.init(
         world.alloc,
@@ -29,7 +29,7 @@ pub fn setupEncounter(world: *World) !void {
         try body.Body.fromPlan(world.alloc, &body.HumanoidPlan),
         stats.Resource.init(10.0, 10.0, 2.0), // stamina
         stats.Resource.init(3.0, 5.0, 3.0), // focus
-        combat.Armament{ .single = buckler },
+        combat.Armament{ .single = wpn },
     );
 
     // Populate mob's always_available pool from card registry

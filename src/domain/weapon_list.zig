@@ -521,7 +521,7 @@ pub const spear = Template{
 
 const buckler_punch = Offensive{
     .name = "buckler punch",
-    .reach = .clinch,
+    .reach = .dagger,
     .damage_types = &.{.bludgeon},
     .accuracy = 0.85,
     .speed = 1.2, // quick jab
@@ -530,7 +530,7 @@ const buckler_punch = Offensive{
     .penetration_max = 0.0,
     .fragility = 0.2, // metal boss, very sturdy
     .defender_modifiers = .{
-        .reach = .clinch,
+        .reach = .dagger,
         .parry = 1.0,
         .deflect = 0.9,
         .block = 0.8,

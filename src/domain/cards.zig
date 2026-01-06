@@ -357,6 +357,16 @@ pub const Template = struct {
         }
         return null;
     }
+
+    /// Check if any expression targets .single (requires play-time target selection)
+    pub fn requiresSingleTarget(self: *const Template) bool {
+        for (self.rules) |rule| {
+            for (rule.expressions) |expr| {
+                if (expr.target == .single) return true;
+            }
+        }
+        return false;
+    }
 };
 
 pub const Instance = struct {
@@ -466,4 +476,62 @@ test "ChannelSet.isEmpty" {
 
     try testing.expect(empty.isEmpty());
     try testing.expect(!weapon_ch.isEmpty());
+}
+
+test "Template.requiresSingleTarget detects .single targeting" {
+    // Template with .single target
+    const single_target_template = Template{
+        .id = 1,
+        .kind = .action,
+        .name = "test single",
+        .description = "",
+        .rarity = .common,
+        .cost = .{ .stamina = 0 },
+        .tags = .{},
+        .rules = &.{.{
+            .trigger = .on_resolve,
+            .valid = .always,
+            .expressions = &.{.{
+                .effect = .interrupt,
+                .filter = null,
+                .target = .single,
+            }},
+        }},
+    };
+
+    // Template with .all_enemies target
+    const all_enemies_template = Template{
+        .id = 2,
+        .kind = .action,
+        .name = "test all",
+        .description = "",
+        .rarity = .common,
+        .cost = .{ .stamina = 0 },
+        .tags = .{},
+        .rules = &.{.{
+            .trigger = .on_resolve,
+            .valid = .always,
+            .expressions = &.{.{
+                .effect = .interrupt,
+                .filter = null,
+                .target = .all_enemies,
+            }},
+        }},
+    };
+
+    // Template with no expressions
+    const empty_template = Template{
+        .id = 3,
+        .kind = .action,
+        .name = "test empty",
+        .description = "",
+        .rarity = .common,
+        .cost = .{ .stamina = 0 },
+        .tags = .{},
+        .rules = &.{},
+    };
+
+    try testing.expect(single_target_template.requiresSingleTarget());
+    try testing.expect(!all_enemies_template.requiresSingleTarget());
+    try testing.expect(!empty_template.requiresSingleTarget());
 }
