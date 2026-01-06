@@ -4,6 +4,7 @@
 // Access as: combat.Zone, combat.Hit, combat.Interaction
 
 const entity = @import("infra").entity;
+const Rect = @import("sdl3").rect.FRect;
 
 /// View-specific zone enum for layout purposes.
 /// Distinct from cards.Zone and combat.CombatZone (domain types).
@@ -35,6 +36,7 @@ pub const Hit = union(enum) {
     pub const CardHit = struct {
         id: entity.ID,
         zone: Zone,
+        rect: Rect,
     };
 
     pub const PlayHit = struct {

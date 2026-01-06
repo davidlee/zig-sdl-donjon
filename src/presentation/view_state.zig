@@ -58,6 +58,93 @@ pub const CombatUIState = struct {
     selected_card: ?entity.ID = null,
     hover: EntityRef = .none,
     log_scroll: i32 = 0, // pixel scroll offset for combat log (0 = bottom/most recent)
+    card_animations: [max_card_animations]CardAnimation = undefined,
+    card_animation_len: u8 = 0,
+
+    const max_card_animations = 4;
+
+    pub fn addAnimation(self: *CombatUIState, anim: CardAnimation) void {
+        if (self.card_animation_len < max_card_animations) {
+            self.card_animations[self.card_animation_len] = anim;
+            self.card_animation_len += 1;
+        }
+    }
+
+    pub fn activeAnimations(self: *const CombatUIState) []const CardAnimation {
+        return self.card_animations[0..self.card_animation_len];
+    }
+
+    pub fn findAnimation(self: *CombatUIState, card_id: entity.ID) ?*CardAnimation {
+        for (self.card_animations[0..self.card_animation_len]) |*anim| {
+            if (anim.card_id.eql(card_id)) return anim;
+        }
+        return null;
+    }
+
+    /// Find animation from always_available zone (for clone case where card_id changes)
+    pub fn findAlwaysAvailableAnimation(self: *CombatUIState) ?*CardAnimation {
+        for (self.card_animations[0..self.card_animation_len]) |*anim| {
+            if (anim.from_always_available and anim.to_rect == null) return anim;
+        }
+        return null;
+    }
+
+    pub fn isAnimating(self: *const CombatUIState, card_id: entity.ID) bool {
+        for (self.activeAnimations()) |anim| {
+            if (anim.card_id.eql(card_id)) return true;
+        }
+        return false;
+    }
+
+    pub fn removeCompletedAnimations(self: *CombatUIState) void {
+        var write_idx: u8 = 0;
+        for (self.card_animations[0..self.card_animation_len]) |anim| {
+            // Remove completed animations AND stale ones (never got destination)
+            const is_stale = anim.to_rect == null and anim.progress > 0.5;
+            if (!anim.isComplete() and !is_stale) {
+                self.card_animations[write_idx] = anim;
+                write_idx += 1;
+            }
+        }
+        self.card_animation_len = write_idx;
+    }
+};
+
+/// Card position tween animation
+pub const CardAnimation = struct {
+    card_id: entity.ID,
+    from_rect: Rect,
+    to_rect: ?Rect, // null until effect processing sets destination
+    progress: f32, // 0.0 to 1.0
+    from_always_available: bool, // true if animation started from always_available zone (clone case)
+
+    pub fn currentRect(self: CardAnimation) Rect {
+        const to = self.to_rect orelse return self.from_rect;
+        const t = cubicEaseInOut(self.progress);
+        return .{
+            .x = lerp(self.from_rect.x, to.x, t),
+            .y = lerp(self.from_rect.y, to.y, t),
+            .w = lerp(self.from_rect.w, to.w, t),
+            .h = lerp(self.from_rect.h, to.h, t),
+        };
+    }
+
+    pub fn isComplete(self: CardAnimation) bool {
+        return self.to_rect != null and self.progress >= 1.0;
+    }
+
+    fn lerp(a: f32, b: f32, t: f32) f32 {
+        return a + (b - a) * t;
+    }
+
+    fn cubicEaseInOut(t: f32) f32 {
+        if (t < 0.5) {
+            return 4 * t * t * t;
+        } else {
+            const f = 2 * t - 2;
+            return 0.5 * f * f * f + 1;
+        }
+    }
 };
 
 /// Menu view state

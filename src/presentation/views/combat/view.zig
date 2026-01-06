@@ -29,6 +29,7 @@ const CardViewModel = card_mod.Model;
 const CardModelState = card_mod.State;
 const ViewState = views.ViewState;
 const CombatUIState = views.CombatUIState;
+const CardAnimation = view_state.CardAnimation;
 const DragState = views.DragState;
 const InputResult = views.InputResult;
 const Command = infra.commands.Command;
@@ -101,7 +102,7 @@ const CardZoneView = struct {
             i -= 1;
             const rect = self.cardRect(i, self.cards[i].id, vs);
             if (rect.pointIn(pt)) {
-                return .{ .card = .{ .id = self.cards[i].id, .zone = self.zone } };
+                return .{ .card = .{ .id = self.cards[i].id, .zone = self.zone, .rect = rect } };
             }
         }
         return null;
@@ -118,6 +119,9 @@ const CardZoneView = struct {
         const ui = vs.combat orelse CombatUIState{};
 
         for (self.cards, 0..) |card, i| {
+            // Skip cards that are being animated (they're rendered separately)
+            if (ui.isAnimating(card.id)) continue;
+
             const rect = self.cardRect(i, card.id, vs);
             const state = self.cardInteractionState(card.id, ui);
             const card_vm = CardViewModel.fromTemplate(card.id, card.template, .{
@@ -520,9 +524,11 @@ pub const View = struct {
                 var cs = vs.combat orelse CombatUIState{};
                 cs.drag = .{ .original_pos = pos, .id = id };
                 return .{ .vs = vs.withCombat(cs) };
+            } else if (in_commit) {
+                return .{ .command = .{ .commit_add = id } };
             } else {
-                // Commit phase: add new play (1F); Selection: play card
-                return .{ .command = if (in_commit) .{ .commit_add = id } else .{ .play_card = id } };
+                // Selection phase: play card with animation (clone case)
+                return self.startCardAnimation(vs, id, hit.card.rect, true);
             }
         }
 
@@ -533,9 +539,11 @@ pub const View = struct {
                 var cs = vs.combat orelse CombatUIState{};
                 cs.drag = .{ .original_pos = pos, .id = id };
                 return .{ .vs = vs.withCombat(cs) };
+            } else if (in_commit) {
+                return .{ .command = .{ .commit_add = id } };
             } else {
-                // Commit phase: add new play (1F); Selection: play card
-                return .{ .command = if (in_commit) .{ .commit_add = id } else .{ .play_card = id } };
+                // Selection phase: play card with animation
+                return self.startCardAnimation(vs, id, hit.card.rect, false);
             }
         }
 
@@ -615,6 +623,24 @@ pub const View = struct {
         return .{};
     }
 
+    /// Start a card animation and return play_card command with updated viewstate
+    fn startCardAnimation(_: *View, vs: ViewState, card_id: entity.ID, from_rect: Rect, from_always_available: bool) InputResult {
+        var cs = vs.combat orelse CombatUIState{};
+        std.debug.print("startCardAnimation: id={d}/{d} from_aa={} count_before={d}\n", .{ card_id.index, card_id.generation, from_always_available, cs.card_animation_len });
+        cs.addAnimation(.{
+            .card_id = card_id,
+            .from_rect = from_rect,
+            .to_rect = null, // filled in by effect processing
+            .progress = 0,
+            .from_always_available = from_always_available,
+        });
+        std.debug.print("  -> count_after={d}\n", .{cs.card_animation_len});
+        return .{
+            .vs = vs.withCombat(cs),
+            .command = .{ .play_card = card_id },
+        };
+    }
+
     // --- Zone helpers (use CardZoneView with CardViewData) ---
 
     fn handZone(self: *const View, alloc: std.mem.Allocator) CardZoneView {
@@ -659,6 +685,19 @@ pub const View = struct {
                 };
                 const enemy_zone = self.enemyPlayZone(alloc, enemy_agent, offset);
                 try enemy_zone.appendRenderables(alloc, vs, &list, &last);
+            }
+        }
+
+        // Render animating cards at their current interpolated position
+        for (cs.activeAnimations()) |anim| {
+            if (self.world.card_registry.getConst(.{ .index = anim.card_id.index, .generation = anim.card_id.generation })) |card| {
+                const card_vm = CardViewModel.fromTemplate(anim.card_id, card.template, .{
+                    .target = false,
+                    .played = false,
+                    .disabled = false,
+                    .highlighted = false,
+                });
+                try list.append(alloc, .{ .card = .{ .model = card_vm, .dst = anim.currentRect() } });
             }
         }
 

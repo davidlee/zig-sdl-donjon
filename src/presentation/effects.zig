@@ -55,10 +55,13 @@ pub const EffectMapper = struct {
         return switch (event) {
             .card_moved => |data| switch (data.to) {
                 .hand => Effect{ .card_dealt = .{ .card_id = toID(data.instance) } },
-                .in_play => Effect{ .card_played = .{ .card_id = toID(data.instance) } },
+                // Note: in_play handled by played_action_card (covers both hand and pool cards)
                 .discard => Effect{ .card_discarded = .{ .card_id = toID(data.instance) } },
                 else => null,
             },
+            // played_action_card fires for all played cards, including always_available clones
+            // (card_moved only fires for hand->in_play, not for pool card clones)
+            .played_action_card => |data| Effect{ .card_played = .{ .card_id = toID(data.instance) } },
             .wound_inflicted => |data| Effect{ .hit_flash = .{ .target_id = toID(data.agent_id) } },
             .advantage_changed => |data| Effect{
                 .advantage_changed = .{
