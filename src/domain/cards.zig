@@ -226,6 +226,10 @@ pub const TechniqueID = enum {
     retreat,
     sidestep,
     hold,
+    // Multi-opponent manoeuvres
+    circle,
+    disengage,
+    pivot,
 };
 
 /// Which weapon profile an attack uses
@@ -320,6 +324,8 @@ pub const Effect = union(enum) {
         steps: i8, // negative = closer, positive = farther
         propagate: bool = true, // apply n-1 to other engagements
     },
+    modify_position: f32, // adjust position advantage (clamped 0-1)
+    set_primary_target, // switch attention.primary to .single target
 };
 
 pub const Expression = struct {

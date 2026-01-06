@@ -142,6 +142,19 @@ pub const Event = union(enum) {
         new_range: combat.Reach,
     },
 
+    position_changed: struct {
+        actor_id: entity.ID,
+        target_id: entity.ID,
+        old_position: f32,
+        new_position: f32,
+    },
+
+    primary_target_changed: struct {
+        actor_id: entity.ID,
+        old_target: ?entity.ID,
+        new_target: entity.ID,
+    },
+
     played_reaction: CardWithEvent,
 
     equipped_item: CardWithSlot,

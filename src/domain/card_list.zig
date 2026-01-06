@@ -242,6 +242,51 @@ pub const TechniqueEntries = [_]Technique{
         .difficulty = 0.0,
         // No overlay bonus - stationary penalty applies
     },
+
+    // -------------------------------------------------------------------------
+    // Multi-opponent manoeuvres
+    // -------------------------------------------------------------------------
+
+    .{
+        .id = .circle,
+        .name = "circle",
+        .attack_mode = .none,
+        .channels = .{ .footwork = true },
+        .damage = .{
+            .instances = &.{.{ .amount = 0.0, .types = &.{} }},
+            .scaling = .{ .ratio = 0.0, .stats = .{ .stat = .power } },
+        },
+        .difficulty = 0.0,
+        // Position bonus applied via modify_position effect
+    },
+
+    .{
+        .id = .disengage,
+        .name = "disengage",
+        .attack_mode = .none,
+        .channels = .{ .footwork = true },
+        .damage = .{
+            .instances = &.{.{ .amount = 0.0, .types = &.{} }},
+            .scaling = .{ .ratio = 0.0, .stats = .{ .stat = .power } },
+        },
+        .difficulty = 0.0,
+        .overlay_bonus = .{
+            .defensive = .{ .defense_bonus = 0.05 }, // small defense bonus
+        },
+    },
+
+    .{
+        .id = .pivot,
+        .name = "pivot",
+        .attack_mode = .none,
+        .channels = .{ .footwork = true },
+        .damage = .{
+            .instances = &.{.{ .amount = 0.0, .types = &.{} }},
+            .scaling = .{ .ratio = 0.0, .stats = .{ .stat = .power } },
+        },
+        .difficulty = 0.0,
+        // Sets primary target + position bonus via effects
+    },
 };
 
 // -----------------------------------------------------------------------------
@@ -495,6 +540,96 @@ const t_hold = Template{
     }},
 };
 
+// -----------------------------------------------------------------------------
+// Multi-opponent manoeuvres
+// -----------------------------------------------------------------------------
+
+const t_circle = Template{
+    .id = hashName("circle"),
+    .kind = .action,
+    .name = "circle",
+    .description = "improve position vs all enemies",
+    .rarity = .common,
+    .cost = .{ .stamina = 2.0, .time = 0.4 },
+    .tags = .{ .manoeuvre = true, .phase_selection = true, .phase_commit = true },
+    .playable_from = PlayableFrom.always_avail,
+    .rules = &.{.{
+        .trigger = .on_resolve,
+        .valid = .always,
+        .expressions = &.{
+            .{
+                .effect = .{ .combat_technique = Technique.byID(.circle) },
+                .filter = null,
+                .target = .self,
+            },
+            .{
+                .effect = .{ .modify_position = 0.1 },
+                .filter = null,
+                .target = .all_enemies,
+            },
+        },
+    }},
+};
+
+const t_disengage = Template{
+    .id = hashName("disengage"),
+    .kind = .action,
+    .name = "disengage",
+    .description = "open range from all enemies",
+    .rarity = .common,
+    .cost = .{ .stamina = 2.5, .time = 0.5 },
+    .tags = .{ .manoeuvre = true, .defensive = true, .phase_selection = true, .phase_commit = true },
+    .playable_from = PlayableFrom.always_avail,
+    .rules = &.{.{
+        .trigger = .on_resolve,
+        .valid = .always,
+        .expressions = &.{
+            .{
+                .effect = .{ .combat_technique = Technique.byID(.disengage) },
+                .filter = null,
+                .target = .self,
+            },
+            .{
+                .effect = .{ .modify_range = .{ .steps = 1, .propagate = false } },
+                .filter = null,
+                .target = .all_enemies,
+            },
+        },
+    }},
+};
+
+const t_pivot = Template{
+    .id = hashName("pivot"),
+    .kind = .action,
+    .name = "pivot",
+    .description = "switch focus + position bonus vs one",
+    .rarity = .common,
+    .cost = .{ .stamina = 1.5, .time = 0.3 },
+    .tags = .{ .manoeuvre = true, .phase_selection = true, .phase_commit = true },
+    .playable_from = PlayableFrom.always_avail,
+    .rules = &.{.{
+        .trigger = .on_resolve,
+        .valid = .always,
+        .expressions = &.{
+            .{
+                .effect = .{ .combat_technique = Technique.byID(.pivot) },
+                .filter = null,
+                .target = .self,
+            },
+            .{
+                .effect = .set_primary_target,
+                .filter = null,
+                .target = .single,
+            },
+            .{
+                .effect = .{ .modify_position = 0.15 },
+                .filter = null,
+                .target = .single,
+            },
+        },
+    }},
+};
+
 /// Combat techniques available to all agents by default.
 /// Populate Agent.always_available from this array.
 pub const BaseAlwaysAvailableTemplates = [_]*const Template{
@@ -510,6 +645,10 @@ pub const BaseAlwaysAvailableTemplates = [_]*const Template{
     &t_retreat,
     &t_sidestep,
     &t_hold,
+    // Multi-opponent manoeuvres
+    &t_circle,
+    &t_disengage,
+    &t_pivot,
 };
 
 // -----------------------------------------------------------------------------

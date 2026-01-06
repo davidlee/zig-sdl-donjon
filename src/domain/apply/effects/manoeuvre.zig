@@ -3,6 +3,7 @@
 //! Handles execution of manoeuvre-type cards that modify engagement
 //! range between agents.
 
+const std = @import("std");
 const lib = @import("infra");
 const entity = lib.entity;
 const combat = @import("../../combat.zig");
@@ -49,6 +50,24 @@ fn executeAgentManoeuvres(world: *World, actor: *combat.Agent, enc: *combat.Enco
                             range_mod.steps,
                             range_mod.propagate,
                         );
+                    },
+                    .modify_position => |delta| {
+                        // Apply position modification based on target type
+                        switch (expr.target) {
+                            .all_enemies => {
+                                // Apply to all engagements
+                                try applyPositionToAll(world, enc, actor.id, delta);
+                            },
+                            .single => {
+                                const target_id = slot.play.target orelse continue;
+                                try applyPositionModification(world, enc, actor.id, target_id, delta);
+                            },
+                            else => {},
+                        }
+                    },
+                    .set_primary_target => {
+                        const target_id = slot.play.target orelse continue;
+                        try applySetPrimaryTarget(world, enc_state, actor.id, target_id);
                     },
                     else => {},
                 }
@@ -126,6 +145,61 @@ fn applyRangeModification(
     }
 }
 
+fn applyPositionModification(
+    world: *World,
+    enc: *combat.Encounter,
+    actor_id: entity.ID,
+    target_id: entity.ID,
+    delta: f32,
+) !void {
+    const engagement = enc.getEngagement(actor_id, target_id) orelse return;
+
+    const old_position = engagement.position;
+    engagement.position = std.math.clamp(engagement.position + delta, 0.0, 1.0);
+
+    if (engagement.position != old_position) {
+        try world.events.push(.{ .position_changed = .{
+            .actor_id = actor_id,
+            .target_id = target_id,
+            .old_position = old_position,
+            .new_position = engagement.position,
+        } });
+    }
+}
+
+fn applyPositionToAll(
+    world: *World,
+    enc: *combat.Encounter,
+    actor_id: entity.ID,
+    delta: f32,
+) !void {
+    // Apply to all enemy engagements
+    for (enc.enemies.items) |enemy| {
+        try applyPositionModification(world, enc, actor_id, enemy.id, delta);
+    }
+
+    // If actor is an enemy, also apply to player engagement
+    if (!actor_id.eql(enc.player_id)) {
+        try applyPositionModification(world, enc, actor_id, enc.player_id, delta);
+    }
+}
+
+fn applySetPrimaryTarget(
+    world: *World,
+    enc_state: *combat.AgentEncounterState,
+    actor_id: entity.ID,
+    target_id: entity.ID,
+) !void {
+    const old_target = enc_state.attention.primary;
+    enc_state.attention.primary = target_id;
+
+    try world.events.push(.{ .primary_target_changed = .{
+        .actor_id = actor_id,
+        .old_target = old_target,
+        .new_target = target_id,
+    } });
+}
+
 /// Adjust reach by the given number of steps, clamping to valid range.
 pub fn adjustRange(current: combat.Reach, steps: i8) combat.Reach {
     const current_int: i16 = @intFromEnum(current);
@@ -165,4 +239,13 @@ test "adjustRange clamps at clinch boundary" {
 test "adjustRange clamps at far boundary" {
     try testing.expectEqual(combat.Reach.far, adjustRange(.far, 5));
     try testing.expectEqual(combat.Reach.far, adjustRange(.medium, 10));
+}
+
+test "range propagation applies n-1 steps to non-focal engagements" {
+    // TODO: requires multi-engagement encounter setup
+    // - advance 2 steps toward enemy A
+    // - verify enemy B engagement gets 1 step closer
+    // - retreat 3 steps from enemy A
+    // - verify enemy B engagement gets 2 steps farther
+    return error.SkipZigTest;
 }
