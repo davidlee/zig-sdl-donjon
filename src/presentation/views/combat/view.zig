@@ -16,6 +16,7 @@ const s = @import("sdl3");
 const entity = infra.entity;
 const chrome = @import("../chrome.zig");
 const apply = @import("../../../domain/apply.zig");
+const query = @import("../../../domain/query/mod.zig");
 const card_mod = @import("../card/mod.zig");
 const combat_mod = @import("mod.zig");
 const hit_mod = combat_mod.hit;
@@ -205,8 +206,17 @@ pub const View = struct {
     player_avatar: PlayerAvatar,
     opposition: Opposition,
     turn_phase: ?domain_combat.TurnPhase,
+    snapshot: ?*const query.CombatSnapshot,
 
     pub fn init(world: *const World, arena: std.mem.Allocator) View {
+        return initWithSnapshot(world, arena, null);
+    }
+
+    pub fn initWithSnapshot(
+        world: *const World,
+        arena: std.mem.Allocator,
+        snapshot: ?*const query.CombatSnapshot,
+    ) View {
         const phase = world.turnPhase();
 
         return .{
@@ -216,6 +226,7 @@ pub const View = struct {
             .player_avatar = PlayerAvatar.init(),
             .opposition = Opposition.init(world.encounter.?.enemies.items),
             .turn_phase = phase,
+            .snapshot = snapshot,
         };
     }
 
@@ -273,8 +284,8 @@ pub const View = struct {
         const result = alloc.alloc(PlayViewData, slots.len) catch return &.{};
         var count: usize = 0;
 
-        for (slots) |slot| {
-            if (self.buildPlayViewData(alloc, &slot.play, self.world.player)) |pvd| {
+        for (slots, 0..) |slot, i| {
+            if (self.buildPlayViewData(alloc, &slot.play, self.world.player, i)) |pvd| {
                 result[count] = pvd;
                 count += 1;
             }
@@ -289,6 +300,7 @@ pub const View = struct {
         alloc: std.mem.Allocator,
         play: *const domain_combat.Play,
         owner: *const Agent,
+        play_index: usize,
     ) ?PlayViewData {
         const action_inst = self.world.card_registry.getConst(play.action) orelse return null;
 
@@ -308,12 +320,36 @@ pub const View = struct {
 
         // Resolve target if offensive
         if (pvd.isOffensive()) {
-            if (apply.resolvePlayTargetIDs(alloc, play, owner, self.world) catch null) |ids| {
-                if (ids.len > 0) pvd.target_id = ids[0];
-            }
+            pvd.target_id = self.resolvePlayTarget(alloc, play, owner, play_index);
         }
 
         return pvd;
+    }
+
+    /// Resolve play target using snapshot if available.
+    fn resolvePlayTarget(
+        self: *const View,
+        alloc: std.mem.Allocator,
+        play: *const domain_combat.Play,
+        owner: *const Agent,
+        play_index: usize,
+    ) ?entity.ID {
+        // Use snapshot if available (preferred path)
+        if (self.snapshot) |snap| {
+            // Find the play status for this owner and index
+            for (snap.play_statuses.items) |status| {
+                if (status.owner_id.eql(owner.id) and status.play_index == play_index) {
+                    return status.target_id;
+                }
+            }
+            return null;
+        }
+        // Fallback to direct resolution
+        if (apply.resolvePlayTargetIDs(alloc, play, owner, self.world) catch null) |ids| {
+            defer alloc.free(ids);
+            if (ids.len > 0) return ids[0];
+        }
+        return null;
     }
 
     /// Get PlayZoneView for commit phase
@@ -329,8 +365,8 @@ pub const View = struct {
 
         const result = alloc.alloc(PlayViewData, slots.len) catch return &.{};
         var count: usize = 0;
-        for (slots) |slot| {
-            if (self.buildPlayViewData(alloc, &slot.play, agent)) |pvd| {
+        for (slots, 0..) |slot, i| {
+            if (self.buildPlayViewData(alloc, &slot.play, agent, i)) |pvd| {
                 result[count] = pvd;
                 count += 1;
             }
@@ -355,17 +391,27 @@ pub const View = struct {
         const result = alloc.alloc(CardViewData, ids.len) catch return &.{};
         var count: usize = 0;
 
-        const player = self.world.player;
-        const phase = self.turn_phase orelse return &.{};
-
         for (ids) |id| {
             const inst = self.world.card_registry.getConst(id) orelse continue;
-            const playable = apply.validateCardSelection(player, inst, phase, self.world.encounter) catch false;
+            const playable = self.isCardPlayable(id);
             result[count] = CardViewData.fromInstance(inst, source, playable);
             count += 1;
         }
 
         return result[0..count];
+    }
+
+    /// Check if a card is playable, using snapshot if available.
+    fn isCardPlayable(self: *const View, card_id: entity.ID) bool {
+        // Use snapshot if available (preferred path)
+        if (self.snapshot) |snap| {
+            return snap.isCardPlayable(card_id);
+        }
+        // Fallback to direct validation (for backwards compatibility)
+        const player = self.world.player;
+        const phase = self.turn_phase orelse return false;
+        const inst = self.world.card_registry.getConst(card_id) orelse return false;
+        return apply.validateCardSelection(player, inst, phase, self.world.encounter) catch false;
     }
 
     // Input handling - returns optional command and/or view state update
@@ -501,15 +547,10 @@ pub const View = struct {
         } else return .{};
     }
 
-    fn isCardDraggable(self: *View, id: entity.ID) bool {
-        const phase = self.turn_phase orelse return false;
-        var registry = self.world.card_registry;
-        if (registry.get(id)) |card| {
-            const playable = apply.validateCardSelection(self.world.player, card, phase, self.world.encounter) catch |err| {
-                std.debug.print("Error validating card playability: {s} -- {}", .{ card.template.name, err });
-                return false;
-            };
-            if (playable) return if (card.template.kind == .modifier) true else false;
+    fn isCardDraggable(self: *const View, id: entity.ID) bool {
+        const card = self.world.card_registry.getConst(id) orelse return false;
+        if (self.isCardPlayable(id)) {
+            return card.template.kind == .modifier;
         }
         return false;
     }

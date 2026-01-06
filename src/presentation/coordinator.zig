@@ -29,6 +29,7 @@ const Point = view_state.Point;
 const UX = graphics.UX;
 const infra = @import("infra");
 const Command = infra.commands.Command;
+const query = @import("../domain/query/mod.zig");
 
 pub const Coordinator = struct {
     alloc: std.mem.Allocator,
@@ -66,13 +67,18 @@ pub const Coordinator = struct {
 
     // Get the active view based on game state
     fn activeView(self: *Coordinator) View {
+        return self.activeViewWithSnapshot(null);
+    }
+
+    // Get the active view with optional combat snapshot
+    fn activeViewWithSnapshot(self: *Coordinator, snapshot: ?*const query.CombatSnapshot) View {
         return switch (self.world.fsm.currentState()) {
             .splash => View{ .title = title.View.init(self.world) },
             .encounter_summary => View{ .summary = summary.View.init(self.world) },
             // TODO: create proper WorldMapView when dungeon crawling is implemented
             .world_map => View{ .title = title.View.init(self.world) },
             // Active combat - turn phase determines sub-state within CombatView
-            .in_encounter => View{ .combat = combat.View.init(self.world, self.frameAlloc()) },
+            .in_encounter => View{ .combat = combat.View.initWithSnapshot(self.world, self.frameAlloc(), snapshot) },
         };
     }
 
@@ -167,7 +173,13 @@ pub const Coordinator = struct {
 
         try self.ux.renderClear();
 
-        var v = self.activeView();
+        // Build combat snapshot if in encounter (freed with frame arena)
+        var snapshot: ?query.CombatSnapshot = null;
+        if (self.world.fsm.currentState() == .in_encounter) {
+            snapshot = query.buildSnapshot(frame_alloc, self.world) catch null;
+        }
+
+        var v = self.activeViewWithSnapshot(if (snapshot) |*snap| snap else null);
         // LAYER 1: Game / Active View
         var renderables = try v.renderables(frame_alloc, self.vs);
 

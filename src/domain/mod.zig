@@ -8,6 +8,7 @@ pub const apply = @import("apply.zig");
 pub const tick = @import("tick.zig");
 pub const resolution = @import("resolution.zig");
 pub const random = @import("random.zig");
+pub const query = @import("query/mod.zig");
 const lib = @import("infra");
 pub const entity = lib.entity;
 pub const slot_map = @import("slot_map.zig");
