@@ -1,0 +1,395 @@
+//! Target evaluation for card effects.
+//!
+//! Functions for evaluating and resolving targets for card expressions,
+//! including agent targets and play targets (for modifiers).
+
+const std = @import("std");
+const lib = @import("infra");
+const entity = lib.entity;
+
+const cards = @import("../cards.zig");
+const combat = @import("../combat.zig");
+const w = @import("../world.zig");
+const validation = @import("validation.zig");
+
+const World = w.World;
+const Agent = combat.Agent;
+
+// ============================================================================
+// Types
+// ============================================================================
+
+/// A target that references a specific play on an agent's timeline.
+pub const PlayTarget = struct {
+    agent: *Agent,
+    play_index: usize,
+};
+
+// ============================================================================
+// Public Targeting API
+// ============================================================================
+
+/// Check if an expression applies to a target (considering filters).
+pub fn expressionAppliesToTarget(
+    expr: *const cards.Expression,
+    card: *const cards.Instance,
+    actor: *const Agent,
+    target: *const Agent,
+    engagement: ?*const combat.Engagement,
+) bool {
+    const filter = expr.filter orelse return true;
+    return validation.evaluatePredicate(&filter, .{
+        .card = card,
+        .actor = actor,
+        .target = target,
+        .engagement = engagement,
+    });
+}
+
+/// Check if a card has any valid targets based on its expressions.
+pub fn cardHasValidTargets(
+    template: *const cards.Template,
+    card: *const cards.Instance,
+    actor: *const Agent,
+    world: *const World,
+) bool {
+    for (template.rules) |rule| {
+        for (rule.expressions) |expr| {
+            // Get potential targets
+            const targets = getTargetsForQuery(expr.target, actor, world);
+            for (targets) |target| {
+                const engagement = getEngagementBetween(world.encounter, actor, target);
+                if (expressionAppliesToTarget(&expr, card, actor, target, engagement)) {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+/// Evaluate targets for an expression query, returning a list of agents.
+pub fn evaluateTargets(
+    alloc: std.mem.Allocator,
+    query: cards.TargetQuery,
+    actor: *Agent,
+    world: *World,
+    play_target: ?entity.ID,
+) !std.ArrayList(*Agent) {
+    var targets = try std.ArrayList(*Agent).initCapacity(alloc, 4);
+    errdefer targets.deinit(alloc);
+
+    switch (query) {
+        .self => {
+            try targets.append(alloc, actor);
+        },
+        .all_enemies => {
+            if (actor.director == .player) {
+                // Player targets all mobs
+                if (world.encounter) |enc| {
+                    for (enc.enemies.items) |enemy| {
+                        try targets.append(alloc, enemy);
+                    }
+                }
+            } else {
+                // AI targets player
+                try targets.append(alloc, world.player);
+            }
+        },
+        .single => {
+            // Look up by entity ID from Play.target
+            if (play_target) |target_id| {
+                if (world.entities.agents.get(target_id)) |agent| {
+                    try targets.append(alloc, agent.*);
+                }
+            }
+        },
+        .elected_n => {
+            // TODO: requires Play.targets (multi-target)
+        },
+        .body_part, .event_source => {
+            // Not applicable for agent targeting
+        },
+        .my_play, .opponent_play => {
+            // Not applicable for agent targeting - use evaluatePlayTargets
+        },
+    }
+
+    return targets;
+}
+
+/// Evaluate play targets (for modifier cards).
+pub fn evaluatePlayTargets(
+    alloc: std.mem.Allocator,
+    query: cards.TargetQuery,
+    actor: *Agent,
+    world: *World,
+) !std.ArrayList(PlayTarget) {
+    var targets = try std.ArrayList(PlayTarget).initCapacity(alloc, 4);
+    errdefer targets.deinit(alloc);
+
+    const enc = world.encounter orelse return targets;
+
+    switch (query) {
+        .my_play => |predicate| {
+            const enc_state = enc.stateFor(actor.id) orelse return targets;
+            for (enc_state.current.slots(), 0..) |slot, i| {
+                if (playMatchesPredicate(&slot.play, predicate, world)) {
+                    try targets.append(alloc, .{ .agent = actor, .play_index = i });
+                }
+            }
+        },
+        .opponent_play => |predicate| {
+            // For player, iterate mob plays; for mobs, target player
+            if (actor.director == .player) {
+                for (enc.enemies.items) |mob| {
+                    const mob_state = enc.stateFor(mob.id) orelse continue;
+                    for (mob_state.current.slots(), 0..) |slot, i| {
+                        if (playMatchesPredicate(&slot.play, predicate, world)) {
+                            try targets.append(alloc, .{ .agent = mob, .play_index = i });
+                        }
+                    }
+                }
+            } else {
+                const player_state = enc.stateFor(world.player.id) orelse return targets;
+                for (player_state.current.slots(), 0..) |slot, i| {
+                    if (playMatchesPredicate(&slot.play, predicate, world)) {
+                        try targets.append(alloc, .{ .agent = world.player, .play_index = i });
+                    }
+                }
+            }
+        },
+        else => {}, // Other queries don't return play targets
+    }
+
+    return targets;
+}
+
+/// Resolve play targets to entity IDs (for offensive plays).
+pub fn resolvePlayTargetIDs(
+    alloc: std.mem.Allocator,
+    play: *const combat.Play,
+    actor: *const Agent,
+    world: *const World,
+) !?[]const entity.ID {
+    const card = world.card_registry.getConst(play.action) orelse return null;
+    if (!card.template.tags.offensive) return null;
+
+    // Get target query from card's technique expression
+    const target_query = blk: {
+        for (card.template.rules) |rule| {
+            for (rule.expressions) |expr| {
+                // Find the first expression that targets agents
+                switch (expr.target) {
+                    .all_enemies, .self, .single => break :blk expr.target,
+                    else => continue,
+                }
+            }
+        }
+        // Default for offensive cards without explicit target
+        break :blk cards.TargetQuery.all_enemies;
+    };
+
+    // Resolve targets based on query (pass play.target for .single)
+    return evaluateTargetIDsConst(alloc, target_query, actor, world, play.target);
+}
+
+/// Get the target predicate from a modifier card template.
+pub fn getModifierTargetPredicate(template: *const cards.Template) !?cards.Predicate {
+    if (template.kind != .modifier) return null;
+
+    var found: ?cards.Predicate = null;
+    for (template.rules) |rule| {
+        for (rule.expressions) |expr| {
+            switch (expr.target) {
+                .my_play => |pred| {
+                    if (found != null) {
+                        // Multiple my_play targets found - ambiguous
+                        return error.MultipleModifierTargets;
+                    }
+                    found = pred;
+                },
+                else => continue,
+            }
+        }
+    }
+    return found;
+}
+
+/// Check if a modifier can attach to a play.
+pub fn canModifierAttachToPlay(
+    modifier: *const cards.Template,
+    play: *const combat.Play,
+    world: *const World,
+) !bool {
+    const predicate = try getModifierTargetPredicate(modifier) orelse return false;
+    return playMatchesPredicate(play, predicate, world);
+}
+
+// ============================================================================
+// Internal Helpers
+// ============================================================================
+
+fn getTargetsForQuery(query: cards.TargetQuery, actor: *const Agent, world: *const World) []const *Agent {
+    return switch (query) {
+        .self => @as([*]const *Agent, @ptrCast(&actor))[0..1],
+        // For validation, .single checks if any enemy is targetable (selection at play time)
+        .single, .all_enemies => blk: {
+            if (actor.director == .player) {
+                if (world.encounter) |enc| {
+                    break :blk enc.enemies.items;
+                }
+            } else {
+                break :blk @as([*]const *Agent, @ptrCast(&world.player))[0..1];
+            }
+            break :blk &.{};
+        },
+        .elected_n => blk: {
+            // Same as single/all_enemies for validation purposes
+            if (actor.director == .player) {
+                if (world.encounter) |enc| {
+                    break :blk enc.enemies.items;
+                }
+            } else {
+                break :blk @as([*]const *Agent, @ptrCast(&world.player))[0..1];
+            }
+            break :blk &.{};
+        },
+        else => &.{}, // body_part, event_source, my_play, opponent_play not applicable
+    };
+}
+
+fn getEngagementBetween(encounter: ?*combat.Encounter, actor: *const Agent, target: *const Agent) ?*const combat.Engagement {
+    const enc = encounter orelse return null;
+    return enc.getEngagement(actor.id, target.id);
+}
+
+fn playMatchesPredicate(
+    play: *const combat.Play,
+    predicate: cards.Predicate,
+    world: *const World,
+) bool {
+    // Look up card via card_registry (new system)
+    const card = world.card_registry.getConst(play.action) orelse return false;
+
+    // For play predicates, we only support tag checking for now
+    return switch (predicate) {
+        .always => true,
+        .has_tag => |tag| card.template.tags.hasTag(tag),
+        .not => |inner| !playMatchesPredicate(play, inner.*, world),
+        .all => |preds| {
+            for (preds) |pred| {
+                if (!playMatchesPredicate(play, pred, world)) return false;
+            }
+            return true;
+        },
+        .any => |preds| {
+            for (preds) |pred| {
+                if (playMatchesPredicate(play, pred, world)) return true;
+            }
+            return false;
+        },
+        else => false, // Other predicates not applicable to plays
+    };
+}
+
+fn evaluateTargetIDsConst(
+    alloc: std.mem.Allocator,
+    query: cards.TargetQuery,
+    actor: *const Agent,
+    world: *const World,
+    play_target: ?entity.ID,
+) !?[]const entity.ID {
+    switch (query) {
+        .self => {
+            const ids = try alloc.alloc(entity.ID, 1);
+            ids[0] = actor.id;
+            return ids;
+        },
+        .all_enemies => {
+            if (actor.director == .player) {
+                const enc = world.encounter orelse return null;
+                const ids = try alloc.alloc(entity.ID, enc.enemies.items.len);
+                for (enc.enemies.items, 0..) |enemy, i| {
+                    ids[i] = enemy.id;
+                }
+                return ids;
+            } else {
+                const ids = try alloc.alloc(entity.ID, 1);
+                ids[0] = world.player.id;
+                return ids;
+            }
+        },
+        .single => {
+            const target_id = play_target orelse return null;
+            const ids = try alloc.alloc(entity.ID, 1);
+            ids[0] = target_id;
+            return ids;
+        },
+        .elected_n => return null, // TODO: requires Play.targets (multi-target)
+        else => return null,
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+const testing = std.testing;
+
+test "expressionAppliesToTarget returns true when no filter" {
+    // An expression without a filter should apply to any target
+    // TODO: needs test fixtures
+    return error.SkipZigTest;
+}
+
+test "expressionAppliesToTarget with advantage_threshold filter passes when control high" {
+    // TODO: needs test fixtures
+    return error.SkipZigTest;
+}
+
+test "expressionAppliesToTarget with advantage_threshold filter fails when control low" {
+    // TODO: needs test fixtures
+    return error.SkipZigTest;
+}
+
+test "getModifierTargetPredicate extracts predicate from modifier template" {
+    // TODO: needs test fixtures
+    return error.SkipZigTest;
+}
+
+test "getModifierTargetPredicate returns null for non-modifier" {
+    // TODO: needs test fixtures
+    return error.SkipZigTest;
+}
+
+test "canModifierAttachToPlay validates offensive tag match" {
+    // TODO: needs test fixtures
+    return error.SkipZigTest;
+}
+
+test "canModifierAttachToPlay rejects non-offensive play" {
+    // TODO: needs test fixtures
+    return error.SkipZigTest;
+}
+
+test "evaluateTargetIDsConst with .single returns play_target when provided" {
+    // TODO: needs test fixtures
+    return error.SkipZigTest;
+}
+
+test "evaluateTargetIDsConst with .single returns null when no play_target" {
+    const result = evaluateTargetIDsConst(
+        testing.allocator,
+        .single,
+        undefined, // actor not used for .single
+        undefined, // world not used for .single when no target
+        null,
+    ) catch null;
+    try testing.expect(result == null);
+}
+
+test "getTargetsForQuery with .single returns all enemies for validation" {
+    // TODO: needs test fixtures with mock World
+    return error.SkipZigTest;
+}
