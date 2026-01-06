@@ -128,8 +128,8 @@ pub const CommandHandler = struct {
                 try self.world.transitionTo(.in_encounter);
                 // Encounter starts in draw_hand phase (initial FSM state)
             },
-            .play_card => |id| {
-                try self.playActionCard(id);
+            .play_card => |data| {
+                try self.playActionCard(data.card_id, data.target);
             },
             .cancel_card => |id| {
                 try self.cancelActionCard(id);
@@ -202,13 +202,20 @@ pub const CommandHandler = struct {
         player.stamina.uncommit(card.template.cost.stamina);
         player.time_available += card.template.cost.time;
 
+        // Clear any pending target for this card
+        if (self.world.encounter) |enc| {
+            if (enc.stateFor(player.id)) |enc_state| {
+                enc_state.current.clearPendingTarget(id);
+            }
+        }
+
         try self.sink(
             Event{ .card_cost_returned = .{ .stamina = card.template.cost.stamina, .time = card.template.cost.time, .actor = .{ .id = player.id, .player = true } } },
         );
     }
 
     /// Handles playing a card EITHER from hand, or from player.always_known
-    pub fn playActionCard(self: *CommandHandler, id: entity.ID) !void {
+    pub fn playActionCard(self: *CommandHandler, id: entity.ID, target: ?entity.ID) !void {
         const player = self.world.player;
         const turn_phase = self.world.turnPhase() orelse return CommandError.InvalidGameState;
         const cs = player.combat_state orelse return CommandError.BadInvariant;
@@ -229,6 +236,13 @@ pub const CommandHandler = struct {
                 return ValidationError.ChannelConflict;
 
             _ = try playValidCardReservingCosts(&self.world.events, player, card, &self.world.card_registry);
+
+            // Store pending target if provided (for .single targeting cards)
+            if (target) |target_id| {
+                const enc = self.world.encounter orelse return CommandError.BadInvariant;
+                const enc_state = enc.stateFor(player.id) orelse return CommandError.BadInvariant;
+                enc_state.current.setPendingTarget(id, target_id);
+            }
         } else {
             return CommandError.CommandInvalid;
         }
@@ -574,11 +588,15 @@ pub const EventProcessor = struct {
 
     fn buildPlaysForAgent(self: *EventProcessor, agent: *Agent, enc: *combat.Encounter) !void {
         const enc_state = enc.stateFor(agent.id) orelse return;
-        enc_state.current.clear();
 
+        // Read pending targets before clearing (they're stored per-card)
         const cs = agent.combat_state orelse return;
         for (cs.in_play.items) |card_id| {
-            try enc_state.current.addPlay(.{ .action = card_id }, &self.world.card_registry);
+            const pending_target = enc_state.current.getPendingTarget(card_id);
+            try enc_state.current.addPlay(.{
+                .action = card_id,
+                .target = pending_target,
+            }, &self.world.card_registry);
         }
     }
 
@@ -1121,7 +1139,8 @@ pub fn cardHasValidTargets(
 fn getTargetsForQuery(query: cards.TargetQuery, actor: *const Agent, world: *const World) []const *Agent {
     return switch (query) {
         .self => @as([*]const *Agent, @ptrCast(&actor))[0..1],
-        .all_enemies => blk: {
+        // For validation, .single checks if any enemy is targetable (selection at play time)
+        .single, .all_enemies => blk: {
             if (actor.director == .player) {
                 if (world.encounter) |enc| {
                     break :blk enc.enemies.items;
@@ -1131,7 +1150,18 @@ fn getTargetsForQuery(query: cards.TargetQuery, actor: *const Agent, world: *con
             }
             break :blk &.{};
         },
-        else => &.{}, // single, body_part, event_source not implemented
+        .elected_n => blk: {
+            // Same as single/all_enemies for validation purposes
+            if (actor.director == .player) {
+                if (world.encounter) |enc| {
+                    break :blk enc.enemies.items;
+                }
+            } else {
+                break :blk @as([*]const *Agent, @ptrCast(&world.player))[0..1];
+            }
+            break :blk &.{};
+        },
+        else => &.{}, // body_part, event_source, my_play, opponent_play not applicable
     };
 }
 
@@ -1151,6 +1181,7 @@ pub fn evaluateTargets(
     query: cards.TargetQuery,
     actor: *Agent,
     world: *World,
+    play_target: ?entity.ID,
 ) !std.ArrayList(*Agent) {
     var targets = try std.ArrayList(*Agent).initCapacity(alloc, 4);
     errdefer targets.deinit(alloc);
@@ -1172,11 +1203,16 @@ pub fn evaluateTargets(
                 try targets.append(alloc, world.player);
             }
         },
-        .single => |selector| {
-            // Look up by entity ID
-            if (world.entities.agents.get(selector.id)) |agent| {
-                try targets.append(alloc, agent.*);
+        .single => {
+            // Look up by entity ID from Play.target
+            if (play_target) |target_id| {
+                if (world.entities.agents.get(target_id)) |agent| {
+                    try targets.append(alloc, agent.*);
+                }
             }
+        },
+        .elected_n => {
+            // TODO: requires Play.targets (multi-target)
         },
         .body_part, .event_source => {
             // Not applicable for agent targeting
@@ -1293,8 +1329,8 @@ pub fn resolvePlayTargetIDs(
         break :blk cards.TargetQuery.all_enemies;
     };
 
-    // Resolve targets based on query
-    return evaluateTargetIDsConst(alloc, target_query, actor, world);
+    // Resolve targets based on query (pass play.target for .single)
+    return evaluateTargetIDsConst(alloc, target_query, actor, world, play.target);
 }
 
 /// Const-aware target ID resolution (for UI display, no mutation needed).
@@ -1303,6 +1339,7 @@ fn evaluateTargetIDsConst(
     query: cards.TargetQuery,
     actor: *const Agent,
     world: *const World,
+    play_target: ?entity.ID,
 ) !?[]const entity.ID {
     switch (query) {
         .self => {
@@ -1324,11 +1361,13 @@ fn evaluateTargetIDsConst(
                 return ids;
             }
         },
-        .single => |selector| {
+        .single => {
+            const target_id = play_target orelse return null;
             const ids = try alloc.alloc(entity.ID, 1);
-            ids[0] = selector.id;
+            ids[0] = target_id;
             return ids;
         },
+        .elected_n => return null, // TODO: requires Play.targets (multi-target)
         else => return null,
     }
 }
@@ -1482,7 +1521,7 @@ pub fn executeResolvePhaseRules(world: *World, actor: *Agent) !void {
                     },
                     .all_enemies => {
                         // Get enemy targets
-                        var targets = try evaluateTargets(world.alloc, .all_enemies, actor, world);
+                        var targets = try evaluateTargets(world.alloc, .all_enemies, actor, world, null);
                         defer targets.deinit(world.alloc);
 
                         for (targets.items) |target| {
@@ -1983,4 +2022,85 @@ test "validateMeleeReach fails when at abstract far distance" {
 
     // Even spear can't reach .far - need to close distance first
     try testing.expect(!validateMeleeReach(thrust_template, &player, enc));
+}
+
+// ============================================================================
+// Single Target Resolution Tests
+// ============================================================================
+
+test "evaluateTargetIDsConst with .single returns play_target when provided" {
+    const alloc = testing.allocator;
+
+    var wrld = try w.World.init(alloc);
+    defer wrld.deinit();
+
+    var sword_instance = weapon.Instance{ .id = testId(0), .template = &weapon_list.knights_sword };
+    var actor = makeTestAgent(.{ .single = &sword_instance });
+    actor.id = testId(1);
+
+    const target_id = testId(42);
+
+    const result = try evaluateTargetIDsConst(alloc, .single, &actor, wrld, target_id);
+    defer if (result) |ids| alloc.free(ids);
+
+    try testing.expect(result != null);
+    try testing.expectEqual(@as(usize, 1), result.?.len);
+    try testing.expectEqual(target_id, result.?[0]);
+}
+
+test "evaluateTargetIDsConst with .single returns null when no play_target" {
+    const alloc = testing.allocator;
+
+    var wrld = try w.World.init(alloc);
+    defer wrld.deinit();
+
+    var sword_instance = weapon.Instance{ .id = testId(0), .template = &weapon_list.knights_sword };
+    var actor = makeTestAgent(.{ .single = &sword_instance });
+    actor.id = testId(1);
+
+    const result = try evaluateTargetIDsConst(alloc, .single, &actor, wrld, null);
+
+    try testing.expect(result == null);
+}
+
+test "getTargetsForQuery with .single returns all enemies for validation" {
+    const alloc = testing.allocator;
+
+    var sword_instance = weapon.Instance{ .id = testId(0), .template = &weapon_list.knights_sword };
+    var player = makeTestAgent(.{ .single = &sword_instance });
+    player.id = testId(1);
+    player.director = .player;
+
+    var enemy1 = makeTestAgent(.{ .single = &sword_instance });
+    enemy1.id = testId(2);
+    var enemy2 = makeTestAgent(.{ .single = &sword_instance });
+    enemy2.id = testId(3);
+
+    const enc = try combat.Encounter.init(alloc, player.id);
+    defer {
+        enc.engagements.deinit();
+        enc.agent_state.deinit();
+        enc.enemies.deinit(alloc);
+        enc.environment.deinit(alloc);
+        enc.thrown_by.deinit();
+        alloc.destroy(enc);
+    }
+    try enc.enemies.append(alloc, &enemy1);
+    try enc.enemies.append(alloc, &enemy2);
+
+    var wrld = try w.World.init(alloc);
+    // Free the default encounter and assign ours
+    if (wrld.encounter) |default_enc| {
+        default_enc.deinit(wrld.entities.agents); // deinit also destroys the struct
+    }
+    wrld.encounter = enc;
+    defer {
+        wrld.encounter = null; // prevent World.deinit from freeing our enc
+        wrld.deinit();
+    }
+
+    // For validation, .single should return all enemies (selection happens at play time)
+    const targets = getTargetsForQuery(.single, &player, wrld);
+
+    try testing.expectEqual(@as(usize, 2), targets.len);
 }

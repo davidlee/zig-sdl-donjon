@@ -1054,11 +1054,19 @@ pub fn getPlayChannels(play: Play, registry: *const world.CardRegistry) cards.Ch
     return channels;
 }
 
+/// Target selected for a card before Play is created (during selection phase).
+pub const PendingTarget = struct {
+    card_id: entity.ID,
+    target_id: entity.ID,
+};
+
 /// Ephemeral state for the current turn - exists from commit through resolution.
 pub const TurnState = struct {
     timeline: Timeline = .{},
     focus_spent: f32 = 0,
     stack_focus_paid: bool = false, // 1F covers all stacking for the turn
+    // Targets selected during selection phase, before Plays exist
+    pending_targets: [Timeline.max_slots]?PendingTarget = .{null} ** Timeline.max_slots,
 
     /// Get all slots (sorted by time_start).
     pub fn slots(self: *const TurnState) []const TimeSlot {
@@ -1074,6 +1082,41 @@ pub const TurnState = struct {
         self.timeline.clear();
         self.focus_spent = 0;
         self.stack_focus_paid = false;
+        self.pending_targets = .{null} ** Timeline.max_slots;
+    }
+
+    /// Store a pending target for a card (before Play exists).
+    pub fn setPendingTarget(self: *TurnState, card_id: entity.ID, target_id: entity.ID) void {
+        // Find empty slot or existing entry for this card
+        for (&self.pending_targets) |*slot| {
+            if (slot.* == null or slot.*.?.card_id.eql(card_id)) {
+                slot.* = .{ .card_id = card_id, .target_id = target_id };
+                return;
+            }
+        }
+        // Array full - shouldn't happen if max_slots matches timeline capacity
+    }
+
+    /// Get pending target for a card, if any.
+    pub fn getPendingTarget(self: *const TurnState, card_id: entity.ID) ?entity.ID {
+        for (self.pending_targets) |slot| {
+            if (slot) |pt| {
+                if (pt.card_id.eql(card_id)) return pt.target_id;
+            }
+        }
+        return null;
+    }
+
+    /// Clear pending target for a card (e.g., when card is cancelled).
+    pub fn clearPendingTarget(self: *TurnState, card_id: entity.ID) void {
+        for (&self.pending_targets) |*slot| {
+            if (slot.*) |pt| {
+                if (pt.card_id.eql(card_id)) {
+                    slot.* = null;
+                    return;
+                }
+            }
+        }
     }
 
     /// Add a play at the next available time slot.

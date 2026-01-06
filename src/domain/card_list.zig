@@ -484,14 +484,14 @@ const t_sand_in_the_eyes = Template{
     .playable_from = PlayableFrom.hand_only,
     .rules = &.{.{
         .trigger = .on_resolve,
-        .valid = .always,
+        .valid = .{ .range = .{ .op = .lte, .value = .dagger } }, // must be close
         .expressions = &.{.{
             .effect = .{ .add_condition = .{
                 .condition = .blinded,
                 .expiration = .{ .ticks = 1.0 },
             } },
             .filter = null,
-            .target = .all_enemies,
+            .target = .single, // targets one enemy, selected at play time
         }},
     }},
 };

@@ -22,7 +22,7 @@ pub const Command = union(enum) {
     collect_loot: void, // finish encounter summary, transition to world map
 
     // Combat - card selection
-    play_card: ID,
+    play_card: struct { card_id: ID, target: ?ID = null },
     cancel_card: ID,
     end_turn: void,
     commit_turn: void,

@@ -29,6 +29,7 @@ pub const CommittedAction = struct {
     stakes: Stakes,
     time_start: f32, // when this action begins (0.0-1.0 within tick)
     time_end: f32, // when this action ends (time_start + cost.time)
+    target: ?entity.ID = null, // elected target for .single targeting (from Play.target)
     // From Play modifiers (set during commit phase)
     damage_mult: f32 = 1.0,
     advantage_override: ?combat.TechniqueAdvantage = null,
@@ -134,6 +135,7 @@ pub const TickResolver = struct {
                 .stakes = play.effectiveStakes(),
                 .time_start = slot.time_start,
                 .time_end = slot.time_start + duration,
+                .target = play.target,
                 .damage_mult = play.damage_mult,
                 .advantage_override = play.advantage_override,
             });
@@ -188,7 +190,7 @@ pub const TickResolver = struct {
 
             // Get targets for this action (from expression, or default to all_enemies)
             const target_query = if (action.expression) |expr| expr.target else .all_enemies;
-            var targets = try apply.evaluateTargets(self.alloc, target_query, action.actor, w);
+            var targets = try apply.evaluateTargets(self.alloc, target_query, action.actor, w, action.target);
             defer targets.deinit(self.alloc);
 
             // Resolve against each target

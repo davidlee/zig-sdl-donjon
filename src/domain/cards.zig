@@ -154,16 +154,16 @@ pub const Predicate = union(enum) {
     any: []const Predicate,
 };
 
-pub const Selector = struct {
-    id: entity.ID,
-};
-
 pub const TargetQuery = union(enum) {
-    single: Selector, // e.g. explicit target chosen during play
+    // Enemy targeting - reads from Play.target at resolution time
+    single, // one enemy chosen when play is created
+    elected_n: u8, // up to n enemies chosen when play is created
     all_enemies,
+
     self,
     body_part: body.PartTag,
     event_source,
+
     // Play targeting for commit phase effects
     my_play: Predicate, // actor's plays matching predicate
     opponent_play: Predicate, // opponent's plays matching predicate

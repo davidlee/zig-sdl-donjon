@@ -633,7 +633,7 @@ pub const View = struct {
         });
         return .{
             .vs = vs.withCombat(cs),
-            .command = .{ .play_card = card_id },
+            .command = .{ .play_card = .{ .card_id = card_id } },
         };
     }
 
