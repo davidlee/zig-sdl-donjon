@@ -112,7 +112,7 @@ pub const TickResolver = struct {
     /// Extract committed actions from player's plays (with modifiers from commit phase)
     pub fn commitPlayerCards(self: *TickResolver, player: *Agent, w: *World) !void {
         // Get slots from AgentEncounterState (populated during commit phase)
-        const enc = &(w.encounter orelse return);
+        const enc = w.encounter orelse return;
         const enc_state = enc.stateFor(player.id) orelse return;
 
         for (enc_state.current.slots()) |slot| {
@@ -197,8 +197,7 @@ pub const TickResolver = struct {
                 const defense_tech = self.findDefensiveAction(defender, action.time_start, action.time_end);
 
                 // Get engagement from encounter
-                const encounter: ?*combat.Encounter = if (w.encounter) |*e| e else null;
-                const engagement = self.getEngagement(encounter, action.actor, defender) orelse continue;
+                const engagement = self.getEngagement(w.encounter, action.actor, defender) orelse continue;
 
                 // Check expression filter predicate
                 if (action.card) |card| {

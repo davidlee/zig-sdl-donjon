@@ -197,7 +197,7 @@ pub const GameState = enum {
 pub const World = struct {
     alloc: std.mem.Allocator,
     events: EventSystem,
-    encounter: ?combat.Encounter,
+    encounter: ?*combat.Encounter,
     random: random.RandomStreamDict,
     entities: EntityMap,
     card_registry: CardRegistry,
@@ -268,7 +268,7 @@ pub const World = struct {
         self.tickResolver.deinit();
 
         // Deinit encounter enemies (removes from entities.agents)
-        if (self.encounter) |*encounter| {
+        if (self.encounter) |encounter| {
             encounter.deinit(self.entities.agents);
         }
 
@@ -300,15 +300,6 @@ pub const World = struct {
     // Turn phase facade (delegates to Encounter)
     // =========================================================================
 
-    /// Get pointer to encounter if present (for passing to functions expecting ?*const Encounter).
-    pub fn encounterPtr(self: *World) ?*combat.Encounter {
-        return if (self.encounter != null) &self.encounter.? else null;
-    }
-
-    pub fn encounterPtrConst(self: *const World) ?*const combat.Encounter {
-        return if (self.encounter != null) &self.encounter.? else null;
-    }
-
     /// Current turn phase, or null if not in an encounter.
     pub fn turnPhase(self: *const World) ?combat.TurnPhase {
         if (self.encounter) |enc| return enc.turnPhase();
@@ -322,7 +313,7 @@ pub const World = struct {
 
     /// Transition to a new turn phase (delegates to encounter).
     pub fn transitionTurnTo(self: *World, target: combat.TurnPhase) !void {
-        if (self.encounter) |*enc| {
+        if (self.encounter) |enc| {
             try enc.transitionTurnTo(target);
             try self.events.push(Event{ .turn_phase_transitioned_to = target });
         } else return WorldError.InvalidStateTransition;
@@ -337,7 +328,7 @@ pub const World = struct {
         try self.tickResolver.commitPlayerCards(self.player, self);
 
         // Commit mob actions
-        if (self.encounter) |*enc| {
+        if (self.encounter) |enc| {
             try self.tickResolver.commitMobActions(enc.enemies.items, self);
         }
 
@@ -346,7 +337,7 @@ pub const World = struct {
 
         // Execute on_resolve effects (stamina/focus recovery, etc.)
         try apply.executeResolvePhaseRules(self, self.player);
-        if (self.encounter) |*enc| {
+        if (self.encounter) |enc| {
             for (enc.enemies.items) |mob| {
                 try apply.executeResolvePhaseRules(self, mob);
             }
@@ -357,7 +348,7 @@ pub const World = struct {
 
         // Tick down and expire conditions
         try apply.tickConditions(self.player, &self.events);
-        if (self.encounter) |*enc| {
+        if (self.encounter) |enc| {
             for (enc.enemies.items) |mob| {
                 try apply.tickConditions(mob, &self.events);
             }

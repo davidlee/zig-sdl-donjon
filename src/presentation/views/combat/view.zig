@@ -266,7 +266,7 @@ pub const View = struct {
 
     /// Player's plays for commit phase (action + modifier stacks)
     pub fn playerPlays(self: *const View, alloc: std.mem.Allocator) []const PlayViewData {
-        const enc = &(self.world.encounter orelse return &.{});
+        const enc = self.world.encounter orelse return &.{};
         const enc_state = enc.stateForConst(self.world.player.id) orelse return &.{};
 
         const slots = enc_state.current.slots();
@@ -360,7 +360,7 @@ pub const View = struct {
 
         for (ids) |id| {
             const inst = self.world.card_registry.getConst(id) orelse continue;
-            const playable = apply.validateCardSelection(player, inst, phase, self.world.encounterPtrConst()) catch false;
+            const playable = apply.validateCardSelection(player, inst, phase, self.world.encounter) catch false;
             result[count] = CardViewData.fromInstance(inst, source, playable);
             count += 1;
         }
@@ -450,7 +450,7 @@ pub const View = struct {
             const play_zone = self.playerPlayZone(self.arena);
             if (play_zone.hitTestPlay(vs, vs.mouse)) |play_index| {
                 // Validate the attachment
-                const enc = &(self.world.encounter orelse return .{ .vs = vs.withCombat(new_cs) });
+                const enc = self.world.encounter orelse return .{ .vs = vs.withCombat(new_cs) };
                 const enc_state = enc.stateForConst(self.world.player.id) orelse
                     return .{ .vs = vs.withCombat(new_cs) };
                 const slots = enc_state.current.slots();
@@ -505,7 +505,7 @@ pub const View = struct {
         const phase = self.turn_phase orelse return false;
         var registry = self.world.card_registry;
         if (registry.get(id)) |card| {
-            const playable = apply.validateCardSelection(self.world.player, card, phase, self.world.encounterPtrConst()) catch |err| {
+            const playable = apply.validateCardSelection(self.world.player, card, phase, self.world.encounter) catch |err| {
                 std.debug.print("Error validating card playability: {s} -- {}", .{ card.template.name, err });
                 return false;
             };

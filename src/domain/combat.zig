@@ -388,7 +388,7 @@ pub const Encounter = struct {
     // Turn phase FSM (combat flow within encounter)
     turn_fsm: TurnFSM,
 
-    pub fn init(alloc: std.mem.Allocator, player_id: entity.ID) !Encounter {
+    pub fn init(alloc: std.mem.Allocator, player_id: entity.ID) !*Encounter {
         var fsm = TurnFSM.init();
 
         // Turn phase transitions
@@ -398,7 +398,8 @@ pub const Encounter = struct {
         try fsm.addEventAndTransition(.animate_resolution, .tick_resolution, .animating);
         try fsm.addEventAndTransition(.redraw, .animating, .draw_hand);
 
-        var enc = Encounter{
+        const enc = try alloc.create(Encounter);
+        enc.* = Encounter{
             .alloc = alloc,
             .enemies = try std.ArrayList(*combat.Agent).initCapacity(alloc, 5),
             .player_id = player_id,
@@ -424,6 +425,7 @@ pub const Encounter = struct {
         self.agent_state.deinit();
         self.environment.deinit(self.alloc);
         self.thrown_by.deinit();
+        self.alloc.destroy(self);
     }
 
     /// Get engagement between two agents (order doesn't matter).

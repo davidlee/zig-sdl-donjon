@@ -85,7 +85,7 @@ pub const SimpleDeckDirector = struct {
         while (to_play > 0 and hand_index < cs.hand.items.len) : (hand_index += 1) {
             const card_id = cs.hand.items[hand_index];
             const card = w.card_registry.get(card_id) orelse continue;
-            if (apply.isCardSelectionValid(agent, card, w.encounterPtr())) {
+            if (apply.isCardSelectionValid(agent, card, w.encounter)) {
                 // playValidCardReservingCosts already emits played_action_card event
                 _ = try apply.playValidCardReservingCosts(&w.events, agent, card, &w.card_registry);
                 to_play -= 1;
@@ -123,7 +123,7 @@ pub const PoolDirector = struct {
             const card = w.card_registry.get(card_id) orelse continue;
 
             // Check if playable (not on cooldown, meets requirements)
-            if (apply.isCardSelectionValid(agent, card, w.encounterPtr())) {
+            if (apply.isCardSelectionValid(agent, card, w.encounter)) {
                 _ = try apply.playValidCardReservingCosts(&w.events, agent, card, &w.card_registry);
                 played += 1;
             }
