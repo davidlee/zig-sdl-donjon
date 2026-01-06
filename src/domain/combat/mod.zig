@@ -47,6 +47,7 @@ pub const TurnHistory = plays.TurnHistory;
 pub const AgentEncounterState = plays.AgentEncounterState;
 pub const getPlayDuration = plays.getPlayDuration;
 pub const getPlayChannels = plays.getPlayChannels;
+pub const hasFootworkInTimeline = plays.hasFootworkInTimeline;
 
 // From engagement.zig
 pub const AgentPair = engagement.AgentPair;

@@ -1,3 +1,8 @@
+/// World state, entity registries, and turn FSM.
+///
+/// Owns the authoritative game state (entities, encounters, events, RNG streams)
+/// and exposes APIs for transitioning phases. Presentation interacts via higher
+/// layers; no SDL or rendering here.
 const std = @import("std");
 const lib = @import("infra");
 const zigfsm = @import("zigfsm");

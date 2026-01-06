@@ -1,4 +1,6 @@
-// Re-export from tick/ submodules - see doc/decomposition.md for refactor notes
+/// Legacy tick module shim around the refactored submodules.
+///
+/// Keeps previous import paths working while delegating to `tick/mod.zig`.
 const tick_mod = @import("tick/mod.zig");
 
 pub const committed_action = tick_mod.committed_action;

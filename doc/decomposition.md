@@ -357,3 +357,50 @@ combat/
 - Fixed agent.zig test issues: `mobility_weight` → `can_stand`, `.turns` → `.ticks`
 
 **Build and tests pass.**
+
+---
+
+### Step 5: Apply Module Decomposition (2026-01-06, COMPLETED)
+
+Extracted remaining apply.zig code into focused modules:
+
+**New files created:**
+- `src/domain/apply/command_handler.zig` - CommandHandler, CommandError, playValidCardReservingCosts, channel helpers
+- `src/domain/apply/event_processor.zig` - EventProcessor, game state transitions, combat lifecycle
+- `src/domain/apply/costs.zig` - applyCommittedCosts, post-resolution card zone management
+- `src/domain/apply/effects/commit.zig` - applyCommitPhaseEffect, executeCommitPhaseRules
+- `src/domain/apply/effects/resolve.zig` - executeResolvePhaseRules, applyResolveEffect, tickConditions
+- `src/domain/apply/effects/manoeuvre.zig` - executeManoeuvreEffects, applyRangeModification, adjustRange
+
+**Updated:**
+- `src/domain/apply/mod.zig` - Re-exports all submodules and commonly used symbols
+- `src/domain/apply.zig` - Now a thin re-export module (tests remain here for compatibility)
+
+**Module structure:**
+```
+apply/
+├── validation.zig      # Card playability (from step 1)
+├── targeting.zig       # Target evaluation (from step 1)
+├── command_handler.zig # CommandHandler
+├── event_processor.zig # EventProcessor
+├── costs.zig           # Cost application
+├── effects/
+│   ├── commit.zig      # Commit phase effects
+│   ├── resolve.zig     # Resolve phase effects
+│   └── manoeuvre.zig   # Manoeuvre effects
+└── mod.zig             # Re-exports
+```
+
+**Key changes:**
+- `apply.zig` reduced from ~1500 lines to ~270 lines (thin re-exports + tests)
+- Dead code removed: `EffectContext`, `TechniqueContext`, `DEFAULT_COOLDOWN_TICKS`
+- Effect modules now have focused responsibilities
+- EventProcessor imports `effects/commit.executeCommitPhaseRules` instead of full apply
+- All existing imports continue to work (backward compatible)
+- Build and tests pass
+
+**All four main domain files are now thin re-exports:**
+- `apply.zig` → `apply/mod.zig`
+- `combat.zig` → `combat/mod.zig`
+- `tick.zig` → `tick/mod.zig`
+- `resolution.zig` → `resolution/mod.zig`

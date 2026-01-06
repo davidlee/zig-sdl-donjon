@@ -1,3 +1,7 @@
+/// Curated card template lists for development and tests.
+///
+/// Provides compile-time access to named card templates (starter deck, pools).
+/// Does not own runtime registries; callers still register templates elsewhere.
 const std = @import("std");
 const Event = @import("events.zig").Event;
 
@@ -176,6 +180,68 @@ pub const TechniqueEntries = [_]Technique{
             .on_miss = .{ .control = -0.20, .self_balance = -0.10 }, // overextend on miss
         },
     },
+
+    // -------------------------------------------------------------------------
+    // Manoeuvres (footwork techniques)
+    // -------------------------------------------------------------------------
+
+    .{
+        .id = .advance,
+        .name = "advance",
+        .attack_mode = .none,
+        .channels = .{ .footwork = true },
+        .damage = .{
+            .instances = &.{.{ .amount = 0.0, .types = &.{} }},
+            .scaling = .{ .ratio = 0.0, .stats = .{ .stat = .power } },
+        },
+        .difficulty = 0.0,
+        .overlay_bonus = .{
+            .offensive = .{ .damage_mult = 1.10 }, // +10% damage
+        },
+    },
+
+    .{
+        .id = .retreat,
+        .name = "retreat",
+        .attack_mode = .none,
+        .channels = .{ .footwork = true },
+        .damage = .{
+            .instances = &.{.{ .amount = 0.0, .types = &.{} }},
+            .scaling = .{ .ratio = 0.0, .stats = .{ .stat = .power } },
+        },
+        .difficulty = 0.0,
+        .overlay_bonus = .{
+            .defensive = .{ .defense_bonus = 0.10 }, // +0.1 defense
+        },
+    },
+
+    .{
+        .id = .sidestep,
+        .name = "sidestep",
+        .attack_mode = .none,
+        .channels = .{ .footwork = true },
+        .damage = .{
+            .instances = &.{.{ .amount = 0.0, .types = &.{} }},
+            .scaling = .{ .ratio = 0.0, .stats = .{ .stat = .power } },
+        },
+        .difficulty = 0.0,
+        .overlay_bonus = .{
+            .offensive = .{ .to_hit_bonus = 0.05 }, // +5% to_hit
+        },
+    },
+
+    .{
+        .id = .hold,
+        .name = "hold",
+        .attack_mode = .none,
+        .channels = .{ .footwork = true },
+        .damage = .{
+            .instances = &.{.{ .amount = 0.0, .types = &.{} }},
+            .scaling = .{ .ratio = 0.0, .stats = .{ .stat = .power } },
+        },
+        .difficulty = 0.0,
+        // No overlay bonus - stationary penalty applies
+    },
 };
 
 // -----------------------------------------------------------------------------
@@ -331,6 +397,104 @@ const t_parry = Template{
     }},
 };
 
+// -----------------------------------------------------------------------------
+// Manoeuvre cards - footwork that overlays with weapon techniques
+// -----------------------------------------------------------------------------
+
+const t_advance = Template{
+    .id = hashName("advance"),
+    .kind = .action,
+    .name = "advance",
+    .description = "close distance, boost damage",
+    .rarity = .common,
+    .cost = .{ .stamina = 1.5, .time = 0.3 },
+    .tags = .{ .manoeuvre = true, .offensive = true, .phase_selection = true, .phase_commit = true },
+    .playable_from = PlayableFrom.always_avail,
+    .rules = &.{.{
+        .trigger = .on_play,
+        .valid = .always,
+        .expressions = &.{
+            .{
+                .effect = .{ .combat_technique = Technique.byID(.advance) },
+                .filter = null,
+                .target = .self,
+            },
+            .{
+                .effect = .{ .modify_range = .{ .steps = -1 } }, // close 1 step
+                .filter = null,
+                .target = .all_enemies,
+            },
+        },
+    }},
+};
+
+const t_retreat = Template{
+    .id = hashName("retreat"),
+    .kind = .action,
+    .name = "retreat",
+    .description = "open distance, boost defense",
+    .rarity = .common,
+    .cost = .{ .stamina = 1.0, .time = 0.2 },
+    .tags = .{ .manoeuvre = true, .defensive = true, .phase_selection = true, .phase_commit = true },
+    .playable_from = PlayableFrom.always_avail,
+    .rules = &.{.{
+        .trigger = .on_play,
+        .valid = .always,
+        .expressions = &.{
+            .{
+                .effect = .{ .combat_technique = Technique.byID(.retreat) },
+                .filter = null,
+                .target = .self,
+            },
+            .{
+                .effect = .{ .modify_range = .{ .steps = 1 } }, // open 1 step
+                .filter = null,
+                .target = .all_enemies,
+            },
+        },
+    }},
+};
+
+const t_sidestep = Template{
+    .id = hashName("sidestep"),
+    .kind = .action,
+    .name = "sidestep",
+    .description = "lateral movement, boost accuracy",
+    .rarity = .common,
+    .cost = .{ .stamina = 1.5, .time = 0.2 },
+    .tags = .{ .manoeuvre = true, .offensive = true, .phase_selection = true, .phase_commit = true },
+    .playable_from = PlayableFrom.always_avail,
+    .rules = &.{.{
+        .trigger = .on_play,
+        .valid = .always,
+        .expressions = &.{.{
+            .effect = .{ .combat_technique = Technique.byID(.sidestep) },
+            .filter = null,
+            .target = .self,
+        }},
+    }},
+};
+
+const t_hold = Template{
+    .id = hashName("hold"),
+    .kind = .action,
+    .name = "hold",
+    .description = "stand firm (stationary penalty applies)",
+    .rarity = .common,
+    .cost = .{ .stamina = 0, .time = 0.3 },
+    .tags = .{ .manoeuvre = true, .phase_selection = true, .phase_commit = true },
+    .playable_from = PlayableFrom.always_avail,
+    .rules = &.{.{
+        .trigger = .on_play,
+        .valid = .always,
+        .expressions = &.{.{
+            .effect = .{ .combat_technique = Technique.byID(.hold) },
+            .filter = null,
+            .target = .self,
+        }},
+    }},
+};
+
 /// Combat techniques available to all agents by default.
 /// Populate Agent.always_available from this array.
 pub const BaseAlwaysAvailableTemplates = [_]*const Template{
@@ -341,6 +505,11 @@ pub const BaseAlwaysAvailableTemplates = [_]*const Template{
     &t_shield_block,
     &t_riposte,
     &m_feint,
+    // Manoeuvres
+    &t_advance,
+    &t_retreat,
+    &t_sidestep,
+    &t_hold,
 };
 
 // -----------------------------------------------------------------------------

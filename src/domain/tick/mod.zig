@@ -1,12 +1,8 @@
-// Tick resolution module - see doc/decomposition.md for refactor notes
-//
-// This module handles:
-// - CommittedAction: data type for actions committed for resolution
-// - TickResolver: orchestrates combat resolution for a single tick
-//
-// Key decoupling: TickResolver depends only on apply/targeting.zig,
-// not the full apply module. This enables alternative resolvers
-// (e.g. AI simulations) to reuse targeting without UI command code.
+/// Tick resolution module (see doc/decomposition.md for details).
+///
+/// Groups the committed action data structures with the TickResolver that
+/// executes them. TickResolver only depends on apply/targeting, not the full
+/// command stack, so it can be reused in simulations.
 
 pub const committed_action = @import("committed_action.zig");
 pub const resolver = @import("resolver.zig");

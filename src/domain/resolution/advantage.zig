@@ -1,3 +1,7 @@
+/// Advantage effect calculations for combat resolution.
+///
+/// Scales advantage modifiers based on outcomes, stakes, and technique
+/// overrides. No rendering or event formatting lives here.
 const std = @import("std");
 const lib = @import("infra");
 const entity = lib.entity;

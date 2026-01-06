@@ -1,3 +1,7 @@
+/// Anatomical model and body-part utilities.
+///
+/// Defines the body graph, tags, and wound tracking helpers used by the
+/// damage/resolution systems. Does not render sprites or own combat flow.
 const std = @import("std");
 const lib = @import("infra");
 const damage = @import("damage.zig");

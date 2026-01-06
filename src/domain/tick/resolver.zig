@@ -1,3 +1,7 @@
+/// TickResolver - executes committed actions for a combat tick.
+///
+/// Sorts committed actions, evaluates targets via apply/targeting, and
+/// delegates to resolution to compute outcomes. No UI logic here.
 const std = @import("std");
 const lib = @import("infra");
 const entity = lib.entity;
@@ -168,10 +172,20 @@ pub const TickResolver = struct {
                     .time_end = action.time_end,
                 };
 
+                // Check if defender is stationary (no footwork in their timeline)
+                const defender_stationary = if (w.encounter) |enc| blk: {
+                    if (enc.stateFor(defender.id)) |state| {
+                        break :blk !combat.hasFootworkInTimeline(&state.current.timeline, &w.card_registry);
+                    }
+                    break :blk true; // No timeline = stationary
+                } else true;
+
                 const defense_ctx = resolution.DefenseContext{
                     .defender = defender,
                     .technique = defense_tech,
                     .weapon_template = self.getWeaponTemplate(defender),
+                    .engagement = engagement,
+                    .is_stationary = defender_stationary,
                     // Use attack time window - defender's manoeuvres during this window provide bonus
                     .time_start = action.time_start,
                     .time_end = action.time_end,

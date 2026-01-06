@@ -1,11 +1,8 @@
-// Resolution module - see doc/decomposition.md for refactor notes
-//
-// This module handles combat resolution:
-// - context: Attack/Defense contexts, combat modifiers, overlay bonuses
-// - advantage: Advantage effects and application
-// - damage: Damage packet creation
-// - height: Hit location selection
-// - outcome: Outcome determination and full resolution orchestration
+/// Resolution module - orchestrates attack/defense outcomes.
+///
+/// Aggregates submodules for combat contexts, advantage, damage packets,
+/// height targeting, and final outcome resolution. See doc/decomposition.md
+/// for a high-level diagram.
 
 pub const context = @import("context.zig");
 pub const advantage = @import("advantage.zig");

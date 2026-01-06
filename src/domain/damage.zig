@@ -1,3 +1,7 @@
+/// Damage model, conditions, and packet creation helpers.
+///
+/// Defines damage types, resistances, conditions, and serialization helpers
+/// used by resolution. Does not apply damage to agents directly.
 const std = @import("std");
 const lib = @import("infra");
 const PartTag = @import("body.zig").PartTag;
@@ -83,6 +87,7 @@ pub const Condition = enum {
     pressured,
     weapon_bound,
     unbalanced,
+    stationary, // no footwork in timeline this tick
 };
 
 pub const DoTEffect = union(enum) {

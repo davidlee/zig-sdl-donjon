@@ -351,6 +351,15 @@ pub fn getPlayChannels(play: Play, registry: *const world.CardRegistry) cards.Ch
     return channels;
 }
 
+/// Returns true if any play in the timeline uses the footwork channel.
+pub fn hasFootworkInTimeline(timeline: *const Timeline, registry: *const world.CardRegistry) bool {
+    for (timeline.slots()) |slot| {
+        const channels = getPlayChannels(slot.play, registry);
+        if (channels.footwork) return true;
+    }
+    return false;
+}
+
 // ============================================================================
 // Turn State
 // ============================================================================

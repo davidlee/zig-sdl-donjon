@@ -1,3 +1,7 @@
+/// Inventory layering and wearable coverage definitions.
+///
+/// Declares armour layers, coverage structs, and helpers used by equipment
+/// systems. Does not handle UI or persistence.
 const std = @import("std");
 const lib = @import("infra");
 const body = @import("body.zig");

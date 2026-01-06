@@ -1,3 +1,7 @@
+/// Helpers for translating techniques into damage packets.
+///
+/// Figures out weapon offensive profiles and assembles `damage.Packet`
+/// instances consumed by the outcome resolver.
 const std = @import("std");
 const combat = @import("../combat.zig");
 const cards = @import("../cards.zig");

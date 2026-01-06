@@ -1,6 +1,7 @@
-// Domain module - pure game logic, no SDL dependencies
-//
-// Re-exports for convenience. Individual files can also be imported directly.
+/// Domain module re-exports - pure game logic, no SDL dependencies.
+///
+/// Provides convenient accessors for domain subsystems. Individual files can
+/// still be imported directly when finer-grained control is needed.
 
 pub const world = @import("world.zig");
 pub const events = @import("events.zig");

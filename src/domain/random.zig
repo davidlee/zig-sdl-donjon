@@ -1,3 +1,7 @@
+/// Random stream management for deterministic simulations.
+///
+/// Wraps RNG streams, exposes RandomSource that emits draw events, and keeps
+/// seeds for reproducibility. Does not depend on presentation.
 const std = @import("std");
 
 const lib = @import("infra");

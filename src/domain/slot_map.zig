@@ -1,3 +1,6 @@
+/// Generational slot-map for stable entity IDs.
+///
+/// Provides Insert/remove lookup semantics used by the world registry. No UI.
 const std = @import("std");
 const lib = @import("infra");
 const entity = lib.entity;

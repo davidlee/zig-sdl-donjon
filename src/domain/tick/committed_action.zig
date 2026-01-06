@@ -1,3 +1,7 @@
+/// Data objects shared across tick resolution.
+///
+/// Defines `CommittedAction`, `ResolutionEntry`, and `TickResult` used by
+/// TickResolver. Pure data/storage; no world mutation happens here.
 const std = @import("std");
 const lib = @import("infra");
 const entity = lib.entity;

@@ -1,3 +1,7 @@
+/// Player bootstrap helpers.
+///
+/// Provides utilities to construct the default player agent and equipment.
+/// Does not contain gameplay loop logic.
 const std = @import("std");
 const stats = @import("stats.zig");
 const body = @import("body.zig");

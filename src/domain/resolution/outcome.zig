@@ -1,3 +1,7 @@
+/// Outcome orchestration for combat resolution.
+///
+/// Ties together context, advantage, and damage helpers to compute hit chances,
+/// apply results, and emit world events. No UI code here.
 const std = @import("std");
 const lib = @import("infra");
 const entity = lib.entity;

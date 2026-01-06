@@ -1,3 +1,7 @@
+/// Event types and event-system queue for domain notifications.
+///
+/// Defines the union of domain events and the EventSystem that buffers them.
+/// Presentation and other systems consume these events; no rendering here.
 const std = @import("std");
 const lib = @import("infra");
 const entity = lib.entity;

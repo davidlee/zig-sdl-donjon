@@ -1,3 +1,7 @@
+/// Curated weapon templates for prototyping/tests.
+///
+/// Provides compile-time access to named weapon templates; the runtime registry
+/// still lives elsewhere.
 const weapon = @import("weapon.zig");
 const combat = @import("combat.zig");
 const damage = @import("damage.zig");

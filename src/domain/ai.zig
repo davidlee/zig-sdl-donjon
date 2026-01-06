@@ -1,3 +1,8 @@
+/// AI directors and behaviours for non-player agents.
+///
+/// Provides Director implementations that decide which cards to play for NPCs.
+/// Does not own world state or presentation logic; callers pass in Agent/World
+/// references when requesting AI actions.
 const std = @import("std");
 const lib = @import("infra");
 

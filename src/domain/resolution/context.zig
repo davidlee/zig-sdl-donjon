@@ -1,3 +1,7 @@
+/// Context structs shared across resolution calculations.
+///
+/// Defines attack/defense context payloads and aggregate modifier helpers.
+/// Contains no orchestration logic or event dispatch.
 const std = @import("std");
 const lib = @import("infra");
 const entity = lib.entity;
@@ -32,6 +36,8 @@ pub const DefenseContext = struct {
     defender: *Agent,
     technique: ?*const Technique, // null = passive defense
     weapon_template: *const weapon.Template,
+    engagement: ?*const Engagement = null, // for computed conditions
+    is_stationary: bool = false, // no footwork in timeline
     // Timing for overlay bonus calculation
     time_start: f32 = 0,
     time_end: f32 = 1.0,
@@ -52,7 +58,8 @@ pub const CombatModifiers = struct {
     pub fn forAttacker(attack: AttackContext) CombatModifiers {
         var mods = CombatModifiers{};
 
-        for (attack.attacker.conditions.items) |cond| {
+        var iter = attack.attacker.activeConditions(attack.engagement);
+        while (iter.next()) |cond| {
             switch (cond.condition) {
                 .blinded => {
                     // Precision matters more when you can't see
@@ -84,6 +91,10 @@ pub const CombatModifiers = struct {
                     mods.hit_chance -= 0.10;
                     mods.damage_mult *= 0.9;
                 },
+                .unbalanced => {
+                    // Poor balance affects accuracy
+                    mods.hit_chance -= 0.10;
+                },
                 else => {},
             }
         }
@@ -95,7 +106,14 @@ pub const CombatModifiers = struct {
     pub fn forDefender(defense: DefenseContext) CombatModifiers {
         var mods = CombatModifiers{};
 
-        for (defense.defender.conditions.items) |cond| {
+        // Check stationary flag (computed from timeline at resolver level)
+        if (defense.is_stationary) {
+            // Stationary defender is easier to hit (+10% for attacker)
+            mods.dodge_mod -= 0.10;
+        }
+
+        var iter = defense.defender.activeConditions(defense.engagement);
+        while (iter.next()) |cond| {
             switch (cond.condition) {
                 .blinded => {
                     // Can't see attacks coming
@@ -121,6 +139,18 @@ pub const CombatModifiers = struct {
                 .unconscious, .comatose => {
                     mods.defense_mult *= 0.0;
                     mods.dodge_mod -= 0.50;
+                },
+                .pressured => {
+                    // Under pressure, harder to defend effectively
+                    mods.defense_mult *= 0.85;
+                },
+                .weapon_bound => {
+                    // Weapon tied up, active defense compromised
+                    mods.defense_mult *= 0.7;
+                },
+                .unbalanced => {
+                    // Poor balance makes dodging harder
+                    mods.dodge_mod -= 0.15;
                 },
                 else => {},
             }

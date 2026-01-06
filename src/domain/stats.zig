@@ -1,3 +1,7 @@
+/// Stat blocks and resource helpers for agents.
+///
+/// Defines Resource, Scaling, and computed stat accessors shared by combat
+/// systems. This module is pure data/logic with no rendering.
 const std = @import("std");
 const lib = @import("infra");
 

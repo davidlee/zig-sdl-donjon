@@ -1,4 +1,7 @@
-// Re-export from resolution/ submodules - see doc/decomposition.md for refactor notes
+/// Legacy resolution entry point re-exporting the split modules.
+///
+/// Maintains backward compatibility for existing imports while delegating to
+/// `resolution/mod.zig`.
 const resolution_mod = @import("resolution/mod.zig");
 
 pub const context = resolution_mod.context;

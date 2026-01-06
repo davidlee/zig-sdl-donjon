@@ -1,3 +1,7 @@
+/// Core card template definitions and helper types.
+///
+/// Owns enums, structs, and serialization helpers that describe cards, costs,
+/// tags, and techniques. Does not contain gameplay orchestration or UI logic.
 const std = @import("std");
 // const assert = std.testing.expectEqual
 const lib = @import("infra");
@@ -217,6 +221,11 @@ pub const TechniqueID = enum {
     parry,
     block,
     riposte,
+    // Manoeuvres (footwork)
+    advance,
+    retreat,
+    sidestep,
+    hold,
 };
 
 /// Which weapon profile an attack uses

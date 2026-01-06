@@ -1,3 +1,7 @@
+/// Weapon templates and instances shared across combat systems.
+///
+/// Defines categories, offensive profiles, ammunition, and instance structs.
+/// Does not perform rendering or inventory logic.
 const lib = @import("infra");
 const combat = @import("combat.zig");
 const damage = @import("damage.zig");

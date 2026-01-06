@@ -1,3 +1,7 @@
+/// Armour data and resolution helpers.
+///
+/// Owns armour materials, durability, and how armour interacts with incoming
+/// damage/conditions. Does not perform rendering or UI decisions.
 const std = @import("std");
 const lib = @import("infra");
 const body = @import("body.zig");

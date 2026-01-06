@@ -48,6 +48,7 @@ pub const TurnHistory = combat_mod.TurnHistory;
 pub const AgentEncounterState = combat_mod.AgentEncounterState;
 pub const getPlayDuration = combat_mod.getPlayDuration;
 pub const getPlayChannels = combat_mod.getPlayChannels;
+pub const hasFootworkInTimeline = combat_mod.hasFootworkInTimeline;
 
 // From engagement.zig
 pub const AgentPair = combat_mod.AgentPair;

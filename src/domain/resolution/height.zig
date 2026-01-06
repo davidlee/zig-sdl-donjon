@@ -1,3 +1,7 @@
+/// Height/exposure helpers for selecting hit locations.
+///
+/// Encapsulates target height weighting and exposure selection logic used by
+/// the resolution pipeline. No rendering or combat orchestration occurs here.
 const std = @import("std");
 const combat = @import("../combat.zig");
 const cards = @import("../cards.zig");
