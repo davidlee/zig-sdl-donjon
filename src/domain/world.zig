@@ -341,6 +341,9 @@ pub const World = struct {
         // Execute manoeuvre effects (range modification) before combat resolution
         try apply.executeManoeuvreEffects(self);
 
+        // Resolve positioning contests (bonus step for winner, weapon reach floor)
+        try apply.resolvePositioningContests(self);
+
         // Resolve all actions
         const result = try self.tickResolver.resolve(self);
 

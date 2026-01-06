@@ -16,6 +16,7 @@ pub const effects = struct {
     pub const commit = @import("effects/commit.zig");
     pub const resolve = @import("effects/resolve.zig");
     pub const manoeuvre = @import("effects/manoeuvre.zig");
+    pub const positioning = @import("effects/positioning.zig");
 };
 
 // Re-export commonly used types at top level for convenience
@@ -55,6 +56,14 @@ pub const executeResolvePhaseRules = effects.resolve.executeResolvePhaseRules;
 pub const tickConditions = effects.resolve.tickConditions;
 pub const executeManoeuvreEffects = effects.manoeuvre.executeManoeuvreEffects;
 pub const adjustRange = effects.manoeuvre.adjustRange;
+
+// Re-export positioning types and functions
+pub const ManoeuvreType = effects.positioning.ManoeuvreType;
+pub const ManoeuvreOutcome = effects.positioning.ManoeuvreOutcome;
+pub const calculateManoeuvreScore = effects.positioning.calculateManoeuvreScore;
+pub const resolveManoeuvreConflict = effects.positioning.resolveManoeuvreConflict;
+pub const getAgentFootwork = effects.positioning.getAgentFootwork;
+pub const resolvePositioningContests = effects.positioning.resolvePositioningContests;
 
 // Re-export cost functions
 pub const applyCommittedCosts = costs.applyCommittedCosts;

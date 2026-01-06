@@ -56,6 +56,14 @@ pub const tickConditions = apply_mod.tickConditions;
 pub const executeManoeuvreEffects = apply_mod.executeManoeuvreEffects;
 pub const adjustRange = apply_mod.adjustRange;
 
+// Positioning types and functions
+pub const ManoeuvreType = apply_mod.ManoeuvreType;
+pub const ManoeuvreOutcome = apply_mod.ManoeuvreOutcome;
+pub const calculateManoeuvreScore = apply_mod.calculateManoeuvreScore;
+pub const resolveManoeuvreConflict = apply_mod.resolveManoeuvreConflict;
+pub const getAgentFootwork = apply_mod.getAgentFootwork;
+pub const resolvePositioningContests = apply_mod.resolvePositioningContests;
+
 // Cost functions
 pub const applyCommittedCosts = apply_mod.applyCommittedCosts;
 

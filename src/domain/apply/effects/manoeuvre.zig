@@ -81,9 +81,49 @@ fn applyRangeModification(
         } });
     }
 
-    // Propagation: apply n-1 steps to other engagements (Phase 5 multi-opponent)
-    // Currently a no-op for single engagement encounters
-    _ = propagate; // TODO (Phase 5): Iterate other engagements and apply reduced steps
+    // Propagation: apply n-1 steps to other engagements (multi-opponent)
+    // Moving toward one enemy partially moves you toward/away from others
+    if (propagate and @abs(steps) > 1) {
+        const propagated_steps: i8 = if (steps > 0) steps - 1 else steps + 1;
+
+        // Apply to other engagements involving this actor
+        for (enc.enemies.items) |enemy| {
+            if (enemy.id.eql(target_id)) continue; // skip focal target
+
+            if (enc.getEngagement(actor_id, enemy.id)) |other_eng| {
+                const other_old_range = other_eng.range;
+                other_eng.range = adjustRange(other_eng.range, propagated_steps);
+
+                if (other_eng.range != other_old_range) {
+                    try world.events.push(.{ .range_changed = .{
+                        .actor_id = actor_id,
+                        .target_id = enemy.id,
+                        .old_range = other_old_range,
+                        .new_range = other_eng.range,
+                    } });
+                }
+            }
+        }
+
+        // Also check if actor is the player and propagate to player engagement
+        if (!actor_id.eql(enc.player_id)) {
+            if (enc.getEngagement(enc.player_id, actor_id)) |player_eng| {
+                if (!enc.player_id.eql(target_id)) {
+                    const player_old_range = player_eng.range;
+                    player_eng.range = adjustRange(player_eng.range, propagated_steps);
+
+                    if (player_eng.range != player_old_range) {
+                        try world.events.push(.{ .range_changed = .{
+                            .actor_id = actor_id,
+                            .target_id = enc.player_id,
+                            .old_range = player_old_range,
+                            .new_range = player_eng.range,
+                        } });
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// Adjust reach by the given number of steps, clamping to valid range.

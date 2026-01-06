@@ -241,4 +241,18 @@ pub const Block = packed struct {
             .presence => self.presence,
         };
     }
+
+    /// Normalize a raw stat value to 0-1 range.
+    /// Baseline: stat of 5 → 0.5, stat of 10 → 1.0.
+    pub fn normalize(value: f32) f32 {
+        const baseline: f32 = 10.0;
+        return std.math.clamp(value / baseline, 0.0, 1.0);
+    }
+
+    test "Block.normalize scales stats to 0-1" {
+        try testing.expectApproxEqAbs(@as(f32, 0.5), Block.normalize(5.0), 0.001);
+        try testing.expectApproxEqAbs(@as(f32, 1.0), Block.normalize(10.0), 0.001);
+        try testing.expectApproxEqAbs(@as(f32, 0.0), Block.normalize(0.0), 0.001);
+        try testing.expectApproxEqAbs(@as(f32, 1.0), Block.normalize(15.0), 0.001); // clamped
+    }
 };
