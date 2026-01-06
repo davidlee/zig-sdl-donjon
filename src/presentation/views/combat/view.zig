@@ -15,7 +15,6 @@ const domain_combat = @import("../../../domain/combat.zig");
 const s = @import("sdl3");
 const entity = infra.entity;
 const chrome = @import("../chrome.zig");
-const apply = @import("../../../domain/apply.zig");
 const query = @import("../../../domain/query/mod.zig");
 const card_mod = @import("../card/mod.zig");
 const combat_mod = @import("mod.zig");
@@ -49,11 +48,9 @@ const HitResult = hit_mod.Hit;
 const CardViewState = hit_mod.Interaction;
 const PlayViewData = play_mod.Data;
 const PlayZoneView = play_mod.Zone;
-const EndTurnButton = combat_mod.EndTurn;
 const PlayerAvatar = combat_mod.Player;
 const EnemySprite = combat_mod.Enemy;
 const Opposition = combat_mod.Opposition;
-const StatusBarView = combat_mod.StatusBar;
 
 fn getLayout(zone: ViewZone) CardLayout {
     return .{
@@ -202,7 +199,6 @@ const CardZoneView = struct {
 pub const View = struct {
     world: *const World,
     arena: std.mem.Allocator,
-    end_turn_btn: EndTurnButton,
     player_avatar: PlayerAvatar,
     opposition: Opposition,
     turn_phase: ?domain_combat.TurnPhase,
@@ -222,7 +218,6 @@ pub const View = struct {
         return .{
             .world = world,
             .arena = arena,
-            .end_turn_btn = EndTurnButton.init(phase),
             .player_avatar = PlayerAvatar.init(),
             .opposition = Opposition.init(world.encounter.?.enemies.items),
             .turn_phase = phase,
@@ -285,7 +280,7 @@ pub const View = struct {
         var count: usize = 0;
 
         for (slots, 0..) |slot, i| {
-            if (self.buildPlayViewData(alloc, &slot.play, self.world.player, i)) |pvd| {
+            if (self.buildPlayViewData(&slot.play, self.world.player, i)) |pvd| {
                 result[count] = pvd;
                 count += 1;
             }
@@ -297,7 +292,6 @@ pub const View = struct {
     /// Build PlayViewData from domain Play
     fn buildPlayViewData(
         self: *const View,
-        alloc: std.mem.Allocator,
         play: *const domain_combat.Play,
         owner: *const Agent,
         play_index: usize,
@@ -320,34 +314,19 @@ pub const View = struct {
 
         // Resolve target if offensive
         if (pvd.isOffensive()) {
-            pvd.target_id = self.resolvePlayTarget(alloc, play, owner, play_index);
+            pvd.target_id = self.resolvePlayTarget(owner.id, play_index);
         }
 
         return pvd;
     }
 
-    /// Resolve play target using snapshot if available.
-    fn resolvePlayTarget(
-        self: *const View,
-        alloc: std.mem.Allocator,
-        play: *const domain_combat.Play,
-        owner: *const Agent,
-        play_index: usize,
-    ) ?entity.ID {
-        // Use snapshot if available (preferred path)
-        if (self.snapshot) |snap| {
-            // Find the play status for this owner and index
-            for (snap.play_statuses.items) |status| {
-                if (status.owner_id.eql(owner.id) and status.play_index == play_index) {
-                    return status.target_id;
-                }
+    /// Resolve play target using snapshot.
+    fn resolvePlayTarget(self: *const View, owner_id: entity.ID, play_index: usize) ?entity.ID {
+        const snap = self.snapshot orelse return null;
+        for (snap.play_statuses.items) |status| {
+            if (status.owner_id.eql(owner_id) and status.play_index == play_index) {
+                return status.target_id;
             }
-            return null;
-        }
-        // Fallback to direct resolution
-        if (apply.resolvePlayTargetIDs(alloc, play, owner, self.world) catch null) |ids| {
-            defer alloc.free(ids);
-            if (ids.len > 0) return ids[0];
         }
         return null;
     }
@@ -366,7 +345,7 @@ pub const View = struct {
         const result = alloc.alloc(PlayViewData, slots.len) catch return &.{};
         var count: usize = 0;
         for (slots, 0..) |slot, i| {
-            if (self.buildPlayViewData(alloc, &slot.play, agent, i)) |pvd| {
+            if (self.buildPlayViewData(&slot.play, agent, i)) |pvd| {
                 result[count] = pvd;
                 count += 1;
             }
@@ -401,17 +380,10 @@ pub const View = struct {
         return result[0..count];
     }
 
-    /// Check if a card is playable, using snapshot if available.
+    /// Check if a card is playable using snapshot.
     fn isCardPlayable(self: *const View, card_id: entity.ID) bool {
-        // Use snapshot if available (preferred path)
-        if (self.snapshot) |snap| {
-            return snap.isCardPlayable(card_id);
-        }
-        // Fallback to direct validation (for backwards compatibility)
-        const player = self.world.player;
-        const phase = self.turn_phase orelse return false;
-        const inst = self.world.card_registry.getConst(card_id) orelse return false;
-        return apply.validateCardSelection(player, inst, phase, self.world.encounter) catch false;
+        const snap = self.snapshot orelse return false;
+        return snap.isCardPlayable(card_id);
     }
 
     // Input handling - returns optional command and/or view state update
@@ -495,7 +467,12 @@ pub const View = struct {
         if (self.inPhase(.commit_phase)) {
             const play_zone = self.playerPlayZone(self.arena);
             if (play_zone.hitTestPlay(vs, vs.mouse)) |play_index| {
-                // Validate the attachment
+                // Check predicate match via pre-computed snapshot
+                const snapshot = self.snapshot orelse return .{ .vs = vs.withCombat(new_cs) };
+                if (!snapshot.canModifierAttachToPlay(drag.id, play_index))
+                    return .{ .vs = vs.withCombat(new_cs) };
+
+                // Check for conflicts (needs actual play)
                 const enc = self.world.encounter orelse return .{ .vs = vs.withCombat(new_cs) };
                 const enc_state = enc.stateForConst(self.world.player.id) orelse
                     return .{ .vs = vs.withCombat(new_cs) };
@@ -504,13 +481,6 @@ pub const View = struct {
                     return .{ .vs = vs.withCombat(new_cs) };
 
                 const play = &slots[play_index].play;
-
-                // Check predicate match
-                const can_attach = apply.canModifierAttachToPlay(card.template, play, self.world) catch false;
-                if (!can_attach)
-                    return .{ .vs = vs.withCombat(new_cs) };
-
-                // Check for conflicts
                 if (play.wouldConflict(card.template, &self.world.card_registry))
                     return .{ .vs = vs.withCombat(new_cs) };
 
@@ -619,14 +589,7 @@ pub const View = struct {
             return .{ .command = .{ .select_target = .{ .target_id = sprite.id } } };
         }
 
-        // END TURN / COMMIT DONE
-        if (self.end_turn_btn.hitTest(pos)) {
-            if (self.inPhase(.player_card_selection)) {
-                return .{ .command = .{ .end_turn = {} } };
-            } else if (in_commit) {
-                return .{ .command = .{ .commit_done = {} } };
-            }
-        }
+        // Note: End Turn button is now handled by chrome layer
 
         return .{};
     }
@@ -856,9 +819,7 @@ pub const View = struct {
         // Render hovered/dragged card last (on top)
         if (last) |item| try list.append(alloc, item);
 
-        if (self.end_turn_btn.renderable()) |btn| {
-            try list.append(alloc, btn);
-        }
+        // Note: End Turn button and status bars are now rendered by chrome layer
 
         switch (cs.hover) {
             .enemy => |_| {
@@ -880,10 +841,6 @@ pub const View = struct {
             },
             else => {},
         }
-        if (cs.hover != .none) {}
-
-        var sb = StatusBarView.init(self.world.player);
-        try sb.render(alloc, vs, &list);
 
         // TODO: engagement info / advantage bars
         // TODO: phase indicator

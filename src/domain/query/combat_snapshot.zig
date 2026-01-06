@@ -9,10 +9,17 @@ const std = @import("std");
 const lib = @import("infra");
 const entity = lib.entity;
 const combat = @import("../combat.zig");
+const cards = @import("../cards.zig");
 const validation = @import("../apply/validation.zig");
 const targeting = @import("../apply/targeting.zig");
 const World = @import("../world.zig").World;
 const Agent = combat.Agent;
+
+/// Key for modifier-to-play attachment lookup.
+const ModifierPlayKey = struct {
+    modifier_id: entity.ID,
+    play_index: usize,
+};
 
 /// Card playability status for UI display.
 pub const CardStatus = struct {
@@ -31,12 +38,16 @@ pub const PlayStatus = struct {
 pub const CombatSnapshot = struct {
     card_statuses: std.AutoHashMap(entity.ID, CardStatus),
     play_statuses: std.ArrayList(PlayStatus),
+    /// Maps (modifier_id, play_index) -> true for valid attachments.
+    /// Absence from map means attachment not allowed.
+    modifier_attachability: std.AutoHashMap(ModifierPlayKey, void),
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) !CombatSnapshot {
         return .{
             .card_statuses = std.AutoHashMap(entity.ID, CardStatus).init(allocator),
             .play_statuses = try std.ArrayList(PlayStatus).initCapacity(allocator, 8),
+            .modifier_attachability = std.AutoHashMap(ModifierPlayKey, void).init(allocator),
             .allocator = allocator,
         };
     }
@@ -44,6 +55,7 @@ pub const CombatSnapshot = struct {
     pub fn deinit(self: *CombatSnapshot) void {
         self.card_statuses.deinit();
         self.play_statuses.deinit(self.allocator);
+        self.modifier_attachability.deinit();
     }
 
     /// Query if a card is playable.
@@ -62,6 +74,12 @@ pub const CombatSnapshot = struct {
             }
         }
         return null;
+    }
+
+    /// Query if a modifier can attach to a play (predicate match only).
+    /// Does not check for conflicts - caller should also check play.wouldConflict().
+    pub fn canModifierAttachToPlay(self: *const CombatSnapshot, modifier_id: entity.ID, play_index: usize) bool {
+        return self.modifier_attachability.contains(.{ .modifier_id = modifier_id, .play_index = play_index });
     }
 };
 
@@ -85,6 +103,9 @@ pub fn buildSnapshot(allocator: std.mem.Allocator, world: *const World) !CombatS
     for (encounter.enemies.items) |enemy| {
         try resolvePlayTargets(&snapshot, allocator, enemy.id, encounter, world);
     }
+
+    // Compute which modifiers can attach to which plays
+    try computeModifierAttachability(&snapshot, player, encounter, world);
 
     return snapshot;
 }
@@ -161,6 +182,53 @@ fn resolvePlayTargets(
     }
 }
 
+/// Compute which modifiers can attach to which plays.
+/// Only considers player's modifiers and player's current plays.
+fn computeModifierAttachability(
+    snapshot: *CombatSnapshot,
+    player: *const Agent,
+    encounter: *const combat.Encounter,
+    world: *const World,
+) !void {
+    const player_state = encounter.stateForConst(player.id) orelse return;
+    const slots = player_state.current.slots();
+    if (slots.len == 0) return;
+
+    // Collect modifier card IDs from player's card sources
+    const cs = player.combat_state orelse return;
+
+    // Check hand cards
+    for (cs.hand.items) |card_id| {
+        try checkModifierAgainstPlays(snapshot, card_id, slots, world);
+    }
+
+    // Check always-available (some might be modifiers)
+    for (player.always_available.items) |card_id| {
+        try checkModifierAgainstPlays(snapshot, card_id, slots, world);
+    }
+}
+
+/// Check a single card against all plays, storing attachability if it's a modifier.
+fn checkModifierAgainstPlays(
+    snapshot: *CombatSnapshot,
+    card_id: entity.ID,
+    slots: []const combat.TimeSlot,
+    world: *const World,
+) !void {
+    const inst = world.card_registry.getConst(card_id) orelse return;
+    if (inst.template.kind != .modifier) return;
+
+    for (slots, 0..) |slot, play_index| {
+        const can_attach = targeting.canModifierAttachToPlay(inst.template, &slot.play, world) catch false;
+        if (can_attach) {
+            try snapshot.modifier_attachability.put(.{
+                .modifier_id = card_id,
+                .play_index = play_index,
+            }, {});
+        }
+    }
+}
+
 // Tests
 const testing = std.testing;
 
@@ -177,4 +245,12 @@ test "playTarget returns null for unknown play" {
     defer snapshot.deinit();
 
     try testing.expect(snapshot.playTarget(0) == null);
+}
+
+test "canModifierAttachToPlay returns false for unknown modifier" {
+    var snapshot = try CombatSnapshot.init(testing.allocator);
+    defer snapshot.deinit();
+
+    const fake_id = entity.ID{ .index = 0, .generation = 0 };
+    try testing.expect(!snapshot.canModifierAttachToPlay(fake_id, 0));
 }

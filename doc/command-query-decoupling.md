@@ -212,15 +212,18 @@ Option B is simpler; if perf becomes an issue, upgrade to A.
   - [x] `buildCardList()` → uses `self.isCardPlayable(id)` helper
   - [x] `isCardDraggable()` → uses `self.isCardPlayable(id)` helper
   - [x] `buildPlayViewData()` → uses `self.resolvePlayTarget()` helper
-  - [x] `handleDragging()` → kept as direct `apply.canModifierAttachToPlay` fallback
+  - [x] `handleDragging()` → uses `snapshot.canModifierAttachToPlay()`
 - [x] Added `snapshot` field to View, `initWithSnapshot()` constructor
 - [x] Coordinator builds snapshot in `render()` for combat view
+- [x] Pre-computed modifier attachability in snapshot
+- [x] Removed `apply` import from `view.zig`
 - [x] Build passes, tests pass
-
-**Note:** `apply` import kept in view.zig for `handleDragging` fallback (per plan: only runs during active drag).
-To fully remove, pre-compute modifier attachability in snapshot.
 
 ---
 
 With these pieces, the domain regains UI ignorance, and the presentation layer gets a stable, cacheable
 interface for both commands (through the application service) and queries (through combat snapshots).
+
+## Related
+
+- [Presentation-Domain Decoupling](presentation-domain-decoupling.md) - Expanding query layer to eliminate all domain type dependencies from presentation
