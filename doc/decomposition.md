@@ -314,3 +314,46 @@ resolution/
 - `resolution.zig` is now a thin re-export module
 - All existing imports continue to work (backward compatible)
 - Build and tests pass
+
+---
+
+### Step 2 Continued: Combat Module Decomposition (2026-01-06, COMPLETED)
+
+Extracted remaining combat types into focused modules:
+
+**New files created:**
+- `src/domain/combat/types.zig` - Director, Reach, AdvantageAxis, DrawStyle, CombatOutcome, TurnPhase, TurnEvent, TurnFSM
+- `src/domain/combat/armament.zig` - Armament union with hasCategory, getOffensiveMode
+- `src/domain/combat/advantage.zig` - AdvantageEffect (with apply method), TechniqueAdvantage
+- `src/domain/combat/plays.zig` - Play, TimeSlot, Timeline, TurnState, TurnHistory, AgentEncounterState, getPlayDuration, getPlayChannels
+- `src/domain/combat/engagement.zig` - Engagement, AgentPair
+- `src/domain/combat/agent.zig` - Agent, ConditionIterator
+- `src/domain/combat/encounter.zig` - Encounter
+
+**Updated:**
+- `src/domain/combat/mod.zig` - Re-exports all submodules
+- `src/domain/combat.zig` - Now a thin re-export from combat/mod.zig
+
+**Module structure:**
+```
+combat/
+├── types.zig       # Enums and FSM
+├── state.zig       # CombatState, CombatZone (from step 2 earlier)
+├── armament.zig    # Weapon configuration
+├── advantage.zig   # Advantage effects
+├── plays.zig       # Play, Timeline, TurnState
+├── engagement.zig  # Engagement, AgentPair
+├── agent.zig       # Agent, ConditionIterator
+├── encounter.zig   # Encounter
+└── mod.zig         # Re-exports
+```
+
+**Test fixes applied:**
+- Fixed incorrect API usage: `card_list.getTemplate(.swing)` → `card_list.byName("slash")`
+- Fixed incorrect API usage: `registry.register()` → `registry.create().id`
+- Fixed ChannelSet initialization: `var x = ChannelSet{}; x.set(.movement)` → `const x: ChannelSet = .{ .footwork = true }`
+- Fixed memory leak in agent.zig tests: `makeTestAgent` now returns `TestAgent` struct with proper cleanup
+- Fixed Timeline tests: now use actual registered cards instead of `testId()` for proper duration calculations
+- Fixed agent.zig test issues: `mobility_weight` → `can_stand`, `.turns` → `.ticks`
+
+**Build and tests pass.**
