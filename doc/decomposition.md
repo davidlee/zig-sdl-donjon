@@ -234,7 +234,12 @@ combat/mod.zig re-exports.
 - [x] Create `apply/mod.zig`
 - [x] Update `apply.zig` to re-export from `apply/mod.zig`
 - [x] Run tests, verify build
-- [ ] Update imports in tick.zig, resolution.zig as needed (future work)
+- [x] Create `src/domain/tick/` directory
+- [x] Extract `tick/committed_action.zig` with CommittedAction, ResolutionEntry, TickResult
+- [x] Extract `tick/resolver.zig` with TickResolver (depends on apply/targeting, not full apply)
+- [x] Create `tick/mod.zig`
+- [x] Update `tick.zig` to re-export from `tick/mod.zig`
+- [ ] Update imports in resolution.zig as needed (future work)
 
 ### Completed (2026-01-06)
 
@@ -250,5 +255,23 @@ Steps 1 & 2 of the decomposition are complete:
 **Key changes:**
 - `isPoolCardAvailable` moved from `CombatState` to `Agent` (cleaner ownership)
 - `combat.zig` and `apply.zig` now re-export from their respective submodules
+- All existing imports continue to work (backward compatible)
+- Build and tests pass
+
+---
+
+### Step 3 Completed (2026-01-06)
+
+Decoupled tick resolver from full apply module:
+
+**New files created:**
+- `src/domain/tick/committed_action.zig` - CommittedAction, ResolutionEntry, TickResult data types
+- `src/domain/tick/resolver.zig` - TickResolver with narrow dependency on apply/targeting
+- `src/domain/tick/mod.zig` - Tick module re-exports
+
+**Key changes:**
+- `TickResolver` now imports `apply/targeting.zig` directly instead of full `apply.zig`
+- Data types (CommittedAction, ResolutionEntry, TickResult) extracted to separate file
+- `tick.zig` is now a thin re-export module
 - All existing imports continue to work (backward compatible)
 - Build and tests pass
