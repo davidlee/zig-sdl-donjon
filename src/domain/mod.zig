@@ -2,7 +2,6 @@
 ///
 /// Provides convenient accessors for domain subsystems. Individual files can
 /// still be imported directly when finer-grained control is needed.
-
 pub const world = @import("world.zig");
 pub const events = @import("events.zig");
 pub const apply = @import("apply.zig");

@@ -208,3 +208,215 @@ pub fn getOverlayBonuses(
 
     return result;
 }
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+const testing = std.testing;
+const ai = @import("../ai.zig");
+const stats = @import("../stats.zig");
+const body = @import("../body.zig");
+const slot_map = @import("../slot_map.zig");
+const card_list = @import("../card_list.zig");
+
+fn makeTestWorld(alloc: std.mem.Allocator) !*World {
+    return World.init(alloc);
+}
+
+fn makeTestAgent(
+    alloc: std.mem.Allocator,
+    agents: *slot_map.SlotMap(*Agent),
+    director: combat.Director,
+) !*Agent {
+    const agent_stats = stats.Block.splat(5);
+    const agent_body = try body.Body.fromPlan(alloc, &body.HumanoidPlan);
+
+    return Agent.init(
+        alloc,
+        agents,
+        director,
+        .shuffled_deck,
+        agent_stats,
+        agent_body,
+        stats.Resource.init(10.0, 10.0, 2.0),
+        stats.Resource.init(3.0, 5.0, 3.0),
+        undefined,
+    );
+}
+
+fn findCardByName(w: *World, name: []const u8) ?entity.ID {
+    for (w.player.always_available.items) |card_id| {
+        const card = w.card_registry.getConst(card_id) orelse continue;
+        if (std.mem.eql(u8, card.template.name, name)) {
+            return card_id;
+        }
+    }
+    return null;
+}
+
+test "getOverlayBonuses returns empty for agent with no timeline plays" {
+    const alloc = testing.allocator;
+
+    var w = try makeTestWorld(alloc);
+    defer w.deinit();
+
+    // Player has no plays in timeline
+    const result = getOverlayBonuses(w, w.player.id, 0.0, 1.0, true);
+
+    try testing.expectEqual(@as(f32, 0), result.to_hit_bonus);
+    try testing.expectEqual(@as(f32, 1.0), result.damage_mult);
+    try testing.expectEqual(@as(f32, 0), result.defense_bonus);
+}
+
+test "getOverlayBonuses aggregates advance damage bonus" {
+    const alloc = testing.allocator;
+
+    var w = try makeTestWorld(alloc);
+    defer w.deinit();
+
+    // Find advance card in player's always_available pool
+    const advance_id = findCardByName(w, "advance") orelse return error.TestSkipped;
+
+    // Get player's encounter state and add play to timeline
+    const enc = w.encounter orelse return error.TestSkipped;
+    const enc_state = enc.stateFor(w.player.id) orelse return error.TestSkipped;
+
+    // Add advance play (footwork channel, 0.3s duration)
+    try enc_state.current.addPlay(
+        .{ .action = advance_id, .target = null },
+        &w.card_registry,
+    );
+
+    // Query overlay bonuses for offensive technique overlapping with advance
+    const result = getOverlayBonuses(w, w.player.id, 0.0, 0.5, true);
+
+    // Advance gives +10% damage (damage_mult = 1.10)
+    try testing.expectApproxEqAbs(@as(f32, 1.10), result.damage_mult, 0.001);
+    try testing.expectEqual(@as(f32, 0), result.to_hit_bonus);
+}
+
+test "getOverlayBonuses aggregates sidestep to_hit bonus" {
+    const alloc = testing.allocator;
+
+    var w = try makeTestWorld(alloc);
+    defer w.deinit();
+
+    const sidestep_id = findCardByName(w, "sidestep") orelse return error.TestSkipped;
+
+    const enc = w.encounter orelse return error.TestSkipped;
+    const enc_state = enc.stateFor(w.player.id) orelse return error.TestSkipped;
+
+    try enc_state.current.addPlay(
+        .{ .action = sidestep_id, .target = null },
+        &w.card_registry,
+    );
+
+    const result = getOverlayBonuses(w, w.player.id, 0.0, 0.5, true);
+
+    // Sidestep gives +5% to_hit (to_hit_bonus = 0.05)
+    try testing.expectApproxEqAbs(@as(f32, 0.05), result.to_hit_bonus, 0.001);
+}
+
+test "getOverlayBonuses aggregates retreat defense bonus" {
+    const alloc = testing.allocator;
+
+    var w = try makeTestWorld(alloc);
+    defer w.deinit();
+
+    const retreat_id = findCardByName(w, "retreat") orelse return error.TestSkipped;
+
+    const enc = w.encounter orelse return error.TestSkipped;
+    const enc_state = enc.stateFor(w.player.id) orelse return error.TestSkipped;
+
+    try enc_state.current.addPlay(
+        .{ .action = retreat_id, .target = null },
+        &w.card_registry,
+    );
+
+    // Query for defensive overlay
+    const result = getOverlayBonuses(w, w.player.id, 0.0, 0.5, false);
+
+    // Retreat gives +0.10 defense bonus
+    try testing.expectApproxEqAbs(@as(f32, 0.10), result.defense_bonus, 0.001);
+}
+
+test "getOverlayBonuses aggregates multiple overlapping manoeuvres" {
+    const alloc = testing.allocator;
+
+    var w = try makeTestWorld(alloc);
+    defer w.deinit();
+
+    const advance_id = findCardByName(w, "advance") orelse return error.TestSkipped;
+    const sidestep_id = findCardByName(w, "sidestep") orelse return error.TestSkipped;
+
+    const enc = w.encounter orelse return error.TestSkipped;
+    const enc_state = enc.stateFor(w.player.id) orelse return error.TestSkipped;
+
+    // Add both manoeuvres (they use same footwork channel, so second goes after first)
+    try enc_state.current.addPlay(
+        .{ .action = advance_id, .target = null },
+        &w.card_registry,
+    );
+    // Note: advance takes 0.3s, sidestep would start at 0.3 due to channel conflict
+    // For this test, we'll check over the full timeline
+    try enc_state.current.addPlay(
+        .{ .action = sidestep_id, .target = null },
+        &w.card_registry,
+    );
+
+    // Query over time window that covers both manoeuvres (0.0 to 1.0)
+    const result = getOverlayBonuses(w, w.player.id, 0.0, 1.0, true);
+
+    // Both advance (+10% damage) and sidestep (+5% to_hit) should apply
+    try testing.expectApproxEqAbs(@as(f32, 1.10), result.damage_mult, 0.001);
+    try testing.expectApproxEqAbs(@as(f32, 0.05), result.to_hit_bonus, 0.001);
+}
+
+test "CombatModifiers.forDefender applies stationary penalty" {
+    const alloc = testing.allocator;
+
+    var w = try makeTestWorld(alloc);
+    defer w.deinit();
+
+    const defender = try makeTestAgent(alloc, w.entities.agents, ai.noop());
+    // Add to encounter so cleanup happens
+    try w.encounter.?.addEnemy(defender);
+
+    // Create defense context with is_stationary = true
+    const defense = DefenseContext{
+        .defender = defender,
+        .technique = null,
+        .weapon_template = &@import("../weapon_list.zig").knights_sword,
+        .is_stationary = true,
+    };
+
+    const mods = CombatModifiers.forDefender(defense);
+
+    // Stationary penalty: -10% dodge (easier to hit)
+    try testing.expectApproxEqAbs(@as(f32, -0.10), mods.dodge_mod, 0.001);
+}
+
+test "CombatModifiers.forDefender no penalty when not stationary" {
+    const alloc = testing.allocator;
+
+    var w = try makeTestWorld(alloc);
+    defer w.deinit();
+
+    const defender = try makeTestAgent(alloc, w.entities.agents, ai.noop());
+    // Add to encounter so cleanup happens
+    try w.encounter.?.addEnemy(defender);
+
+    // Create defense context with is_stationary = false
+    const defense = DefenseContext{
+        .defender = defender,
+        .technique = null,
+        .weapon_template = &@import("../weapon_list.zig").knights_sword,
+        .is_stationary = false,
+    };
+
+    const mods = CombatModifiers.forDefender(defense);
+
+    // No stationary penalty
+    try testing.expectEqual(@as(f32, 0), mods.dodge_mod);
+}

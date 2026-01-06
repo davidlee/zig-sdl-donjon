@@ -98,3 +98,31 @@ pub fn adjustRange(current: combat.Reach, steps: i8) combat.Reach {
 
     return @enumFromInt(@as(u4, @intCast(clamped)));
 }
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+const testing = @import("std").testing;
+
+test "adjustRange advances toward clinch" {
+    try testing.expectEqual(combat.Reach.near, adjustRange(.medium, -1));
+    try testing.expectEqual(combat.Reach.spear, adjustRange(.near, -1));
+    try testing.expectEqual(combat.Reach.clinch, adjustRange(.clinch, -1)); // clamped
+}
+
+test "adjustRange retreats toward far" {
+    try testing.expectEqual(combat.Reach.medium, adjustRange(.near, 1));
+    try testing.expectEqual(combat.Reach.far, adjustRange(.medium, 1));
+    try testing.expectEqual(combat.Reach.far, adjustRange(.far, 1)); // clamped
+}
+
+test "adjustRange clamps at clinch boundary" {
+    try testing.expectEqual(combat.Reach.clinch, adjustRange(.clinch, -5));
+    try testing.expectEqual(combat.Reach.clinch, adjustRange(.near, -10));
+}
+
+test "adjustRange clamps at far boundary" {
+    try testing.expectEqual(combat.Reach.far, adjustRange(.far, 5));
+    try testing.expectEqual(combat.Reach.far, adjustRange(.medium, 10));
+}

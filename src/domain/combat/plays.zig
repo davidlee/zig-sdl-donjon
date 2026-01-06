@@ -961,3 +961,43 @@ test "TimeSlot.overlapsWith exact same range overlaps" {
     // Same range should overlap
     try testing.expect(slot.overlapsWith(0.0, duration, &registry));
 }
+
+test "hasFootworkInTimeline returns false when empty" {
+    var registry = try world.CardRegistry.init(testing.allocator);
+    defer registry.deinit();
+
+    var timeline = Timeline{};
+    try testing.expect(!hasFootworkInTimeline(&timeline, &registry));
+}
+
+test "hasFootworkInTimeline returns true when footwork card present" {
+    const card_list = @import("../card_list.zig");
+    var registry = try world.CardRegistry.init(testing.allocator);
+    defer registry.deinit();
+
+    // Create a footwork card (advance uses footwork channel)
+    const advance = card_list.byName("advance");
+    const advance_instance = try registry.create(advance);
+
+    var timeline = Timeline{};
+    const channels = cards.ChannelSet{ .footwork = true };
+    try timeline.insert(0.0, 0.3, .{ .action = advance_instance.id }, channels, &registry);
+
+    try testing.expect(hasFootworkInTimeline(&timeline, &registry));
+}
+
+test "hasFootworkInTimeline returns false when only weapon card present" {
+    const card_list = @import("../card_list.zig");
+    var registry = try world.CardRegistry.init(testing.allocator);
+    defer registry.deinit();
+
+    // Create a weapon card (thrust uses weapon channel)
+    const thrust = card_list.byName("thrust");
+    const thrust_instance = try registry.create(thrust);
+
+    var timeline = Timeline{};
+    const channels = cards.ChannelSet{ .weapon = true };
+    try timeline.insert(0.0, 0.5, .{ .action = thrust_instance.id }, channels, &registry);
+
+    try testing.expect(!hasFootworkInTimeline(&timeline, &registry));
+}

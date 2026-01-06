@@ -3,7 +3,6 @@
 /// Groups the committed action data structures with the TickResolver that
 /// executes them. TickResolver only depends on apply/targeting, not the full
 /// command stack, so it can be reused in simulations.
-
 pub const committed_action = @import("committed_action.zig");
 pub const resolver = @import("resolver.zig");
 

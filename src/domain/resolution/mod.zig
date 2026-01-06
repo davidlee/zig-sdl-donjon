@@ -3,7 +3,6 @@
 /// Aggregates submodules for combat contexts, advantage, damage packets,
 /// height targeting, and final outcome resolution. See doc/decomposition.md
 /// for a high-level diagram.
-
 pub const context = @import("context.zig");
 pub const advantage = @import("advantage.zig");
 pub const damage = @import("damage.zig");
