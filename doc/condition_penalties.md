@@ -226,13 +226,31 @@ fn traumaFromWound(wound: Wound, hit_artery: bool) f32 {
 
 ## Open Questions
 
-1. **Attack mode sensitivity**: Some conditions affect thrust more than swing (blinded). Handle via separate fields or attack-mode multipliers on the penalty?
+1. **Attack mode sensitivity**: `blinded` affects thrust more than swing (-30% vs -20% vs -45% ranged). Options:
+   - Separate fields: `hit_thrust`, `hit_swing`, `hit_ranged`
+   - Modifier function that takes attack context
+   - Keep as special case outside table
 
-2. **Context-dependent penalties**: Winded hurts power attacks more. Embed this in the penalty table or keep some switch logic?
+2. **Context-dependent penalties**: `winded` only hurts committed/reckless stakes. Options:
+   - Separate fields: `damage_mult_power` for power attacks
+   - Keep as special case outside table
 
 3. **Stacking limits**: Should multiplicative penalties have a floor (e.g., never below 0.1x)?
 
-4. **Flanking/surrounded**: Currently special-cased in `forDefender`. Move to computed conditions with penalties?
+4. **Flanking/surrounded**: Currently computed from positioning state, not yielded by ConditionIterator. Options:
+   - Move to computed conditions (phases in ConditionIterator)
+   - Keep as separate combat state check
+
+5. **Stationary**: Same as flanking - computed from timeline, not condition iterator.
+
+## Implementation Notes
+
+**Phase 1** (current): Implement table for simple conditions only. Skip:
+- `blinded` (attack-mode dependent)
+- `winded` (stakes dependent)
+- `stationary`, `flanked`, `surrounded` (computed from combat state, not conditions)
+
+These remain as special cases in `forAttacker`/`forDefender` until modelling questions resolved.
 
 ## Related
 

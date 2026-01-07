@@ -7,6 +7,7 @@ const lib = @import("infra");
 const entity = lib.entity;
 const combat = @import("../combat.zig");
 const cards = @import("../cards.zig");
+const damage = @import("../damage.zig");
 const weapon = @import("../weapon.zig");
 const world = @import("../world.zig");
 
@@ -72,9 +73,11 @@ pub const CombatModifiers = struct {
     /// Compute modifiers for an attacker based on their conditions and attack context
     pub fn forAttacker(attack: AttackContext) CombatModifiers {
         var mods = CombatModifiers{};
+        var penalties = damage.CombatPenalties{};
 
         var iter = attack.attacker.activeConditions(attack.engagement);
         while (iter.next()) |cond| {
+            // Context-dependent conditions handled specially
             switch (cond.condition) {
                 .blinded => {
                     // Precision matters more when you can't see
@@ -85,34 +88,22 @@ pub const CombatModifiers = struct {
                         .none => -0.15, // defensive/other
                     };
                 },
-                .stunned => {
-                    mods.hit_chance -= 0.20;
-                    mods.damage_mult *= 0.7;
-                },
-                .prone => {
-                    mods.hit_chance -= 0.15;
-                    mods.damage_mult *= 0.8;
-                },
                 .winded => {
                     // Power attacks suffer more
                     if (attack.stakes == .committed or attack.stakes == .reckless) {
                         mods.damage_mult *= 0.85;
                     }
                 },
-                .confused => {
-                    mods.hit_chance -= 0.15;
+                else => {
+                    // Table lookup for simple conditions
+                    penalties = penalties.combine(damage.penaltiesFor(cond.condition));
                 },
-                .shaken, .fearful => {
-                    mods.hit_chance -= 0.10;
-                    mods.damage_mult *= 0.9;
-                },
-                .unbalanced => {
-                    // Poor balance affects accuracy
-                    mods.hit_chance -= 0.10;
-                },
-                else => {},
             }
         }
+
+        // Apply table-derived penalties
+        mods.hit_chance += penalties.hit_chance;
+        mods.damage_mult *= penalties.damage_mult;
 
         // Apply attention penalty for attacking non-primary target
         mods.hit_chance -= attack.attention_penalty;
@@ -123,8 +114,9 @@ pub const CombatModifiers = struct {
     /// Compute modifiers for a defender based on their conditions and defense context
     pub fn forDefender(defense: DefenseContext) CombatModifiers {
         var mods = CombatModifiers{};
+        var penalties = damage.CombatPenalties{};
 
-        // Apply computed combat state modifiers
+        // Combat state modifiers (computed from positioning, not conditions)
         if (defense.computed.is_stationary) {
             // Stationary defender is easier to hit (+10% for attacker)
             mods.dodge_mod -= 0.10;
@@ -145,47 +137,23 @@ pub const CombatModifiers = struct {
 
         var iter = defense.defender.activeConditions(defense.engagement);
         while (iter.next()) |cond| {
+            // Context-dependent conditions handled specially
             switch (cond.condition) {
                 .blinded => {
-                    // Can't see attacks coming
+                    // Can't see attacks coming (not attack-mode dependent on defense)
                     mods.defense_mult *= 0.6;
                     mods.dodge_mod -= 0.20;
                 },
-                .stunned => {
-                    mods.defense_mult *= 0.3;
-                    mods.dodge_mod -= 0.30;
+                else => {
+                    // Table lookup for simple conditions
+                    penalties = penalties.combine(damage.penaltiesFor(cond.condition));
                 },
-                .prone => {
-                    mods.dodge_mod -= 0.25;
-                    // But might be harder to hit high
-                },
-                .paralysed => {
-                    mods.defense_mult *= 0.0; // can't actively defend
-                    mods.dodge_mod -= 0.40;
-                },
-                .surprised => {
-                    mods.defense_mult *= 0.5;
-                    mods.dodge_mod -= 0.20;
-                },
-                .unconscious, .comatose => {
-                    mods.defense_mult *= 0.0;
-                    mods.dodge_mod -= 0.50;
-                },
-                .pressured => {
-                    // Under pressure, harder to defend effectively
-                    mods.defense_mult *= 0.85;
-                },
-                .weapon_bound => {
-                    // Weapon tied up, active defense compromised
-                    mods.defense_mult *= 0.7;
-                },
-                .unbalanced => {
-                    // Poor balance makes dodging harder
-                    mods.dodge_mod -= 0.15;
-                },
-                else => {},
             }
         }
+
+        // Apply table-derived penalties
+        mods.defense_mult *= penalties.defense_mult;
+        mods.dodge_mod += penalties.dodge_mod;
 
         return mods;
     }
