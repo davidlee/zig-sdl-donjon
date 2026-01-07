@@ -48,6 +48,7 @@ pub const LogPane = struct {
 pub const Card = struct {
     model: @import("card/model.zig").Model,
     dst: Rect, // where to draw (position + size)
+    rotation: f32 = 0, // degrees, positive = clockwise
 };
 
 pub const Sprite = struct {

@@ -214,6 +214,13 @@ const CarouselView = struct {
     const influence_radius_x: f32 = 100; // horizontal influence for spreading
     const influence_radius_y: f32 = 150; // vertical influence for raising
     const expand_ratio: f32 = 2.5; // how much the hovered gap expands relative to base
+    const max_rotation: f32 = 15; // max degrees to tilt at edges
+
+    /// Internal: card position + rotation for layout calculations
+    const CardPlacement = struct {
+        rect: Rect,
+        rotation: f32,
+    };
 
     fn init(hand: []const CardViewData, known: []const CardViewData) CarouselView {
         return .{ .hand_cards = hand, .known_cards = known };
@@ -265,15 +272,18 @@ const CarouselView = struct {
         return Rect{ .x = centre.x - card_w / 2, .y = centre.y - card_h / 2, .w = card_w, .h = card_h };
     }
 
-    /// Calculate all card rects with anchored spread algorithm
-    /// Outer cards stay fixed, spacing redistributes based on mouse proximity
-    fn cardRects(self: CarouselView, mouse_x: f32, mouse_y: f32, alloc: std.mem.Allocator) []Rect {
+    /// Calculate all card placements with anchored spread algorithm.
+    /// Outer cards stay fixed, spacing redistributes based on mouse proximity.
+    /// Returns rect + rotation for each card.
+    fn cardPlacements(self: CarouselView, mouse_x: f32, mouse_y: f32, alloc: std.mem.Allocator) []CardPlacement {
         const n = self.totalCards();
         if (n == 0) return &.{};
 
-        const rects = alloc.alloc(Rect, n) catch return &.{};
+        const placements = alloc.alloc(CardPlacement, n) catch return &.{};
         const points = alloc.alloc(Point, n) catch return &.{};
         defer alloc.free(points);
+        const weights = alloc.alloc(f32, n) catch return &.{};
+        defer alloc.free(weights);
 
         // Fixed total width - outer cards anchored
         const total_width = self.baseWidth();
@@ -290,7 +300,7 @@ const CarouselView = struct {
         const max_displacement: f32 = 120;
 
         // Virtual margin - cards occupy [margin, 1-margin] so edges still move a bit
-        const margin: f32 = 0.10;
+        const margin: f32 = 0.15;
 
         for (0..n) |i| {
             // Normalized position for placement: t_raw ∈ [0, 1]
@@ -321,6 +331,7 @@ const CarouselView = struct {
             const raise = max_raise * x_inf * y_inf;
 
             points[i] = Point{ .x = card_x, .y = base_y - raise };
+            weights[i] = weight;
         }
         // points[0] = first;
         // points[n] = last;
@@ -341,7 +352,10 @@ const CarouselView = struct {
         // }
 
         for (0..n) |i| {
-            rects[i] = cardRectFromCentre(points[i]);
+            placements[i] = .{
+                .rect = cardRectFromCentre(points[i]),
+                .rotation = weights[i] * max_rotation,
+            };
         }
 
         // // Calculate gap weights based on mouse proximity
@@ -410,7 +424,7 @@ const CarouselView = struct {
         //     }
         // }
 
-        return rects;
+        return placements;
     }
 
     /// Hit test returns HitResult at given point
@@ -418,8 +432,8 @@ const CarouselView = struct {
         const n = self.totalCards();
         if (n == 0) return null;
 
-        const rects = self.cardRects(vs.mouse_vp.x, vs.mouse_vp.y, alloc);
-        if (rects.len == 0) return null;
+        const placements = self.cardPlacements(vs.mouse_vp.x, vs.mouse_vp.y, alloc);
+        if (placements.len == 0) return null;
 
         // Reverse order so topmost (rightmost, last rendered) card is hit first
         var i = n;
@@ -429,7 +443,7 @@ const CarouselView = struct {
             const ui = vs.combat orelse CombatUIState{};
 
             // Get rect with drag/hover adjustments
-            const rect = self.adjustedRect(rects[i], card_info.card.id, vs, ui);
+            const rect = self.adjustedRect(placements[i].rect, card_info.card.id, vs, ui);
 
             if (rect.pointIn(pt)) {
                 return .{ .card = .{ .id = card_info.card.id, .zone = card_info.zone, .rect = rect } };
@@ -494,8 +508,8 @@ const CarouselView = struct {
         if (n == 0) return;
 
         const ui = vs.combat orelse CombatUIState{};
-        const rects = self.cardRects(vs.mouse_vp.x, vs.mouse_vp.y, alloc);
-        if (rects.len == 0) return;
+        const placements = self.cardPlacements(vs.mouse_vp.x, vs.mouse_vp.y, alloc);
+        if (placements.len == 0) return;
 
         for (0..n) |i| {
             const card_info = self.cardAt(i);
@@ -504,7 +518,8 @@ const CarouselView = struct {
             // Skip cards that are being animated
             if (ui.isAnimating(card.id)) continue;
 
-            const rect = self.adjustedRect(rects[i], card.id, vs, ui);
+            const placement = placements[i];
+            const rect = self.adjustedRect(placement.rect, card.id, vs, ui);
             const state = cardInteractionState(card.id, ui);
             const card_vm = CardViewModel.fromTemplate(card.id, card.template, .{
                 .target = state == .target,
@@ -512,7 +527,11 @@ const CarouselView = struct {
                 .disabled = !card.playable,
                 .highlighted = state == .hover,
             });
-            const item: Renderable = .{ .card = .{ .model = card_vm, .dst = rect } };
+            const item: Renderable = .{ .card = .{
+                .model = card_vm,
+                .dst = rect,
+                .rotation = placement.rotation,
+            } };
 
             if (state == .normal or state == .target) {
                 try list.append(alloc, item);

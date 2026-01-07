@@ -259,7 +259,14 @@ pub const UX = struct {
         const tex_w, const tex_h = try tex.getSize();
 
         const src = rect.FRect{ .x = 0, .y = 0, .w = tex_w, .h = tex_h };
-        try self.renderer.renderTexture(tex, src, card.dst);
+        try self.renderer.renderTextureRotated(
+            tex,
+            src,
+            card.dst,
+            @floatCast(card.rotation),
+            null, // rotate around center
+            .{}, // no flip
+        );
     }
 
     fn renderSprite(self: *UX, sprite: view.Sprite) !void {
