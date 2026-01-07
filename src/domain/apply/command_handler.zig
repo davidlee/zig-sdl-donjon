@@ -227,10 +227,6 @@ pub const CommandHandler = struct {
             return CommandError.InvalidGameState;
 
         if (try validation.validateCardSelection(player, card, turn_phase, self.world.encounter)) {
-            // Check channel conflicts with existing plays
-            if (validation.wouldConflictWithTimeline(card, &enc_state.current.timeline, &self.world.card_registry))
-                return validation.ValidationError.ChannelConflict;
-
             const play_result = try playValidCardReservingCosts(&self.world.events, player, card, &self.world.card_registry, target);
 
             try enc_state.current.addPlay(.{
@@ -309,10 +305,6 @@ pub const CommandHandler = struct {
         // Validate: card selection rules (phase, costs, predicates)
         if (!try validation.validateCardSelection(player, card, .commit_phase, self.world.encounter))
             return CommandError.PredicateFailed;
-
-        // Validate: channel conflicts with existing plays
-        if (validation.wouldConflictWithTimeline(card, &enc_state.current.timeline, &self.world.card_registry))
-            return validation.ValidationError.ChannelConflict;
 
         // Validate: sufficient focus
         if (player.focus.available < FOCUS_COST)

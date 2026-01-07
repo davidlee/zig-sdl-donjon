@@ -193,24 +193,6 @@ fn getCardChannels(template: *const cards.Template) cards.ChannelSet {
     return .{};
 }
 
-/// Check if playing a new card would conflict with existing plays in timeline.
-/// Returns true if channels overlap.
-pub fn wouldConflictWithTimeline(
-    new_card: *const Instance,
-    timeline: *const combat.Timeline,
-    registry: *const w.CardRegistry,
-) bool {
-    const new_channels = getCardChannels(new_card.template);
-    if (new_channels.isEmpty()) return false;
-
-    for (timeline.slots()) |*slot| {
-        const play_card = registry.getConst(slot.play.action) orelse continue;
-        const existing_channels = getCardChannels(play_card.template);
-        if (new_channels.conflicts(existing_channels)) return true;
-    }
-    return false;
-}
-
 // ============================================================================
 // Predicate Evaluation
 // ============================================================================
