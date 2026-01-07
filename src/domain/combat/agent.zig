@@ -293,7 +293,7 @@ pub const ConditionIterator = struct {
     agent: *const Agent,
     engagement: ?*const Engagement,
     stored_index: usize = 0,
-    computed_phase: u3 = 0,
+    computed_phase: u4 = 0,
 
     const Expiration = damage.ActiveCondition.Expiration;
 
@@ -312,7 +312,7 @@ pub const ConditionIterator = struct {
         // Phase 2: yield computed conditions
         // Physiology conditions (no engagement needed)
         // Blood loss conditions checked worst-first
-        while (self.computed_phase < 6) {
+        while (self.computed_phase < 8) {
             const phase = self.computed_phase;
             self.computed_phase += 1;
 
@@ -340,13 +340,20 @@ pub const ConditionIterator = struct {
                         return .{ .condition = .lightheaded, .expiration = .dynamic };
                     }
                 },
+                // Physiology: sensory impairment
+                4 => if (self.agent.body.visionScore() < 0.3) {
+                    return .{ .condition = .blinded, .expiration = .dynamic };
+                },
+                5 => if (self.agent.body.hearingScore() < 0.3) {
+                    return .{ .condition = .deafened, .expiration = .dynamic };
+                },
                 // Combat: engagement-dependent
-                4 => if (self.engagement) |eng| {
+                6 => if (self.engagement) |eng| {
                     if (eng.pressure > 0.8) {
                         return .{ .condition = .pressured, .expiration = .dynamic };
                     }
                 },
-                5 => if (self.engagement) |eng| {
+                7 => if (self.engagement) |eng| {
                     if (eng.control > 0.8) {
                         return .{ .condition = .weapon_bound, .expiration = .dynamic };
                     }
@@ -417,6 +424,68 @@ test "ConditionIterator computed condition thresholds" {
     // Test control threshold: > 0.8 = weapon_bound
     try testing.expect(0.85 > 0.8); // would trigger weapon_bound
     try testing.expect(!(0.8 > 0.8)); // boundary: not triggered
+
+    // Test sensory thresholds: < 0.3 = blinded/deafened
+    try testing.expect(0.1 < 0.3); // would trigger blinded/deafened
+    try testing.expect(0.29 < 0.3); // just under: triggered
+    try testing.expect(!(0.3 < 0.3)); // boundary: not triggered
+    try testing.expect(!(0.5 < 0.3)); // normal: not triggered
+}
+
+test "ConditionIterator yields blinded when eyes damaged" {
+    var agents = try SlotMap(*Agent).init(testing.allocator);
+    defer agents.deinit();
+
+    const test_agent = try makeTestAgent(testing.allocator, &agents);
+    defer test_agent.destroy(&agents);
+
+    // Damage both eyes to .broken (0.1 integrity, well below 0.3 threshold)
+    const left_eye = test_agent.agent.body.indexOf("left_eye").?;
+    const right_eye = test_agent.agent.body.indexOf("right_eye").?;
+    test_agent.agent.body.parts.items[left_eye].severity = .broken;
+    test_agent.agent.body.parts.items[right_eye].severity = .broken;
+
+    // Verify vision score is below threshold
+    try testing.expect(test_agent.agent.body.visionScore() < 0.3);
+
+    // Check that .blinded is yielded
+    var found_blinded = false;
+    var iter = test_agent.agent.activeConditions(null);
+    while (iter.next()) |cond| {
+        if (cond.condition == .blinded) {
+            found_blinded = true;
+            break;
+        }
+    }
+    try testing.expect(found_blinded);
+}
+
+test "ConditionIterator yields deafened when ears damaged" {
+    var agents = try SlotMap(*Agent).init(testing.allocator);
+    defer agents.deinit();
+
+    const test_agent = try makeTestAgent(testing.allocator, &agents);
+    defer test_agent.destroy(&agents);
+
+    // Damage both ears to .broken (0.1 integrity, well below 0.3 threshold)
+    const left_ear = test_agent.agent.body.indexOf("left_ear").?;
+    const right_ear = test_agent.agent.body.indexOf("right_ear").?;
+    test_agent.agent.body.parts.items[left_ear].severity = .broken;
+    test_agent.agent.body.parts.items[right_ear].severity = .broken;
+
+    // Verify hearing score is below threshold
+    try testing.expect(test_agent.agent.body.hearingScore() < 0.3);
+
+    // Check that .deafened is yielded
+    var found_deafened = false;
+    var iter = test_agent.agent.activeConditions(null);
+    while (iter.next()) |cond| {
+        if (cond.condition == .deafened) {
+            found_deafened = true;
+            break;
+        }
+    }
+    try testing.expect(found_deafened);
 }
 
 test "isIncapacitated false for healthy agent" {

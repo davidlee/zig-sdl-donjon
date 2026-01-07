@@ -18,6 +18,22 @@
 - `footworkMultForAgent()` test deferred: private helper, penalty table/combine tested in damage.zig
 - Sensory score tests use `.broken` severity (0.1 integrity) to reliably trigger < 0.3 threshold
 
+### Increment 2 Progress: ✓ Complete
+
+**DONE:**
+- `agent.zig`: Extended `ConditionIterator` with phases 4-5 for sensory conditions
+  - Phase 4: `.blinded` when `body.visionScore() < 0.3`
+  - Phase 5: `.deafened` when `body.hearingScore() < 0.3`
+  - Shifted engagement phases to 6-7
+  - Changed `computed_phase` from `u3` to `u4` to accommodate 8 phases
+- `damage.zig`: Added `.deafened` penalty (`defense_mult = 0.9`)
+- `agent.zig`: Added tests for computed sensory conditions (~line 435-489)
+- Build passes, all tests pass
+
+**Notes:**
+- `.blinded` retains special-case handling in `forAttacker()` for attack-mode-specific penalties
+- Sensory thresholds (< 0.3) match design doc specification
+
 ---
 
 ## Current State Summary

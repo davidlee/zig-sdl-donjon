@@ -200,6 +200,12 @@ pub const condition_penalties = init: {
         .footwork_mult = 0.5,
     };
 
+    // Sensory impairment
+    // Note: .blinded has special-case handling in forAttacker() based on attack mode
+    table[@intFromEnum(Condition.deafened)] = .{
+        .defense_mult = 0.9, // can't hear opponent's footwork
+    };
+
     break :init table;
 };
 
