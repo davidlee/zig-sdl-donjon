@@ -98,11 +98,8 @@ pub fn validateCardSelection(
     // check rule.valid predicates (weapon requirements, range, etc.)
     if (!rulePredicatesSatisfied(template, actor, encounter)) return ValidationError.PredicateFailed;
 
-    // Melee cards require weapon reach to at least one enemy
-    if (template.tags.melee) {
-        const enc = encounter orelse return ValidationError.OutOfRange;
-        if (!validateMeleeReach(template, actor, enc)) return ValidationError.OutOfRange;
-    }
+    // NOTE: Melee range is NOT checked here - it's a targeting constraint evaluated at resolution.
+    // This allows queuing attacks after movement cards (advance→attack).
 
     return true;
 }

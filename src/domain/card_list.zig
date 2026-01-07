@@ -332,7 +332,7 @@ const t_thrust = Template{
         .expressions = &.{.{
             .effect = .{ .combat_technique = Technique.byID(.thrust) },
             .filter = null,
-            .target = .all_enemies,
+            .target = .single,
         }},
     }},
 };
@@ -352,7 +352,7 @@ const t_slash = Template{
         .expressions = &.{.{
             .effect = .{ .combat_technique = Technique.byID(.swing) },
             .filter = null,
-            .target = .all_enemies,
+            .target = .single,
         }},
     }},
 };
@@ -372,7 +372,7 @@ const t_shield_block = Template{
         .expressions = &.{.{
             .effect = .{ .combat_technique = Technique.byID(.block) },
             .filter = null,
-            .target = .self,
+            .target = .self, // single?
         }},
     }},
 };
@@ -397,7 +397,7 @@ const t_riposte = Template{
                 .op = .gte,
                 .value = 0.6,
             } },
-            .target = .all_enemies,
+            .target = .single,
         }},
     }},
 };
@@ -617,7 +617,7 @@ const t_pivot = Template{
                 .target = .self,
             },
             .{
-                .effect = .set_primary_target,
+                .effect = .set_primary_target, // choose a new target
                 .filter = null,
                 .target = .single,
             },

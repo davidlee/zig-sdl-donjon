@@ -191,7 +191,68 @@ pub fn resolvePlayTargetIDs(
     };
 
     // Resolve targets based on query (pass play.target for .single)
-    return evaluateTargetIDsConst(alloc, target_query, actor, world, play.target);
+    const target_ids = try evaluateTargetIDsConst(alloc, target_query, actor, world, play.target) orelse return null;
+
+    // For melee attacks, filter targets by range
+    if (card.template.tags.melee) {
+        return filterTargetsByMeleeRange(alloc, target_ids, card.template, actor, world);
+    }
+
+    return target_ids;
+}
+
+/// Filter target IDs to only those within melee range.
+/// Returns empty slice if no targets are in range.
+fn filterTargetsByMeleeRange(
+    alloc: std.mem.Allocator,
+    target_ids: []const entity.ID,
+    template: *const cards.Template,
+    actor: *const Agent,
+    world: *const World,
+) !?[]const entity.ID {
+    const enc = world.encounter orelse return null;
+
+    // Get technique and attack mode
+    const technique = template.getTechnique() orelse return target_ids; // no technique = allow all
+    const attack_mode = technique.attack_mode;
+
+    // Defensive techniques (.none) have no reach requirement
+    if (attack_mode == .none) return target_ids;
+
+    // Get weapon's reach for this attack type
+    const weapon_mode = actor.weapons.getOffensiveMode(attack_mode) orelse return null;
+    const weapon_reach = @intFromEnum(weapon_mode.reach);
+
+    // Filter to targets in range
+    var valid_count: usize = 0;
+    for (target_ids) |target_id| {
+        const engagement = enc.getEngagementConst(actor.id, target_id) orelse continue;
+        if (weapon_reach >= @intFromEnum(engagement.range)) {
+            valid_count += 1;
+        }
+    }
+
+    if (valid_count == 0) {
+        alloc.free(target_ids);
+        return null; // no valid targets in range
+    }
+
+    if (valid_count == target_ids.len) {
+        return target_ids; // all in range, return as-is
+    }
+
+    // Build filtered list
+    const filtered = try alloc.alloc(entity.ID, valid_count);
+    var idx: usize = 0;
+    for (target_ids) |target_id| {
+        const engagement = enc.getEngagementConst(actor.id, target_id) orelse continue;
+        if (weapon_reach >= @intFromEnum(engagement.range)) {
+            filtered[idx] = target_id;
+            idx += 1;
+        }
+    }
+    alloc.free(target_ids);
+    return filtered;
 }
 
 /// Get the target predicate from a modifier card template.

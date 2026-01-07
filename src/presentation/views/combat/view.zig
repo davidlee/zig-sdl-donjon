@@ -294,6 +294,10 @@ const CarouselView = struct {
         const last_x = start_x + total_width - card_w / 2;
         const span = last_x - first_x;
 
+        // Gap between hand and known groups
+        const has_gap = self.hand_cards.len > 0 and self.known_cards.len > 0;
+        const gap: f32 = if (has_gap) group_gap else 0;
+
         // Normalize mouse position to [0, 1] range, clamped to carousel bounds
         const m = std.math.clamp((mouse_x - first_x) / span, 0.0, 1.0);
 
@@ -304,9 +308,23 @@ const CarouselView = struct {
         const margin: f32 = 0.15;
 
         for (0..n) |i| {
-            // Normalized position for placement: t_raw ∈ [0, 1]
-            const t_raw: f32 = if (n == 1) 0.5 else @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(n - 1));
+            // Calculate base x position with gap between groups
+            const base_x = blk: {
+                if (n == 1) {
+                    break :blk first_x + span / 2;
+                }
+                const spacing_count = n - 1;
+                const spacing_per_card = (span - gap) / @as(f32, @floatFromInt(spacing_count));
+                var x = first_x + @as(f32, @floatFromInt(i)) * spacing_per_card;
+                // Add gap after hand cards
+                if (i >= self.hand_cards.len) {
+                    x += gap;
+                }
+                break :blk x;
+            };
+
             // Normalized position for weight calc: t ∈ [margin, 1-margin]
+            const t_raw: f32 = if (n == 1) 0.5 else (base_x - first_x) / span;
             const t: f32 = margin + t_raw * (1.0 - 2.0 * margin);
 
             // Calculate weight using sine formula
@@ -318,9 +336,6 @@ const CarouselView = struct {
                 @sin(std.math.pi * (t - m) / (1.0 - m))
             else
                 0;
-
-            // Base position (uniform spacing) - use t_raw for actual placement
-            const base_x = first_x + t_raw * span;
 
             // Apply displacement
             const card_x = base_x + weight * max_displacement;

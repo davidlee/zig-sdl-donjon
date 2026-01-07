@@ -235,6 +235,12 @@ pub const CommandHandler = struct {
                 .source = play_result.source,
                 .added_in_phase = .selection,
             }, &self.world.card_registry);
+
+            // Auto-set primary target for player when playing a targeted card
+            // (asymmetric mechanic - enemies don't use attention system)
+            if (target) |t| {
+                enc_state.attention.primary = t;
+            }
         } else {
             return CommandError.CommandInvalid;
         }
@@ -323,6 +329,12 @@ pub const CommandHandler = struct {
             .added_in_phase = .commit,
             .source = play_result.source,
         }, &self.world.card_registry);
+
+        // Auto-set primary target for player when playing a targeted card
+        // (asymmetric mechanic - enemies don't use attention system)
+        if (target) |t| {
+            enc_state.attention.primary = t;
+        }
 
         enc_state.current.focus_spent += FOCUS_COST;
     }
