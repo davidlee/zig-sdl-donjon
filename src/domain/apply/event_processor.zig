@@ -136,10 +136,31 @@ pub const EventProcessor = struct {
         // Read pending targets before clearing (they're stored per-card)
         const cs = agent.combat_state orelse return;
         for (cs.in_play.items) |card_id| {
+            // Skip if play already exists (created during selection phase)
+            if (enc_state.current.findPlayByCard(card_id) != null) continue;
+
             const pending_target = enc_state.current.getPendingTarget(card_id);
+
+            // Convert in_play_sources info to PlaySource
+            const source: ?combat.PlaySource = if (cs.in_play_sources.get(card_id)) |info| blk: {
+                break :blk switch (info.source) {
+                    .always_available => .{
+                        .master_id = info.master_id orelse card_id,
+                        .source_zone = .always_available,
+                    },
+                    .spells_known => .{
+                        .master_id = info.master_id orelse card_id,
+                        .source_zone = .spells_known,
+                    },
+                    // Hand cards have null source
+                    .hand, .inventory, .environment => null,
+                };
+            } else null;
+
             try enc_state.current.addPlay(.{
                 .action = card_id,
                 .target = pending_target,
+                .source = source,
             }, &self.world.card_registry);
         }
     }

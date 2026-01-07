@@ -273,7 +273,7 @@ test "canWithdrawPlay returns true for play with no modifiers" {
 
 test "canWithdrawPlay returns false for play with modifiers attached" {
     var play = combat.Play{ .action = testId(0) };
-    try play.addModifier(testId(1));
+    try play.addModifier(testId(1), null);
 
     try testing.expect(!canWithdrawPlay(&play));
 }

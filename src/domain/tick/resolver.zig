@@ -86,6 +86,7 @@ pub const TickResolver = struct {
                 .time_start = slot.time_start,
                 .time_end = slot.time_start + duration,
                 .target = play.target,
+                .source = play.source,
                 .damage_mult = play.damage_mult,
                 .advantage_override = play.advantage_override,
             });
@@ -100,29 +101,31 @@ pub const TickResolver = struct {
     }
 
     fn commitSingleMob(self: *TickResolver, mob: *Agent, w: ?*World) !void {
-        // All draw styles now use combat_state.in_play
-        // The AI director is responsible for populating in_play appropriately
-        const registry = if (w) |world_ref| &world_ref.card_registry else return;
-        const cs = mob.combat_state orelse return;
-        var time_cursor: f32 = 0.0;
+        const world_ref = w orelse return;
+        const enc = world_ref.encounter orelse return;
+        const enc_state = enc.stateFor(mob.id) orelse return;
+        const registry = &world_ref.card_registry;
 
-        for (cs.in_play.items) |card_id| {
-            const card_instance = registry.get(card_id) orelse continue;
+        for (enc_state.current.slots()) |slot| {
+            const play = slot.play;
+            const card_instance = registry.get(play.action) orelse continue;
             const template = card_instance.template;
             const tech_expr = template.getTechniqueWithExpression() orelse continue;
-            const time_cost = template.cost.time;
+            const duration = combat.getPlayDuration(play, registry);
 
             try self.addAction(.{
                 .actor = mob,
                 .card = card_instance,
                 .technique = tech_expr.technique,
                 .expression = tech_expr.expression,
-                .stakes = .guarded,
-                .time_start = time_cursor,
-                .time_end = time_cursor + time_cost,
+                .stakes = play.effectiveStakes(),
+                .time_start = slot.time_start,
+                .time_end = slot.time_start + duration,
+                .target = play.target,
+                .source = play.source,
+                .damage_mult = play.damage_mult,
+                .advantage_override = play.advantage_override,
             });
-
-            time_cursor += time_cost;
         }
     }
 

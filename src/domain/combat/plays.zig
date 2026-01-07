@@ -17,29 +17,49 @@ pub const TechniqueAdvantage = advantage.TechniqueAdvantage;
 // Play
 // ============================================================================
 
+/// Which phase the play was created in.
+pub const Phase = enum { selection, commit };
+
+/// Source tracking for pool cards (always_available, spells_known).
+/// Null source on a Play indicates a hand card.
+pub const PlaySource = struct {
+    master_id: entity.ID, // Original pool card for cooldown tracking
+    source_zone: SourceZone,
+
+    pub const SourceZone = enum { always_available, spells_known };
+};
+
+/// Entry in a Play's modifier stack, tracking both the card and its source.
+/// Source tracking enables correct lifecycle handling (destroy clone vs discard hand card).
+pub const ModifierEntry = struct {
+    card_id: entity.ID,
+    source: ?PlaySource, // null = hand card, Some = pool clone
+};
+
 /// A card being played, with optional modifier stack.
 pub const Play = struct {
     pub const max_modifiers = 4;
 
     action: entity.ID, // the lead card (technique, maneuver, etc.)
     target: ?entity.ID = null, // who this play targets (null for self-target or all)
-    modifier_stack_buf: [max_modifiers]entity.ID = undefined,
+    source: ?PlaySource = null, // null = hand card, Some = pool clone
+    modifier_stack_buf: [max_modifiers]ModifierEntry = undefined,
     modifier_stack_len: usize = 0,
     stakes: cards.Stakes = .guarded,
-    added_in_commit: bool = false, // true if added via Focus, cannot be stacked
+    added_in_phase: Phase = .selection, // commit phase plays (via Focus) cannot be stacked
 
     // Applied by modify_play effects during commit phase
     cost_mult: f32 = 1.0,
     damage_mult: f32 = 1.0,
     advantage_override: ?TechniqueAdvantage = null,
 
-    pub fn modifiers(self: *const Play) []const entity.ID {
+    pub fn modifiers(self: *const Play) []const ModifierEntry {
         return self.modifier_stack_buf[0..self.modifier_stack_len];
     }
 
-    pub fn addModifier(self: *Play, card_id: entity.ID) error{Overflow}!void {
+    pub fn addModifier(self: *Play, card_id: entity.ID, source: ?PlaySource) error{Overflow}!void {
         if (self.modifier_stack_len >= max_modifiers) return error.Overflow;
-        self.modifier_stack_buf[self.modifier_stack_len] = card_id;
+        self.modifier_stack_buf[self.modifier_stack_len] = .{ .card_id = card_id, .source = source };
         self.modifier_stack_len += 1;
     }
 
@@ -48,7 +68,7 @@ pub const Play = struct {
     }
 
     pub fn canStack(self: Play) bool {
-        return !self.added_in_commit;
+        return self.added_in_phase != .commit;
     }
 
     /// Stakes based on modifier stack depth.
@@ -86,8 +106,8 @@ pub const Play = struct {
     /// Compute effective cost multiplier from modifier stack + stored override.
     pub fn effectiveCostMult(self: *const Play, registry: *const world.CardRegistry) f32 {
         var mult: f32 = 1.0;
-        for (self.modifiers()) |mod_id| {
-            const card = registry.getConst(mod_id) orelse continue;
+        for (self.modifiers()) |entry| {
+            const card = registry.getConst(entry.card_id) orelse continue;
             if (getModifyPlayEffect(card.template)) |mp| {
                 mult *= mp.cost_mult orelse 1.0;
             }
@@ -98,8 +118,8 @@ pub const Play = struct {
     /// Compute effective damage multiplier from modifier stack + stored override.
     pub fn effectiveDamageMult(self: *const Play, registry: *const world.CardRegistry) f32 {
         var mult: f32 = 1.0;
-        for (self.modifiers()) |mod_id| {
-            const card = registry.getConst(mod_id) orelse continue;
+        for (self.modifiers()) |entry| {
+            const card = registry.getConst(entry.card_id) orelse continue;
             if (getModifyPlayEffect(card.template)) |mp| {
                 mult *= mp.damage_mult orelse 1.0;
             }
@@ -110,8 +130,8 @@ pub const Play = struct {
     /// Compute effective height from modifier stack (last override wins).
     pub fn effectiveHeight(self: *const Play, registry: *const world.CardRegistry, base: body.Height) body.Height {
         var height = base;
-        for (self.modifiers()) |mod_id| {
-            const card = registry.getConst(mod_id) orelse continue;
+        for (self.modifiers()) |entry| {
+            const card = registry.getConst(entry.card_id) orelse continue;
             if (getModifyPlayEffect(card.template)) |mp| {
                 if (mp.height_override) |h| height = h;
             }
@@ -126,8 +146,8 @@ pub const Play = struct {
         const new_height = new_effect.height_override orelse return false;
 
         // Check existing modifiers for conflicting height
-        for (self.modifiers()) |mod_id| {
-            const card = registry.getConst(mod_id) orelse continue;
+        for (self.modifiers()) |entry| {
+            const card = registry.getConst(entry.card_id) orelse continue;
             if (getModifyPlayEffect(card.template)) |mp| {
                 if (mp.height_override) |existing_height| {
                     if (existing_height != new_height) return true;
@@ -340,8 +360,8 @@ pub fn getPlayChannels(play: Play, registry: *const world.CardRegistry) cards.Ch
     }
 
     // Modifiers don't typically add channels, but include for completeness
-    for (play.modifiers()) |mod_id| {
-        if (registry.getConst(mod_id)) |instance| {
+    for (play.modifiers()) |entry| {
+        if (registry.getConst(entry.card_id)) |instance| {
             if (instance.template.getTechnique()) |technique| {
                 channels = channels.merge(technique.channels);
             }
@@ -611,18 +631,18 @@ test "Play.effectiveStakes escalates with modifiers" {
     var play = Play{ .action = testId(1) };
     try testing.expectEqual(cards.Stakes.guarded, play.effectiveStakes());
 
-    try play.addModifier(testId(2));
+    try play.addModifier(testId(2), null);
     try testing.expectEqual(cards.Stakes.committed, play.effectiveStakes());
 
-    try play.addModifier(testId(3));
+    try play.addModifier(testId(3), null);
     try testing.expectEqual(cards.Stakes.reckless, play.effectiveStakes());
 }
 
-test "Play.canStack false when added_in_commit" {
+test "Play.canStack false when added in commit phase" {
     const normal_play = Play{ .action = testId(1) };
     try testing.expect(normal_play.canStack());
 
-    const commit_play = Play{ .action = testId(2), .added_in_commit = true };
+    const commit_play = Play{ .action = testId(2), .added_in_phase = .commit };
     try testing.expect(!commit_play.canStack());
 }
 
@@ -703,12 +723,12 @@ test "Play.addModifier overflow returns error" {
 
     // Fill to capacity
     for (0..Play.max_modifiers) |i| {
-        try play.addModifier(testId(@intCast(i + 1)));
+        try play.addModifier(testId(@intCast(i + 1)), null);
     }
     try testing.expectEqual(Play.max_modifiers, play.modifier_stack_len);
 
     // Next one should fail
-    try testing.expectError(error.Overflow, play.addModifier(testId(99)));
+    try testing.expectError(error.Overflow, play.addModifier(testId(99), null));
     try testing.expectEqual(Play.max_modifiers, play.modifier_stack_len); // unchanged
 }
 
@@ -786,7 +806,7 @@ test "Play.wouldConflict detects conflicting height_override" {
     // Create a play with low modifier
     var play = Play{ .action = testId(1) };
     const low_instance = try registry.create(low);
-    try play.addModifier(low_instance.id);
+    try play.addModifier(low_instance.id, null);
 
     // high should conflict (different height)
     try testing.expect(play.wouldConflict(high, &registry));
@@ -805,7 +825,7 @@ test "Play.wouldConflict allows same height_override" {
     // Create a play with low modifier
     var play = Play{ .action = testId(1) };
     const low_instance = try registry.create(low);
-    try play.addModifier(low_instance.id);
+    try play.addModifier(low_instance.id, null);
 
     // Another low should not conflict
     try testing.expect(!play.wouldConflict(low, &registry));

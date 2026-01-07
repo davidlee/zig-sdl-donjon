@@ -3,9 +3,7 @@
 //! Handles stamina/focus recovery, condition application, and
 //! condition expiration ticking.
 
-const std = @import("std");
 const lib = @import("infra");
-const entity = lib.entity;
 const cards = @import("../../cards.zig");
 const combat = @import("../../combat.zig");
 const events = @import("../../events.zig");
@@ -67,29 +65,22 @@ fn applyResolveEffect(
 
 /// Execute all on_resolve rules for an agent's in-play cards.
 /// Called during tick resolution.
+/// Note: Card zone transitions (including exhaust) are handled by applyCommittedCosts.
 pub fn executeResolvePhaseRules(world: *World, actor: *Agent) !void {
     const cs = actor.combat_state orelse return;
     const is_player = switch (actor.director) {
         .player => true,
         else => false,
     };
-    const actor_meta: events.AgentMeta = .{ .id = actor.id, .player = is_player };
-
-    // Track cards that resolved on_resolve rules and should exhaust
-    var to_exhaust = try std.ArrayList(entity.ID).initCapacity(world.alloc, 4);
-    defer to_exhaust.deinit(world.alloc);
 
     for (cs.in_play.items) |card_id| {
         const card = world.card_registry.get(card_id) orelse continue;
 
-        var rule_fired = false;
         for (card.template.rules) |rule| {
             if (rule.trigger != .on_resolve) continue;
 
             // Check rule validity predicate (weapon requirements, range, etc.)
             if (!validation.rulePredicatesSatisfied(card.template, actor, world.encounter)) continue;
-
-            rule_fired = true;
 
             // Execute expressions
             for (rule.expressions) |expr| {
@@ -116,24 +107,6 @@ pub fn executeResolvePhaseRules(world: *World, actor: *Agent) !void {
                 }
             }
         }
-
-        // Track exhausting cards that had on_resolve rules fire
-        if (rule_fired and card.template.cost.exhausts) {
-            try to_exhaust.append(world.alloc, card_id);
-        }
-    }
-
-    // Move exhausting cards to exhaust zone
-    for (to_exhaust.items) |card_id| {
-        cs.moveCard(card_id, .in_play, .exhaust) catch continue;
-        try world.events.push(.{
-            .card_moved = .{
-                .instance = card_id,
-                .from = .in_play,
-                .to = .exhaust,
-                .actor = actor_meta,
-            },
-        });
     }
 }
 

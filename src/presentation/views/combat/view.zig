@@ -505,100 +505,28 @@ pub const View = struct {
         return self.buildCardList(alloc, .hand, cs.hand.items);
     }
 
-    /// Player cards currently in play (selection phase, before commit)
-    pub fn inPlayCards(self: *const View, alloc: std.mem.Allocator) []const CardViewData {
-        const player = self.world.player;
-        const cs = player.combat_state orelse return &.{};
-        return self.buildCardList(alloc, .in_play, cs.in_play.items);
-    }
-
     /// Player always known cards (techniques mostly)
     pub fn alwaysCards(self: *const View, alloc: std.mem.Allocator) []const CardViewData {
         const player = self.world.player;
         return self.buildCardList(alloc, .always_available, player.always_available.items);
     }
 
-    /// Enemy cards in play (shown during commit phase).
-    /// Unlike player cards, these are always shown as "playable" (not greyed out).
-    fn enemyInPlayCards(self: *const View, alloc: std.mem.Allocator, agent: *const Agent) []const CardViewData {
-        const cs = agent.combat_state orelse return &.{};
-        const ids = cs.in_play.items;
-
-        const result = alloc.alloc(CardViewData, ids.len) catch return &.{};
-        var count: usize = 0;
-
-        for (ids) |id| {
-            const inst = self.world.card_registry.getConst(id) orelse continue;
-            result[count] = CardViewData.fromInstance(inst, .in_play, true);
-            count += 1;
-        }
-
-        return result[0..count];
-    }
-
-    /// Player's plays for commit phase (action + modifier stacks)
+    /// Player's plays (from timeline - plays exist during both selection and commit phases)
     pub fn playerPlays(self: *const View, alloc: std.mem.Allocator) []const PlayViewData {
         const enc = self.world.encounter orelse return &.{};
         const enc_state = enc.stateForConst(self.world.player.id) orelse return &.{};
 
-        // Commit phase: use actual timeline slots
-        if (self.inPhase(.commit_phase)) {
-            const slots = enc_state.current.slots();
-            const result = alloc.alloc(PlayViewData, slots.len) catch return &.{};
-            var count: usize = 0;
-
-            for (slots, 0..) |*slot, i| {
-                if (self.buildPlayViewData(slot, self.world.player, i)) |pvd| {
-                    result[count] = pvd;
-                    count += 1;
-                }
-            }
-            return result[0..count];
-        }
-
-        // Selection phase: synthesize from in_play cards
-        const cs = self.world.player.combat_state orelse return &.{};
-        const in_play = cs.in_play.items;
-        const result = alloc.alloc(PlayViewData, in_play.len) catch return &.{};
+        const slots = enc_state.current.slots();
+        const result = alloc.alloc(PlayViewData, slots.len) catch return &.{};
         var count: usize = 0;
-        var time_cursor: f32 = 0;
 
-        for (in_play) |card_id| {
-            if (self.buildPlayViewDataFromCard(card_id, self.world.player, &time_cursor)) |pvd| {
+        for (slots, 0..) |*slot, i| {
+            if (self.buildPlayViewData(slot, self.world.player, i)) |pvd| {
                 result[count] = pvd;
                 count += 1;
             }
         }
         return result[0..count];
-    }
-
-    /// Build PlayViewData from a card ID (selection phase - no TimeSlot yet)
-    fn buildPlayViewDataFromCard(
-        self: *const View,
-        card_id: entity.ID,
-        owner: *const Agent,
-        time_cursor: *f32,
-    ) ?PlayViewData {
-        const card = self.world.card_registry.getConst(card_id) orelse return null;
-        const template = card.template;
-
-        // Get technique info for channels, cost for duration
-        const technique = template.getTechnique() orelse return null;
-        const duration = template.cost.time;
-        const channels = technique.channels;
-
-        const time_start = time_cursor.*;
-        time_cursor.* += duration;
-
-        return PlayViewData{
-            .owner_id = owner.id,
-            .owner_is_player = owner.director == .player,
-            .action = CardViewData.fromInstance(card, .in_play, true),
-            .stakes = .guarded,
-            .time_start = time_start,
-            .time_end = time_start + duration,
-            .channels = channels,
-        };
     }
 
     /// Build PlayViewData from domain Play
@@ -622,8 +550,8 @@ pub const View = struct {
         };
 
         // Add modifiers
-        for (play.modifiers()) |mod_id| {
-            const mod_inst = self.world.card_registry.getConst(mod_id) orelse continue;
+        for (play.modifiers()) |entry| {
+            const mod_inst = self.world.card_registry.getConst(entry.card_id) orelse continue;
             pvd.modifier_stack_buf[pvd.modifier_stack_len] = CardViewData.fromInstance(mod_inst, .in_play, true);
             pvd.modifier_stack_len += 1;
         }
@@ -1025,10 +953,6 @@ pub const View = struct {
 
     fn handZone(self: *const View, alloc: std.mem.Allocator) CardZoneView {
         return CardZoneView.init(.hand, self.handCards(alloc));
-    }
-
-    fn inPlayZone(self: *const View, alloc: std.mem.Allocator) CardZoneView {
-        return CardZoneView.init(.in_play, self.inPlayCards(alloc));
     }
 
     fn alwaysZone(self: *const View, alloc: std.mem.Allocator) CardZoneView {

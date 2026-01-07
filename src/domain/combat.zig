@@ -39,6 +39,9 @@ pub const AdvantageEffect = combat_mod.AdvantageEffect;
 pub const TechniqueAdvantage = combat_mod.TechniqueAdvantage;
 
 // From plays.zig
+pub const Phase = combat_mod.Phase;
+pub const PlaySource = combat_mod.PlaySource;
+pub const ModifierEntry = combat_mod.ModifierEntry;
 pub const Play = combat_mod.Play;
 pub const TimeSlot = combat_mod.TimeSlot;
 pub const Timeline = combat_mod.Timeline;

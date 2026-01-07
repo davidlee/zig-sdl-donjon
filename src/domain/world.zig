@@ -356,7 +356,7 @@ pub const World = struct {
         }
 
         // Cleanup: apply costs, move cards
-        try apply.applyCommittedCosts(self.tickResolver.committed.items, &self.events);
+        try apply.applyCommittedCosts(self.tickResolver.committed.items, &self.events, &self.card_registry);
 
         // Tick down and expire conditions
         try apply.tickConditions(self.player, &self.events);

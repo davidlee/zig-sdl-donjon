@@ -24,7 +24,7 @@
         name = packageName;
         packages = with pkgs; [
           vulkan-validation-layers
-          zls-overlay.packages.x86_64-linux."0.15.0" # TODO: figure out how to get ZLS for 0.15.2
+          zls-overlay.packages.x86_64-linux."0.15.0"
           zigPackage
         ];
         LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath (with pkgs; [

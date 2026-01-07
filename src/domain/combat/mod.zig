@@ -38,6 +38,9 @@ pub const AdvantageEffect = advantage.AdvantageEffect;
 pub const TechniqueAdvantage = advantage.TechniqueAdvantage;
 
 // From plays.zig
+pub const Phase = plays.Phase;
+pub const PlaySource = plays.PlaySource;
+pub const ModifierEntry = plays.ModifierEntry;
 pub const Play = plays.Play;
 pub const TimeSlot = plays.TimeSlot;
 pub const Timeline = plays.Timeline;

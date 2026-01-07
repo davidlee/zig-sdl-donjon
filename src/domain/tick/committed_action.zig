@@ -23,6 +23,7 @@ pub const CommittedAction = struct {
     time_start: f32, // when this action begins (0.0-1.0 within tick)
     time_end: f32, // when this action ends (time_start + cost.time)
     target: ?entity.ID = null, // elected target for .single targeting (from Play.target)
+    source: ?combat.PlaySource = null, // null = hand card, Some = pool clone
     // From Play modifiers (set during commit phase)
     damage_mult: f32 = 1.0,
     advantage_override: ?combat.TechniqueAdvantage = null,
