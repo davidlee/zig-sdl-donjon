@@ -39,29 +39,6 @@ pub const CommandError = error{
 
 // Internal helpers
 
-fn wouldConflictWithInPlay(
-    new_card: *const Instance,
-    cs: *const combat.CombatState,
-    registry: *const w.CardRegistry,
-) bool {
-    const new_channels = getCardChannels(new_card.template);
-    if (new_channels.isEmpty()) return false;
-
-    for (cs.in_play.items) |in_play_id| {
-        const in_play_card = registry.getConst(in_play_id) orelse continue;
-        const existing_channels = getCardChannels(in_play_card.template);
-        if (new_channels.conflicts(existing_channels)) return true;
-    }
-    return false;
-}
-
-fn getCardChannels(template: *const cards.Template) cards.ChannelSet {
-    if (template.getTechnique()) |technique| {
-        return technique.channels;
-    }
-    return .{};
-}
-
 /// Move a card to in_play, reserving its costs.
 /// For pool cards (always_available, spells_known), creates a clone.
 /// Returns the ID of the card in in_play (clone for pool cards, original otherwise).
@@ -223,6 +200,8 @@ pub const CommandHandler = struct {
         const player = self.world.player;
         const turn_phase = self.world.turnPhase() orelse return CommandError.InvalidGameState;
         const cs = player.combat_state orelse return CommandError.BadInvariant;
+        const enc = self.world.encounter orelse return CommandError.BadInvariant;
+        const enc_state = enc.stateFor(player.id) orelse return CommandError.BadInvariant;
 
         // Look up card instance
         const card = self.world.card_registry.get(id) orelse return CommandError.BadInvariant;
@@ -236,7 +215,7 @@ pub const CommandHandler = struct {
 
         if (try validation.validateCardSelection(player, card, turn_phase, self.world.encounter)) {
             // Check channel conflicts with existing plays
-            if (wouldConflictWithInPlay(card, cs, &self.world.card_registry))
+            if (validation.wouldConflictWithTimeline(card, &enc_state.current.timeline, &self.world.card_registry))
                 return validation.ValidationError.ChannelConflict;
 
             const in_play_id = try playValidCardReservingCosts(&self.world.events, player, card, &self.world.card_registry, target);
@@ -255,10 +234,6 @@ pub const CommandHandler = struct {
                     .hand, .inventory, .environment => null,
                 };
             } else null;
-
-            // Create Play during selection phase
-            const enc = self.world.encounter orelse return CommandError.BadInvariant;
-            const enc_state = enc.stateFor(player.id) orelse return CommandError.BadInvariant;
             try enc_state.current.addPlay(.{
                 .action = in_play_id,
                 .target = target,
@@ -337,8 +312,7 @@ pub const CommandHandler = struct {
             return CommandError.PredicateFailed;
 
         // Validate: channel conflicts with existing plays
-        const new_channels = getCardChannels(card.template);
-        if (enc_state.current.wouldConflictOnChannel(new_channels, &self.world.card_registry))
+        if (validation.wouldConflictWithTimeline(card, &enc_state.current.timeline, &self.world.card_registry))
             return validation.ValidationError.ChannelConflict;
 
         // Validate: sufficient focus

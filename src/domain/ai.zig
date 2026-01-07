@@ -74,6 +74,41 @@ pub const NullDirector = struct {
 
 /// Just spams the first playable card whenever it can
 /// requires combat_state (deck-based agent)
+/// Create a Play in the timeline for a card that was just added to in_play.
+/// Shared by AI directors - player uses CommandHandler.playActionCard instead.
+fn createPlayForInPlayCard(
+    agent: *Agent,
+    in_play_id: entity.ID,
+    target: ?entity.ID,
+    w: *World,
+) !void {
+    const cs = agent.combat_state orelse return;
+    const enc = w.encounter orelse return;
+    const enc_state = enc.stateFor(agent.id) orelse return;
+
+    // Look up source info for the card
+    const source: ?combat.PlaySource = if (cs.in_play_sources.get(in_play_id)) |info| blk: {
+        break :blk switch (info.source) {
+            .always_available => .{
+                .master_id = info.master_id orelse in_play_id,
+                .source_zone = .always_available,
+            },
+            .spells_known => .{
+                .master_id = info.master_id orelse in_play_id,
+                .source_zone = .spells_known,
+            },
+            .hand, .inventory, .environment => null,
+        };
+    } else null;
+
+    try enc_state.current.addPlay(.{
+        .action = in_play_id,
+        .target = target,
+        .source = source,
+        .added_in_phase = .selection,
+    }, &w.card_registry);
+}
+
 pub const SimpleDeckDirector = struct {
     pub fn director(self: *SimpleDeckDirector) Director {
         return Director{
@@ -91,9 +126,8 @@ pub const SimpleDeckDirector = struct {
             const card_id = cs.hand.items[hand_index];
             const card = w.card_registry.get(card_id) orelse continue;
             if (apply.isCardSelectionValid(agent, card, w.encounter)) {
-                // playValidCardReservingCosts already emits played_action_card event
-                // AI doesn't select targets yet (uses all_enemies or auto-target)
-                _ = try apply.playValidCardReservingCosts(&w.events, agent, card, &w.card_registry, null);
+                const in_play_id = try apply.playValidCardReservingCosts(&w.events, agent, card, &w.card_registry, null);
+                try createPlayForInPlayCard(agent, in_play_id, null, w);
                 to_play -= 1;
             }
         }
@@ -130,8 +164,8 @@ pub const PoolDirector = struct {
 
             // Check if playable (not on cooldown, meets requirements)
             if (apply.isCardSelectionValid(agent, card, w.encounter)) {
-                // AI doesn't select targets yet (uses all_enemies or auto-target)
-                _ = try apply.playValidCardReservingCosts(&w.events, agent, card, &w.card_registry, null);
+                const in_play_id = try apply.playValidCardReservingCosts(&w.events, agent, card, &w.card_registry, null);
+                try createPlayForInPlayCard(agent, in_play_id, null, w);
                 played += 1;
             }
         }

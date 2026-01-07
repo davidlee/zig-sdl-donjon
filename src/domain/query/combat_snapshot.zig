@@ -129,11 +129,21 @@ fn validateCards(
             try snapshot.card_statuses.put(card_id, .{ .card_id = card_id, .playable = playable });
         }
 
-        // In-play cards (for modifier stacking validation)
-        for (cs.in_play.items) |card_id| {
-            const inst = world.card_registry.getConst(card_id) orelse continue;
-            const playable = validation.validateCardSelection(player, inst, phase, encounter) catch false;
-            try snapshot.card_statuses.put(card_id, .{ .card_id = card_id, .playable = playable });
+        // In-play cards from timeline (for modifier stacking validation)
+        if (encounter.stateForConst(player.id)) |enc_state| {
+            for (enc_state.current.timeline.slots()) |slot| {
+                // Action card
+                const action_inst = world.card_registry.getConst(slot.play.action) orelse continue;
+                const action_playable = validation.validateCardSelection(player, action_inst, phase, encounter) catch false;
+                try snapshot.card_statuses.put(slot.play.action, .{ .card_id = slot.play.action, .playable = action_playable });
+
+                // Modifier cards
+                for (slot.play.modifiers()) |mod| {
+                    const mod_inst = world.card_registry.getConst(mod.card_id) orelse continue;
+                    const mod_playable = validation.validateCardSelection(player, mod_inst, phase, encounter) catch false;
+                    try snapshot.card_statuses.put(mod.card_id, .{ .card_id = mod.card_id, .playable = mod_playable });
+                }
+            }
         }
     }
 

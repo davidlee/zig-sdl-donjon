@@ -186,27 +186,29 @@ fn isInPlayableSource(actor: *const Agent, cs: *const combat.CombatState, card_i
     return false;
 }
 
-fn wouldConflictWithInPlay(
-    new_card: *const Instance,
-    cs: *const combat.CombatState,
-    registry: *const w.CardRegistry,
-) bool {
-    const new_channels = getCardChannels(new_card.template);
-    if (new_channels.isEmpty()) return false;
-
-    for (cs.in_play.items) |in_play_id| {
-        const in_play_card = registry.getConst(in_play_id) orelse continue;
-        const existing_channels = getCardChannels(in_play_card.template);
-        if (new_channels.conflicts(existing_channels)) return true;
-    }
-    return false;
-}
-
 fn getCardChannels(template: *const cards.Template) cards.ChannelSet {
     if (template.getTechnique()) |technique| {
         return technique.channels;
     }
     return .{};
+}
+
+/// Check if playing a new card would conflict with existing plays in timeline.
+/// Returns true if channels overlap.
+pub fn wouldConflictWithTimeline(
+    new_card: *const Instance,
+    timeline: *const combat.Timeline,
+    registry: *const w.CardRegistry,
+) bool {
+    const new_channels = getCardChannels(new_card.template);
+    if (new_channels.isEmpty()) return false;
+
+    for (timeline.slots()) |*slot| {
+        const play_card = registry.getConst(slot.play.action) orelse continue;
+        const existing_channels = getCardChannels(play_card.template);
+        if (new_channels.conflicts(existing_channels)) return true;
+    }
+    return false;
 }
 
 // ============================================================================

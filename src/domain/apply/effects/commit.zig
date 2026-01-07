@@ -36,38 +36,50 @@ pub fn applyCommitPhaseEffect(
     }
 }
 
-/// Execute all on_commit rules for an agent's in-play cards.
-/// Called when entering commit_phase.
-pub fn executeCommitPhaseRules(world: *World, actor: *Agent) !void {
-    const cs = actor.combat_state orelse return;
+/// Execute on_commit rules for a single card.
+fn executeCardCommitRules(card: *const cards.Instance, actor: *Agent, world: *World) !void {
+    for (card.template.rules) |rule| {
+        if (rule.trigger != .on_commit) continue;
 
-    // Iterate over card IDs in play, look up instances via registry
-    for (cs.in_play.items) |card_id| {
-        const card = world.card_registry.get(card_id) orelse continue;
+        // Check rule validity predicate (weapon requirements, range, etc.)
+        if (!validation.rulePredicatesSatisfied(card.template, actor, world.encounter)) continue;
 
-        for (card.template.rules) |rule| {
-            if (rule.trigger != .on_commit) continue;
+        // Execute expressions
+        for (rule.expressions) |expr| {
+            // Check if this is a play-targeting expression
+            switch (expr.target) {
+                .my_play, .opponent_play => {
+                    var targets = try targeting.evaluatePlayTargets(world.alloc, expr.target, actor, world);
+                    defer targets.deinit(world.alloc);
 
-            // Check rule validity predicate (weapon requirements, range, etc.)
-            if (!validation.rulePredicatesSatisfied(card.template, actor, world.encounter)) continue;
-
-            // Execute expressions
-            for (rule.expressions) |expr| {
-                // Check if this is a play-targeting expression
-                switch (expr.target) {
-                    .my_play, .opponent_play => {
-                        var targets = try targeting.evaluatePlayTargets(world.alloc, expr.target, actor, world);
-                        defer targets.deinit(world.alloc);
-
-                        for (targets.items) |target| {
-                            applyCommitPhaseEffect(expr.effect, target, world);
-                        }
-                    },
-                    else => {
-                        // Non-play targets handled elsewhere
-                    },
-                }
+                    for (targets.items) |target| {
+                        applyCommitPhaseEffect(expr.effect, target, world);
+                    }
+                },
+                else => {
+                    // Non-play targets handled elsewhere
+                },
             }
+        }
+    }
+}
+
+/// Execute on_commit rules for all cards in an agent's timeline plays.
+/// Called when entering commit_phase. Processes both action cards and stacked modifiers.
+pub fn executeCommitPhaseRules(world: *World, actor: *Agent) !void {
+    const enc = world.encounter orelse return;
+    const enc_state = enc.stateFor(actor.id) orelse return;
+
+    // Iterate over plays in timeline - includes both action cards and modifiers
+    for (enc_state.current.timeline.slots()) |slot| {
+        // Process the action card's rules
+        const action_card = world.card_registry.get(slot.play.action) orelse continue;
+        try executeCardCommitRules(action_card, actor, world);
+
+        // Process modifier cards' rules
+        for (slot.play.modifiers()) |mod_entry| {
+            const mod_card = world.card_registry.get(mod_entry.card_id) orelse continue;
+            try executeCardCommitRules(mod_card, actor, world);
         }
     }
 }

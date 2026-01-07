@@ -24,7 +24,8 @@
       "mcp__serena__insert_after_symbol",
       "WebFetch(domain:codeberg.org)",
       "mcp__serena__insert_before_symbol",
-      "mcp__serena__think_about_task_adherence"
+      "mcp__serena__think_about_task_adherence",
+      "mcp__serena__think_about_whether_you_are_done"
     ]
   }
 }

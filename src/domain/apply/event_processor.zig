@@ -4,9 +4,12 @@
 //! combat termination checks, and cleanup operations.
 
 const std = @import("std");
+const lib = @import("infra");
 const combat = @import("../combat.zig");
 const events = @import("../events.zig");
 const w = @import("../world.zig");
+
+const entity = lib.entity;
 
 const commit = @import("effects/commit.zig");
 
@@ -50,24 +53,52 @@ pub const EventProcessor = struct {
         }
     }
 
-    fn agentEndTurnCleanup(self: *EventProcessor, agent: *Agent, enc: *combat.Encounter) !void {
-        if (agent.combat_state) |cs| {
-            // Discard remaining hand cards
-            while (cs.hand.items.len > 0) {
-                const card_id = cs.hand.items[0];
-                try cs.moveCard(card_id, .hand, .discard);
+    /// Clean up a card based on its source: discard hand cards, destroy pool clones.
+    fn cleanupCardBySource(
+        self: *EventProcessor,
+        cs: *combat.CombatState,
+        card_id: entity.ID,
+        source: ?combat.PlaySource,
+    ) !void {
+        if (source) |_| {
+            // Pool clone: destroy it
+            self.world.card_registry.remove(card_id);
+        } else {
+            // Hand card: move to discard (if still in play)
+            if (cs.isInZone(card_id, .in_play)) {
+                try cs.moveCard(card_id, .in_play, .discard);
             }
+        }
+    }
 
-            // Clean up remaining in_play cards (e.g. orphaned modifiers)
-            // Uses removeFromInPlay which destroys pool card clones, discards hand cards
-            while (cs.in_play.items.len > 0) {
-                const card_id = cs.in_play.items[0];
-                const master_id = try cs.removeFromInPlay(card_id, &self.world.card_registry);
-                // For hand-sourced cards, move to discard
-                if (master_id == null) {
-                    try cs.discard.append(cs.alloc, card_id);
-                }
+    fn agentEndTurnCleanup(self: *EventProcessor, agent: *Agent, enc: *combat.Encounter) !void {
+        const cs = agent.combat_state orelse return;
+        const enc_state = enc.stateFor(agent.id) orelse return;
+
+        // Discard remaining hand cards
+        while (cs.hand.items.len > 0) {
+            const card_id = cs.hand.items[0];
+            try cs.moveCard(card_id, .hand, .discard);
+        }
+
+        // Clean up remaining timeline plays (e.g. orphaned cards after resolution)
+        // Timeline is the source of truth for what's in play
+        for (enc_state.current.timeline.slots()) |slot| {
+            const play = slot.play;
+
+            // Clean up action card
+            try self.cleanupCardBySource(cs, play.action, play.source);
+
+            // Clean up modifier cards
+            for (play.modifiers()) |mod| {
+                try self.cleanupCardBySource(cs, mod.card_id, mod.source);
             }
+        }
+
+        // Legacy: also clear any remaining in_play (should be empty, but ensure sync)
+        while (cs.in_play.items.len > 0) {
+            const card_id = cs.in_play.items[0];
+            _ = cs.removeFromInPlay(card_id, &self.world.card_registry) catch break;
         }
 
         // Refresh resources
@@ -75,10 +106,8 @@ pub const EventProcessor = struct {
         agent.focus.tick();
         agent.time_available = 1.0;
 
-        // Clear turn state (push to history)
-        if (enc.stateFor(agent.id)) |enc_state| {
-            enc_state.endTurn();
-        }
+        // Clear turn state (push to history, clear timeline)
+        enc_state.endTurn();
     }
 
     // TODO: fix hardcoded hand limit
@@ -298,12 +327,12 @@ pub const EventProcessor = struct {
                         },
                     }
 
-                    // Debug: log cards in play for mobs
+                    // Debug: log cards in play for mobs (via timeline)
                     if (self.world.encounter) |enc| {
                         for (enc.enemies.items) |mob| {
-                            if (mob.combat_state) |cs| {
-                                for (cs.in_play.items) |card_id| {
-                                    if (self.world.card_registry.get(card_id)) |instance| {
+                            if (enc.stateForConst(mob.id)) |enc_state| {
+                                for (enc_state.current.timeline.slots()) |slot| {
+                                    if (self.world.card_registry.get(slot.play.action)) |instance| {
                                         log("cards in play (mob): {s}\n", .{instance.template.name});
                                     }
                                 }

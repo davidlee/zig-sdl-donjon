@@ -1,6 +1,6 @@
 # Card Lifecycle and Timeline Integration Design
 
-> **Status**: Implementation in progress. Phases 1-4 complete. 2026-01-07.
+> **Status**: Implementation in progress. Phases 1-4 complete, Phase 5 in progress (5a-5g done). 2026-01-07.
 >
 > This document explores how card lifecycle management interacts with the
 > proposed change to create Play objects during selection phase.
@@ -16,8 +16,18 @@
 - Modifier source tracking via `ModifierEntry` struct (card_id + source)
 - `commitStack` populates modifier source from `in_play_sources`
 
-**Pending (Phase 5)**:
-- Remove `in_play` zone entirely, derive from Timeline
+**Phase 5 progress (5a-5g complete)**:
+- View layer uses timeline for both selection and commit phases
+- Channel conflict checking uses `validation.wouldConflictWithTimeline()`
+- Removed dead code: `inPlayCards`, `enemyInPlayCards`, duplicate validators
+- Rule execution (`executeCommitPhaseRules`, `executeResolvePhaseRules`) uses timeline
+- AI directors create Plays immediately via `createPlayForInPlayCard` helper
+- End-of-turn cleanup (`agentEndTurnCleanup`) iterates timeline, handles modifiers
+- Snapshot validation (`validateCards`) uses timeline for in-play card status
+- Debug logging uses timeline for mob card display
+
+**Pending (Phase 5h-5i)**:
+- Zone transitions rethink, remove CombatState fields
 
 **Key architectural change**: The system now has *two* sources of truth for
 in-play cards: `CombatState.in_play` (legacy) and `TurnState.timeline` (new).
@@ -453,51 +463,51 @@ Also exported `Phase` and `PlaySource` via `combat/mod.zig` and `combat.zig`.
 - Removed dead code: `inPlayCards()`, `inPlayZone()`, `buildPlayViewDataFromCard()`, `enemyInPlayCards()`
 - Remaining `.in_play` usages are `CombatZone` enum values for UI display (fine to keep)
 
-#### 5b. Channel conflict checking
-- `command_handler.zig:50` - `wouldConflictWithInPlay()`
-- `validation.zig:197` - `wouldConflictWithExisting()`
-  - Both iterate `in_play.items` for channel conflicts
-  - Fix: Iterate timeline plays instead
-  - Question: Do modifiers affect channel conflicts? (Probably not)
+#### 5b. Channel conflict checking ✓ COMPLETE
+- Created `validation.wouldConflictWithTimeline()` - iterates timeline plays
+- Removed duplicate `wouldConflictWithInPlay()` from both files
+- Updated `playActionCard` and `commitAdd` to use new function
+- Note: `TurnState.wouldConflictOnChannel` now only used by tests (potential cleanup)
 
-#### 5c. Rule execution
-- `commit.zig:45` - `executeCommitPhaseRules()` iterates `in_play.items`
-- `resolve.zig:76` - `executeResolvePhaseRules()` iterates `in_play.items`
-  - Fix: Iterate timeline plays, include modifiers from `play.modifiers()`
-  - Both action cards AND modifiers can have rules
+#### 5c. Rule execution ✓ COMPLETE
+- `executeCommitPhaseRules()` iterates timeline slots, processes action + modifier cards
+- `executeResolvePhaseRules()` iterates timeline slots, processes action + modifier cards
+- Extracted helper functions `executeCardCommitRules` and `executeCardResolveRules`
 
-#### 5d. Play building for mobs
-- `event_processor.zig:138` - `buildPlaysForAgent()` iterates `in_play.items`
-  - Creates plays from in_play cards at commit time
-  - Skips cards that already have plays (selection-phase plays)
-  - Question: Do mobs use selection-phase play creation? Or still batch at commit?
+#### 5d. Play building for mobs ✓ COMPLETE
+- AI directors (`SimpleDeckDirector`, `PoolDirector`) now create Plays immediately
+- Added `createPlayForInPlayCard` helper in `ai.zig` (shared by AI directors)
+- `buildPlaysForAgent()` now acts as safety net (should be no-op for AI-controlled mobs)
 
-#### 5e. Cleanup paths
-- `event_processor.zig:63` - End-of-turn cleanup iterates `in_play.items`
-  - Uses `removeFromInPlay()` which handles clone destruction
-  - Fix: Use `cleanupTimelinePlays()` helper (see design doc section)
-- `costs.zig:59` - `applyCommittedCosts()` moves cards in_play → discard
-  - Already uses `action.source` for lifecycle (Phase 3)
-  - Might just need iteration source change
+#### 5e. Cleanup paths ✓ COMPLETE
+- `agentEndTurnCleanup` now iterates timeline slots (not `in_play.items`)
+- Added `cleanupCardBySource` helper for source-based cleanup (discard vs destroy)
+- Handles both action cards and modifiers from `play.modifiers()`
+- Legacy: still clears `in_play` as safety net (removed in 5i)
+- `applyCommittedCosts` already uses `action.source` for lifecycle (Phase 3)
 
-#### 5f. Snapshot/validation
-- `combat_snapshot.zig:133` - Snapshot iterates `in_play.items`
-  - For modifier stacking validation display
-  - Fix: Derive from timeline
+#### 5f. Snapshot/validation ✓ COMPLETE
+- `validateCards` in `combat_snapshot.zig` now iterates timeline slots
+- Includes both action cards and modifiers from `play.modifiers()`
 
-#### 5g. Debug logging
-- `event_processor.zig:305` - Debug logging of mob in_play cards
-  - Low priority, can iterate timeline or remove
+#### 5g. Debug logging ✓ COMPLETE
+- `event_processor.zig` debug logging now iterates timeline instead of `in_play`
 
 #### 5h. Zone transition rethink
 - `command_handler.zig:104` - `moveCard(.hand, .in_play)` when playing
 - `command_handler.zig:204,307` - `moveCard(.in_play, .hand)` on cancel/withdraw
 - `costs.zig:59` - `moveCard(.in_play, .discard/exhaust)` after resolution
 
-**Key decision**: Keep `CombatZone.in_play` enum for events/logging?
-- Events still say `card_moved: .from = .in_play, .to = .hand`
-- Could keep enum value, remove backing ArrayList
-- Or: new event type for "play created/destroyed" vs zone moves?
+**Investigation findings:**
+- Two zone enums: `cards.Zone` (events) and `combat.CombatZone` (CombatState)
+- Effects mapper ignores `card_moved` to `.in_play` - uses `played_action_card` instead
+- Only meaningful `card_moved` with `.in_play`: cancel (→hand) and resolve (→discard)
+
+**Decision: Rename `.in_play` to `.played`**
+- Clearer semantics: cards have been played, now live in timeline
+- Timeline cleanup restores them to discard/exhaust
+- Rename in both `cards.Zone` and `combat.CombatZone`
+- Keep enum value (costs nothing), remove backing ArrayList in 5i
 
 #### 5i. Remove CombatState fields (final step)
 - Remove `in_play: ArrayList(entity.ID)`

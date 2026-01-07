@@ -63,49 +63,67 @@ fn applyResolveEffect(
     }
 }
 
-/// Execute all on_resolve rules for an agent's in-play cards.
-/// Called during tick resolution.
+/// Execute on_resolve rules for a single card.
+fn executeCardResolveRules(
+    card: *const cards.Instance,
+    actor: *Agent,
+    is_player: bool,
+    world: *World,
+) !void {
+    for (card.template.rules) |rule| {
+        if (rule.trigger != .on_resolve) continue;
+
+        // Check rule validity predicate (weapon requirements, range, etc.)
+        if (!validation.rulePredicatesSatisfied(card.template, actor, world.encounter)) continue;
+
+        // Execute expressions
+        for (rule.expressions) |expr| {
+            switch (expr.target) {
+                .self => {
+                    try applyResolveEffect(expr.effect, actor, is_player, world);
+                },
+                .all_enemies => {
+                    // Get enemy targets
+                    var targets = try targeting.evaluateTargets(world.alloc, .all_enemies, actor, world, null);
+                    defer targets.deinit(world.alloc);
+
+                    for (targets.items) |target| {
+                        const target_is_player = switch (target.director) {
+                            .player => true,
+                            else => false,
+                        };
+                        try applyResolveEffect(expr.effect, target, target_is_player, world);
+                    }
+                },
+                else => {
+                    // Other targets not yet implemented for resolve effects
+                },
+            }
+        }
+    }
+}
+
+/// Execute on_resolve rules for all cards in an agent's timeline plays.
+/// Called during tick resolution. Processes both action cards and stacked modifiers.
 /// Note: Card zone transitions (including exhaust) are handled by applyCommittedCosts.
 pub fn executeResolvePhaseRules(world: *World, actor: *Agent) !void {
-    const cs = actor.combat_state orelse return;
+    const enc = world.encounter orelse return;
+    const enc_state = enc.stateFor(actor.id) orelse return;
     const is_player = switch (actor.director) {
         .player => true,
         else => false,
     };
 
-    for (cs.in_play.items) |card_id| {
-        const card = world.card_registry.get(card_id) orelse continue;
+    // Iterate over plays in timeline - includes both action cards and modifiers
+    for (enc_state.current.timeline.slots()) |slot| {
+        // Process the action card's rules
+        const action_card = world.card_registry.get(slot.play.action) orelse continue;
+        try executeCardResolveRules(action_card, actor, is_player, world);
 
-        for (card.template.rules) |rule| {
-            if (rule.trigger != .on_resolve) continue;
-
-            // Check rule validity predicate (weapon requirements, range, etc.)
-            if (!validation.rulePredicatesSatisfied(card.template, actor, world.encounter)) continue;
-
-            // Execute expressions
-            for (rule.expressions) |expr| {
-                switch (expr.target) {
-                    .self => {
-                        try applyResolveEffect(expr.effect, actor, is_player, world);
-                    },
-                    .all_enemies => {
-                        // Get enemy targets
-                        var targets = try targeting.evaluateTargets(world.alloc, .all_enemies, actor, world, null);
-                        defer targets.deinit(world.alloc);
-
-                        for (targets.items) |target| {
-                            const target_is_player = switch (target.director) {
-                                .player => true,
-                                else => false,
-                            };
-                            try applyResolveEffect(expr.effect, target, target_is_player, world);
-                        }
-                    },
-                    else => {
-                        // Other targets not yet implemented for resolve effects
-                    },
-                }
-            }
+        // Process modifier cards' rules
+        for (slot.play.modifiers()) |mod_entry| {
+            const mod_card = world.card_registry.get(mod_entry.card_id) orelse continue;
+            try executeCardResolveRules(mod_card, actor, is_player, world);
         }
     }
 }
