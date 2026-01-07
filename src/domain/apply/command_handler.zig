@@ -324,14 +324,10 @@ pub const CommandHandler = struct {
         // Play card (move to in_play, commit stamina)
         const play_result = try playValidCardReservingCosts(&self.world.events, player, card, &self.world.card_registry, target);
 
-        // Store pending target if provided (for .single targeting cards)
-        if (target) |target_id| {
-            enc_state.current.setPendingTarget(play_result.in_play_id, target_id);
-        }
-
         // Add to plays (commit phase plays cannot be stacked)
         try enc_state.current.addPlay(.{
             .action = play_result.in_play_id,
+            .target = target,
             .added_in_phase = .commit,
             .source = play_result.source,
         }, &self.world.card_registry);

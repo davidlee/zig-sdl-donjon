@@ -45,7 +45,6 @@ pub const ModifierEntry = combat_mod.ModifierEntry;
 pub const Play = combat_mod.Play;
 pub const TimeSlot = combat_mod.TimeSlot;
 pub const Timeline = combat_mod.Timeline;
-pub const PendingTarget = combat_mod.PendingTarget;
 pub const TurnState = combat_mod.TurnState;
 pub const TurnHistory = combat_mod.TurnHistory;
 pub const AgentEncounterState = combat_mod.AgentEncounterState;

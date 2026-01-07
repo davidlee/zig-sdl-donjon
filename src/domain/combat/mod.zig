@@ -45,7 +45,6 @@ pub const ModifierEntry = plays.ModifierEntry;
 pub const Play = plays.Play;
 pub const TimeSlot = plays.TimeSlot;
 pub const Timeline = plays.Timeline;
-pub const PendingTarget = plays.PendingTarget;
 pub const TurnState = plays.TurnState;
 pub const TurnHistory = plays.TurnHistory;
 pub const AgentEncounterState = plays.AgentEncounterState;

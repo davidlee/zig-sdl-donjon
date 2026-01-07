@@ -384,19 +384,11 @@ pub fn hasFootworkInTimeline(timeline: *const Timeline, registry: *const world.C
 // Turn State
 // ============================================================================
 
-/// Target selected for a card before Play is created (during selection phase).
-pub const PendingTarget = struct {
-    card_id: entity.ID,
-    target_id: entity.ID,
-};
-
 /// Ephemeral state for the current turn - exists from commit through resolution.
 pub const TurnState = struct {
     timeline: Timeline = .{},
     focus_spent: f32 = 0,
     stack_focus_paid: bool = false, // 1F covers all stacking for the turn
-    // Targets selected during selection phase, before Plays exist
-    pending_targets: [Timeline.max_slots]?PendingTarget = .{null} ** Timeline.max_slots,
 
     /// Get all slots (sorted by time_start).
     pub fn slots(self: *const TurnState) []const TimeSlot {
@@ -412,41 +404,6 @@ pub const TurnState = struct {
         self.timeline.clear();
         self.focus_spent = 0;
         self.stack_focus_paid = false;
-        self.pending_targets = .{null} ** Timeline.max_slots;
-    }
-
-    /// Store a pending target for a card (before Play exists).
-    pub fn setPendingTarget(self: *TurnState, card_id: entity.ID, target_id: entity.ID) void {
-        // Find empty slot or existing entry for this card
-        for (&self.pending_targets) |*slot| {
-            if (slot.* == null or slot.*.?.card_id.eql(card_id)) {
-                slot.* = .{ .card_id = card_id, .target_id = target_id };
-                return;
-            }
-        }
-        // Array full - shouldn't happen if max_slots matches timeline capacity
-    }
-
-    /// Get pending target for a card, if any.
-    pub fn getPendingTarget(self: *const TurnState, card_id: entity.ID) ?entity.ID {
-        for (self.pending_targets) |slot| {
-            if (slot) |pt| {
-                if (pt.card_id.eql(card_id)) return pt.target_id;
-            }
-        }
-        return null;
-    }
-
-    /// Clear pending target for a card (e.g., when card is cancelled).
-    pub fn clearPendingTarget(self: *TurnState, card_id: entity.ID) void {
-        for (&self.pending_targets) |*slot| {
-            if (slot.*) |pt| {
-                if (pt.card_id.eql(card_id)) {
-                    slot.* = null;
-                    return;
-                }
-            }
-        }
     }
 
     /// Add a play at the next available time slot.
@@ -489,21 +446,6 @@ pub const TurnState = struct {
     /// Find a play by its action card ID, returns index or null.
     pub fn findPlayByCard(self: *const TurnState, card_id: entity.ID) ?usize {
         return self.timeline.findByCard(card_id);
-    }
-
-    /// Check if a new technique's channels would conflict with any existing play.
-    /// Note: With Timeline, this checks for any channel overlap regardless of time.
-    /// For time-aware conflict checking, use timeline.canInsert() directly.
-    pub fn wouldConflictOnChannel(
-        self: *const TurnState,
-        new_channels: cards.ChannelSet,
-        registry: *const world.CardRegistry,
-    ) bool {
-        for (self.slots()) |slot| {
-            const existing_channels = getPlayChannels(slot.play, registry);
-            if (new_channels.conflicts(existing_channels)) return true;
-        }
-        return false;
     }
 };
 
@@ -855,52 +797,6 @@ test "Play.wouldConflict returns false for empty modifier stack" {
     const play = Play{ .action = testId(1) };
     // Empty modifier stack - any modifier should be allowed
     try testing.expect(!play.wouldConflict(low, &registry));
-}
-
-test "TurnState.wouldConflictOnChannel detects weapon channel conflict" {
-    var registry = try world.CardRegistry.init(testing.allocator);
-    defer registry.deinit();
-
-    const card_list = @import("../card_list.zig");
-
-    // Register a slash card (uses weapon channel via technique)
-    const slash = card_list.byName("slash");
-    const slash_instance = try registry.create(slash);
-
-    var state = TurnState{};
-    try state.addPlay(.{ .action = slash_instance.id }, &registry);
-
-    // Another weapon channel should conflict
-    const weapon_channels: cards.ChannelSet = .{ .weapon = true };
-    try testing.expect(state.wouldConflictOnChannel(weapon_channels, &registry));
-}
-
-test "TurnState.wouldConflictOnChannel allows different channels" {
-    var registry = try world.CardRegistry.init(testing.allocator);
-    defer registry.deinit();
-
-    const card_list = @import("../card_list.zig");
-
-    // Register a slash card (uses weapon channel)
-    const slash = card_list.byName("slash");
-    const slash_instance = try registry.create(slash);
-
-    var state = TurnState{};
-    try state.addPlay(.{ .action = slash_instance.id }, &registry);
-
-    // Footwork channel should not conflict with weapon
-    const footwork_channels: cards.ChannelSet = .{ .footwork = true };
-    try testing.expect(!state.wouldConflictOnChannel(footwork_channels, &registry));
-}
-
-test "TurnState.wouldConflictOnChannel empty state has no conflicts" {
-    var registry = try world.CardRegistry.init(testing.allocator);
-    defer registry.deinit();
-
-    var state = TurnState{};
-
-    const any_channels: cards.ChannelSet = .{ .weapon = true };
-    try testing.expect(!state.wouldConflictOnChannel(any_channels, &registry));
 }
 
 test "Timeline.canInsert allows non-overlapping same channel" {

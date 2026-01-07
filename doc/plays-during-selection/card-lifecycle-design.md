@@ -16,7 +16,7 @@
 - `applyCommittedCosts` uses `action.source` for cleanup
 - Mobs use timeline plays instead of iterating `in_play` directly
 - Modifier source tracking via `ModifierEntry` struct (card_id + source)
-- `commitStack` populates modifier source from `in_play_sources`
+- `commitStack` populates modifier source from `PlayResult.source`
 
 **Completed (Phase 5a-5g)**:
 - View layer uses timeline for both selection and commit phases
@@ -454,7 +454,7 @@ Also exported `Phase` and `PlaySource` via `combat/mod.zig` and `combat.zig`.
   instead of iterating `in_play` directly.
 - `applyCommittedCosts` (`apply/costs.zig`): Uses `action.source` for lifecycle:
   - `null` → hand card → move to discard/exhaust
-  - `Some` → pool clone → destroy via `removeFromInPlay`
+  - `Some` → pool clone → destroy via `registry.destroy()`
 
 ### Phase 4: Add modifier source tracking ✓ COMPLETE
 
@@ -462,10 +462,10 @@ Also exported `Phase` and `PlaySource` via `combat/mod.zig` and `combat.zig`.
 - `ModifierEntry = struct { card_id: entity.ID, source: ?PlaySource }`
 - Updated `addModifier(card_id, source)`, `modifiers()` returns `[]const ModifierEntry`
 - Updated callers in `plays.zig`, `view.zig` to use `entry.card_id`
-- Updated `commitStack`/`applyStack` to populate modifier source from `in_play_sources`
+- Updated `commitStack`/`applyStack` to populate modifier source from `PlayResult.source`
 - Exported `ModifierEntry` from `combat/mod.zig` and `combat.zig`
 
-### Phase 5: Remove in_play zone — PENDING
+### Phase 5: Remove in_play zone ✓ COMPLETE
 
 **Sub-tasks by category:**
 
@@ -504,42 +504,28 @@ Also exported `Phase` and `PlaySource` via `combat/mod.zig` and `combat.zig`.
 #### 5g. Debug logging ✓ COMPLETE
 - `event_processor.zig` debug logging now iterates timeline instead of `in_play`
 
-#### 5h. Zone transition rethink
-- `command_handler.zig:104` - `moveCard(.hand, .in_play)` when playing
-- `command_handler.zig:204,307` - `moveCard(.in_play, .hand)` on cancel/withdraw
-- `costs.zig:59` - `moveCard(.in_play, .discard/exhaust)` after resolution
+#### 5h. Zone transition rethink ✓ COMPLETE
+- Kept `.in_play` enum value for events (no rename needed)
+- Made `.in_play` a "virtual" zone with no backing ArrayList:
+  - `moveCard(.hand, .in_play)` removes from hand only
+  - `moveCard(.in_play, .discard)` adds to discard only
+  - `isInZone(_, .in_play)` returns false (timeline is source of truth)
+- Events still use `.in_play` zone for semantics (card_moved events)
 
-**Investigation findings:**
-- Two zone enums: `cards.Zone` (events) and `combat.CombatZone` (CombatState)
-- Effects mapper ignores `card_moved` to `.in_play` - uses `played_action_card` instead
-- Only meaningful `card_moved` with `.in_play`: cancel (→hand) and resolve (→discard)
+#### 5i. Remove CombatState fields ✓ COMPLETE
+- Removed `in_play: ArrayList(entity.ID)` field
+- Removed `in_play_sources: HashMap(ID, InPlayInfo)` field
+- Removed `InPlayInfo` struct (no longer needed)
+- Renamed `addToInPlayFrom()` → `createPoolClone()` returning `PoolCloneResult`
+- Removed `removeFromInPlay()` - callers use `registry.destroy()` directly
+- Updated `playValidCardReservingCosts()` to return `PlayResult{in_play_id, source}`
+- Updated all callers to use returned source instead of HashMap lookup
 
-**Decision: Rename `.in_play` to `.played`**
-- Clearer semantics: cards have been played, now live in timeline
-- Timeline cleanup restores them to discard/exhaust
-- Rename in both `cards.Zone` and `combat.CombatZone`
-- Keep enum value (costs nothing), remove backing ArrayList in 5i
-
-#### 5i. Remove CombatState fields (final step)
-- Remove `in_play: ArrayList(entity.ID)`
-- Remove `in_play_sources: HashMap(ID, InPlayInfo)`
-- Update `zoneList()`, `isInZone()`, etc. to handle missing zone
-- Keep `addToInPlayFrom()` for clone creation? Or rename to `createPoolClone()`?
-
-**Decisions:**
-1. ~~Do mobs need timeline support?~~ **Yes** - `in_play` goes entirely, mobs use timeline too
-2. `CombatZone.in_play` enum value - keep for events? TBD
-3. View render timing - verify timeline populated before render
-
-**Suggested order:**
-1. 5a (view) - quick win, validates timeline-during-selection works
-2. 5b (channel conflicts) - small, self-contained
-3. 5c (rule execution) - important, touches game logic
-4. 5d (mob plays) - ensure mobs use timeline properly
-5. 5e (cleanup) - needs `cleanupTimelinePlays()` helper
-6. 5f-5g (snapshot, debug) - low risk
-7. 5h (zone transitions) - conceptual, may need event changes
-8. 5i (remove fields) - final cleanup
+**Final architecture:**
+- `CombatState` manages deck zones: draw, hand, discard, exhaust
+- Timeline manages plays during the turn
+- Pool clones created via `createPoolClone()`, destroyed via `registry.destroy()`
+- Play source tracked on `Play.source` and `ModifierEntry.source`
 
 ---
 

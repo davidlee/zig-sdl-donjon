@@ -139,17 +139,6 @@ pub const EventProcessor = struct {
         try self.world.events.push(event);
     }
 
-    /// Ensure all agents have plays built for commit phase.
-    /// With the timeline model, plays are created at play time (selection phase for player,
-    /// immediately for AI). This is now a no-op safety check.
-    fn buildPlaysFromInPlayCards(self: *EventProcessor) !void {
-        _ = self;
-        // Plays are now created when cards are played:
-        // - Player: playActionCard creates Play immediately during selection
-        // - AI: directors create Plays via createPlayForInPlayCard
-        // No additional bridging needed.
-    }
-
     /// Check if combat should end. Returns outcome if terminated, null if combat continues.
     fn checkCombatTermination(self: *EventProcessor) !?combat.CombatOutcome {
         const player = self.world.player;
@@ -247,7 +236,6 @@ pub const EventProcessor = struct {
                             try self.world.transitionTurnTo(.player_card_selection);
                         },
                         .commit_phase => {
-                            try self.buildPlaysFromInPlayCards();
                             // Execute on_commit rules for player
                             try commit.executeCommitPhaseRules(self.world, self.world.player);
                             // Execute on_commit rules for mobs
