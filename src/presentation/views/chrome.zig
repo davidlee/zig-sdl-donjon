@@ -306,14 +306,11 @@ pub const View = struct {
         _ = self;
 
         switch (event) {
-            .mouse_button_up => |data| {
-                // Use raw screen coords for header hit testing
-                const screen_pt = Point{ .x = data.x, .y = data.y };
-
-                // End Turn button
+            .mouse_button_up => {
+                // End Turn button (uses screen coords, no viewport offset)
                 const turn_phase = world.turnPhase();
                 const end_turn_btn = EndTurnButton.init(turn_phase);
-                if (end_turn_btn.hitTest(screen_pt)) {
+                if (end_turn_btn.hitTest(vs.mouse_novp)) {
                     if (turn_phase == .player_card_selection) {
                         return .{ .command = .{ .end_turn = {} } };
                     } else if (turn_phase == .commit_phase) {
@@ -322,7 +319,7 @@ pub const View = struct {
                 }
             },
             .mouse_wheel => |data| {
-                if (isInSidebar(vs.mouse)) {
+                if (isInSidebar(vs.mouse_novp)) {
                     const current = if (vs.combat) |c| c.log_scroll else @as(i32, 0);
                     const delta: i32 = if (data.scroll_y > 0) scroll_speed else -scroll_speed;
                     const new_scroll = @max(0, current + delta);

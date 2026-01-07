@@ -97,13 +97,16 @@ pub const Coordinator = struct {
         const vy: f32 = if (self.isChromeActive()) @floatFromInt(chrome.viewport.y) else 0;
         switch (sdl_event) {
             .mouse_button_down, .mouse_button_up => |data| {
-                self.vs.mouse = self.ux.translateCoords(.{ .x = data.x - vx, .y = data.y - vy });
+                self.vs.mouse_vp = self.ux.translateCoords(.{ .x = data.x - vx, .y = data.y - vy });
+                self.vs.mouse_novp = self.ux.translateCoords(.{ .x = data.x, .y = data.y });
             },
             .mouse_wheel => |data| {
-                self.vs.mouse = self.ux.translateCoords(.{ .x = data.x - vx, .y = data.y - vy });
+                self.vs.mouse_vp = self.ux.translateCoords(.{ .x = data.x - vx, .y = data.y - vy });
+                self.vs.mouse_novp = self.ux.translateCoords(.{ .x = data.x, .y = data.y });
             },
             .mouse_motion => |data| {
-                self.vs.mouse = self.ux.translateCoords(.{ .x = data.x - vx, .y = data.y - vy });
+                self.vs.mouse_vp = self.ux.translateCoords(.{ .x = data.x - vx, .y = data.y - vy });
+                self.vs.mouse_novp = self.ux.translateCoords(.{ .x = data.x, .y = data.y });
             },
             else => {},
         }

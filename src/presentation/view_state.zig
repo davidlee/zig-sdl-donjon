@@ -16,7 +16,8 @@ pub const Rect = s.rect.FRect;
 pub const ViewState = struct {
     // System - Coordinator keeps updated on relevant events
     screen: Rect = .{ .x = 0, .y = 0, .w = 800, .h = 600 },
-    mouse: Point = .{ .x = 0, .y = 0 },
+    mouse_vp: Point = .{ .x = 0, .y = 0 },
+    mouse_novp: Point = .{ .x = 0, .y = 0 }, // no viewport (for chrome, etc)
 
     // Per-view state (null when not active or fresh)
     combat: ?CombatUIState = null,

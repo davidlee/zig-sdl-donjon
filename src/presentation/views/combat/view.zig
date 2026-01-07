@@ -156,8 +156,8 @@ const CardZoneView = struct {
         if (ui.drag) |drag| {
             if (drag.id.eql(card_id)) {
                 return .{
-                    .x = vs.mouse.x - pad - (drag.original_pos.x - base_x),
-                    .y = vs.mouse.y - pad - (drag.original_pos.y - base_y),
+                    .x = vs.mouse_vp.x - pad - (drag.original_pos.x - base_x),
+                    .y = vs.mouse_vp.y - pad - (drag.original_pos.y - base_y),
                     .w = self.layout.w + pad,
                     .h = self.layout.h + pad,
                 };
@@ -400,14 +400,14 @@ pub const View = struct {
                     if (self.isCardDraggable(card_id)) {
                         var new_cs = cs;
                         new_cs.drag = .{
-                            .original_pos = vs.mouse,
+                            .original_pos = vs.mouse_vp,
                             .id = card_id,
                         };
                         return .{ .vs = vs.withCombat(new_cs) };
                     }
                 }
                 var new_vs = vs;
-                new_vs.clicked = vs.mouse;
+                new_vs.clicked = vs.mouse_vp;
                 return .{ .vs = new_vs };
             },
             .mouse_button_up => {
@@ -429,18 +429,18 @@ pub const View = struct {
     }
 
     fn hitTestPlayerCards(self: *View, vs: ViewState) ?HitResult {
-        if (self.alwaysZone(self.arena).hitTest(vs, vs.mouse)) |hit| {
+        if (self.alwaysZone(self.arena).hitTest(vs, vs.mouse_vp)) |hit| {
             return hit;
-        } else if (self.handZone(self.arena).hitTest(vs, vs.mouse)) |hit| {
+        } else if (self.handZone(self.arena).hitTest(vs, vs.mouse_vp)) |hit| {
             return hit;
         }
         // During commit phase, hit test plays; during selection, hit test flat in_play
         if (self.inPhase(.commit_phase)) {
-            if (self.playerPlayZone(self.arena).hitTest(vs, vs.mouse)) |hit| {
+            if (self.playerPlayZone(self.arena).hitTest(vs, vs.mouse_vp)) |hit| {
                 return hit;
             }
         } else {
-            if (self.inPlayZone(self.arena).hitTest(vs, vs.mouse)) |hit| {
+            if (self.inPlayZone(self.arena).hitTest(vs, vs.mouse_vp)) |hit| {
                 return hit;
             }
         }
@@ -466,7 +466,7 @@ pub const View = struct {
         // During commit phase, hit test against plays for modifier attachment
         if (self.inPhase(.commit_phase)) {
             const play_zone = self.playerPlayZone(self.arena);
-            if (play_zone.hitTestPlay(vs, vs.mouse)) |play_index| {
+            if (play_zone.hitTestPlay(vs, vs.mouse_vp)) |play_index| {
                 // Check predicate match via pre-computed snapshot
                 const snapshot = self.snapshot orelse return .{ .vs = vs.withCombat(new_cs) };
                 if (!snapshot.canModifierAttachToPlay(drag.id, play_index))
@@ -489,7 +489,7 @@ pub const View = struct {
             }
         } else {
             // Selection phase - original card-to-card hit test
-            if (self.inPlayZone(self.arena).hitTest(vs, vs.mouse)) |hit| {
+            if (self.inPlayZone(self.arena).hitTest(vs, vs.mouse_vp)) |hit| {
                 new_cs.drag.?.target = hit.cardId();
             }
         }
@@ -501,7 +501,7 @@ pub const View = struct {
         var hover: ?view_state.EntityRef = null;
         if (self.hitTestPlayerCards(vs)) |hit| {
             hover = .{ .card = hit.cardId() };
-        } else if (self.opposition.hitTest(vs.mouse)) |sprite| {
+        } else if (self.opposition.hitTest(vs.mouse_vp)) |sprite| {
             // hover for enemies
             const id = sprite.id;
             hover = .{ .enemy = id };
@@ -617,7 +617,7 @@ pub const View = struct {
             // Mouse released: fire event, unless rolled off target since click
             if (vs.clicked) |pos| {
                 const click_res = self.onClick(vs, pos);
-                const release_res = self.onClick(vs, vs.mouse);
+                const release_res = self.onClick(vs, vs.mouse_vp);
                 if (std.meta.eql(click_res, release_res)) return release_res;
             }
         }
@@ -829,7 +829,7 @@ pub const View = struct {
                 // tooltip
                 try list.append(alloc, .{
                     .filled_rect = .{
-                        .rect = .{ .x = vs.mouse.x - xw / 2, .y = vs.mouse.y + 15, .w = xw, .h = yh },
+                        .rect = .{ .x = vs.mouse_vp.x - xw / 2, .y = vs.mouse_vp.y + 15, .w = xw, .h = yh },
                         .color = .{
                             .r = 100,
                             .g = 100,
