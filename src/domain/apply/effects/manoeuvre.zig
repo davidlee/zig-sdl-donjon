@@ -38,18 +38,35 @@ fn executeAgentManoeuvres(world: *World, actor: *combat.Agent, enc: *combat.Enco
             for (rule.expressions) |expr| {
                 switch (expr.effect) {
                     .modify_range => |range_mod| {
-                        // Get the focal target for this manoeuvre
-                        const focal_target = slot.play.target orelse continue;
-
-                        // Apply range modification to the focal engagement
-                        try applyRangeModification(
-                            world,
-                            enc,
-                            actor.id,
-                            focal_target,
-                            range_mod.steps,
-                            range_mod.propagate,
-                        );
+                        // Apply range modification based on target type
+                        switch (expr.target) {
+                            .all_enemies => {
+                                // Apply to all engagements (e.g., disengage)
+                                for (enc.enemies.items) |enemy| {
+                                    try applyRangeModification(
+                                        world,
+                                        enc,
+                                        actor.id,
+                                        enemy.id,
+                                        range_mod.steps,
+                                        false, // no propagation for all_enemies
+                                    );
+                                }
+                            },
+                            .single => {
+                                // Apply to focal target with propagation
+                                const focal_target = slot.play.target orelse continue;
+                                try applyRangeModification(
+                                    world,
+                                    enc,
+                                    actor.id,
+                                    focal_target,
+                                    range_mod.steps,
+                                    range_mod.propagate,
+                                );
+                            },
+                            else => {},
+                        }
                     },
                     .modify_position => |delta| {
                         // Apply position modification based on target type

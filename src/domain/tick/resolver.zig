@@ -148,6 +148,9 @@ pub const TickResolver = struct {
 
             // Resolve against each target
             for (targets.items) |defender| {
+                // Skip self-targeting (no engagement with self)
+                if (defender.id.eql(action.actor.id)) continue;
+
                 // Find defender's active defense (if any)
                 const defense_tech = self.findDefensiveAction(defender, action.time_start, action.time_end);
 

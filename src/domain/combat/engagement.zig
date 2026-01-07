@@ -32,7 +32,7 @@ pub const Engagement = struct {
     pressure: f32 = 0.5,
     control: f32 = 0.5,
     position: f32 = 0.5,
-    range: Reach = .sabre, // Current distance
+    range: Reach = .far, // Current distance
 
     /// Compute overall advantage for the player/first agent.
     pub fn playerAdvantage(self: Engagement) f32 {

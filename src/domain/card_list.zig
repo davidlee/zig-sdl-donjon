@@ -456,7 +456,7 @@ const t_advance = Template{
     .tags = .{ .manoeuvre = true, .offensive = true, .phase_selection = true, .phase_commit = true },
     .playable_from = PlayableFrom.always_avail,
     .rules = &.{.{
-        .trigger = .on_play,
+        .trigger = .on_resolve,
         .valid = .always,
         .expressions = &.{
             .{
@@ -467,7 +467,7 @@ const t_advance = Template{
             .{
                 .effect = .{ .modify_range = .{ .steps = -1 } }, // close 1 step
                 .filter = null,
-                .target = .all_enemies,
+                .target = .single,
             },
         },
     }},
@@ -483,7 +483,7 @@ const t_retreat = Template{
     .tags = .{ .manoeuvre = true, .defensive = true, .phase_selection = true, .phase_commit = true },
     .playable_from = PlayableFrom.always_avail,
     .rules = &.{.{
-        .trigger = .on_play,
+        .trigger = .on_resolve,
         .valid = .always,
         .expressions = &.{
             .{
@@ -494,7 +494,7 @@ const t_retreat = Template{
             .{
                 .effect = .{ .modify_range = .{ .steps = 1 } }, // open 1 step
                 .filter = null,
-                .target = .all_enemies,
+                .target = .single,
             },
         },
     }},
@@ -510,7 +510,7 @@ const t_sidestep = Template{
     .tags = .{ .manoeuvre = true, .offensive = true, .phase_selection = true, .phase_commit = true },
     .playable_from = PlayableFrom.always_avail,
     .rules = &.{.{
-        .trigger = .on_play,
+        .trigger = .on_resolve,
         .valid = .always,
         .expressions = &.{.{
             .effect = .{ .combat_technique = Technique.byID(.sidestep) },
@@ -530,7 +530,7 @@ const t_hold = Template{
     .tags = .{ .manoeuvre = true, .phase_selection = true, .phase_commit = true },
     .playable_from = PlayableFrom.always_avail,
     .rules = &.{.{
-        .trigger = .on_play,
+        .trigger = .on_resolve,
         .valid = .always,
         .expressions = &.{.{
             .effect = .{ .combat_technique = Technique.byID(.hold) },
