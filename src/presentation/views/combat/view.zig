@@ -210,7 +210,7 @@ const CarouselView = struct {
     const group_gap: f32 = 30; // extra gap between hand and known
 
     // Dock effect parameters
-    const max_raise: f32 = 40; // max pixels to raise when mouse directly over
+    const max_raise: f32 = 20; // max pixels to raise when mouse directly over
     const influence_radius_x: f32 = 100; // horizontal influence for spreading
     const influence_radius_y: f32 = 150; // vertical influence for raising
     const expand_ratio: f32 = 2.5; // how much the hovered gap expands relative to base
@@ -257,6 +257,14 @@ const CarouselView = struct {
         return @as(f32, @floatFromInt(n - 1)) * base_spacing + card_w + gap;
     }
 
+    fn cardCentreFromRect(rect: Rect) Point {
+        return Point{ .x = rect.x + rect.w / 2, .y = rect.y + rect.h / 2 };
+    }
+
+    fn cardRectFromCentre(centre: Point) Rect {
+        return Rect{ .x = centre.x - card_w / 2, .y = centre.y - card_h / 2, .w = card_w, .h = card_h };
+    }
+
     /// Calculate all card rects with anchored spread algorithm
     /// Outer cards stay fixed, spacing redistributes based on mouse proximity
     fn cardRects(self: CarouselView, mouse_x: f32, mouse_y: f32, alloc: std.mem.Allocator) []Rect {
@@ -264,91 +272,143 @@ const CarouselView = struct {
         if (n == 0) return &.{};
 
         const rects = alloc.alloc(Rect, n) catch return &.{};
+        const points = alloc.alloc(Point, n) catch return &.{};
+        defer alloc.free(points);
 
         // Fixed total width - outer cards anchored
         const total_width = self.baseWidth();
         const start_x = (viewport_w - total_width) / 2;
 
-        // Y influence for raising (same for all cards based on mouse Y)
-        const y_inf = influenceY(mouse_y);
+        const first_x = start_x + card_w / 2;
+        const last_x = start_x + total_width - card_w / 2;
+        const span = last_x - first_x;
 
-        if (n == 1) {
-            // Single card - just center it
-            const x_inf = influenceX(@abs(mouse_x - (start_x + card_w / 2)));
-            rects[0] = .{
-                .x = start_x,
-                .y = base_y - (max_raise * x_inf * y_inf),
-                .w = card_w,
-                .h = card_h,
-            };
-            return rects;
-        }
+        // Normalize mouse position to [0, 1] range, clamped to carousel bounds
+        const m = std.math.clamp((mouse_x - first_x) / span, 0.0, 1.0);
 
-        // Calculate gap weights based on mouse proximity
-        // More weight = more space allocated to that gap
-        const num_gaps = n - 1;
-        const weights = alloc.alloc(f32, num_gaps) catch return &.{};
-        defer alloc.free(weights);
+        // How much displacement to apply (pixels)
+        const max_displacement: f32 = 120;
 
-        // Total gap space available (excluding group gap which is fixed)
-        const has_group_gap = self.hand_cards.len > 0 and self.known_cards.len > 0;
-        const fixed_group_gap: f32 = if (has_group_gap) group_gap else 0;
-        const total_gap_space = total_width - @as(f32, @floatFromInt(n)) * card_w - fixed_group_gap;
-        const base_gap = total_gap_space / @as(f32, @floatFromInt(num_gaps));
+        // Virtual margin - cards occupy [margin, 1-margin] so edges still move a bit
+        const margin: f32 = 0.10;
 
-        // Calculate raw weights for each gap
-        var total_weight: f32 = 0;
-        for (0..num_gaps) |i| {
-            // Gap center is between card i and card i+1
-            // Use base positions to find gap center
-            const gap_x = start_x + @as(f32, @floatFromInt(i)) * base_spacing + card_w + base_gap / 2;
-
-            // Add group gap offset for gaps after hand/known boundary
-            const gap_center = if (has_group_gap and i >= self.hand_cards.len - 1 and self.hand_cards.len > 0)
-                gap_x + fixed_group_gap
-            else
-                gap_x;
-
-            const dist = @abs(mouse_x - gap_center);
-            const inf = influenceX(dist);
-
-            // Weight: 1.0 = base, higher = expanded
-            weights[i] = 1.0 + inf * (expand_ratio - 1.0);
-            total_weight += weights[i];
-        }
-
-        // Normalize weights to distribute total gap space
-        const scale = @as(f32, @floatFromInt(num_gaps)) / total_weight;
-        for (weights) |*wt| {
-            wt.* *= scale;
-        }
-
-        // Position cards based on weighted gaps
-        var x = start_x;
         for (0..n) |i| {
-            // Calculate raise based on X proximity and Y influence
-            const card_center = x + card_w / 2;
-            const x_dist = @abs(mouse_x - card_center);
+            // Normalized position for placement: t_raw ∈ [0, 1]
+            const t_raw: f32 = if (n == 1) 0.5 else @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(n - 1));
+            // Normalized position for weight calc: t ∈ [margin, 1-margin]
+            const t: f32 = margin + t_raw * (1.0 - 2.0 * margin);
+
+            // Calculate weight using sine formula
+            // Left of mouse: negative (push toward left edge)
+            // Right of mouse: positive (push toward right edge)
+            const weight: f32 = if (t < m and m > 0.001)
+                -@sin(std.math.pi * t / m)
+            else if (t > m and m < 0.999)
+                @sin(std.math.pi * (t - m) / (1.0 - m))
+            else
+                0;
+
+            // Base position (uniform spacing) - use t_raw for actual placement
+            const base_x = first_x + t_raw * span;
+
+            // Apply displacement
+            const card_x = base_x + weight * max_displacement;
+
+            // Y position with raise based on proximity to mouse
+            const y_inf = influenceY(mouse_y);
+            const x_dist = @abs(mouse_x - base_x);
             const x_inf = influenceX(x_dist);
             const raise = max_raise * x_inf * y_inf;
 
-            rects[i] = .{
-                .x = x,
-                .y = base_y - raise,
-                .w = card_w,
-                .h = card_h,
-            };
-
-            // Advance to next card position
-            if (i < num_gaps) {
-                x += card_w + base_gap * weights[i];
-
-                // Add fixed group gap after last hand card
-                if (has_group_gap and self.hand_cards.len > 0 and i == self.hand_cards.len - 1) {
-                    x += fixed_group_gap;
-                }
-            }
+            points[i] = Point{ .x = card_x, .y = base_y - raise };
         }
+        // points[0] = first;
+        // points[n] = last;
+
+        // Y influence for raising (same for all cards based on mouse Y)
+        // const y_inf = influenceY(mouse_y);
+
+        // if (n == 1) {
+        //     // Single card - just center it
+        //     const x_inf = influenceX(@abs(mouse_x - (start_x + card_w / 2)));
+        //     rects[0] = .{
+        //         .x = start_x,
+        //         .y = base_y - (max_raise * x_inf * y_inf),
+        //         .w = card_w,
+        //         .h = card_h,
+        //     };
+        //     return rects;
+        // }
+
+        for (0..n) |i| {
+            rects[i] = cardRectFromCentre(points[i]);
+        }
+
+        // // Calculate gap weights based on mouse proximity
+        // // More weight = more space allocated to that gap
+        // const num_gaps = n - 1;
+        // const weights = alloc.alloc(f32, num_gaps) catch return &.{};
+        // defer alloc.free(weights);
+        //
+        // // Total gap space available (excluding group gap which is fixed)
+        // const has_group_gap = self.hand_cards.len > 0 and self.known_cards.len > 0;
+        // const fixed_group_gap: f32 = if (has_group_gap) group_gap else 0;
+        // const total_gap_space = total_width - @as(f32, @floatFromInt(n)) * card_w - fixed_group_gap;
+        // const base_gap = total_gap_space / @as(f32, @floatFromInt(num_gaps));
+        //
+        // // Calculate raw weights for each gap
+        // var total_weight: f32 = 0;
+        // for (0..num_gaps) |i| {
+        //     // Gap center is between card i and card i+1
+        //     // Use base positions to find gap center
+        //     const gap_x = start_x + @as(f32, @floatFromInt(i)) * base_spacing + card_w + base_gap / 2;
+        //
+        //     // Add group gap offset for gaps after hand/known boundary
+        //     const gap_center = if (has_group_gap and i >= self.hand_cards.len - 1 and self.hand_cards.len > 0)
+        //         gap_x + fixed_group_gap
+        //     else
+        //         gap_x;
+        //
+        //     const dist = @abs(mouse_x - gap_center);
+        //     const inf = influenceX(dist);
+        //
+        //     // Weight: 1.0 = base, higher = expanded
+        //     weights[i] = 1.0 + inf * (expand_ratio - 1.0);
+        //     total_weight += weights[i];
+        // }
+        //
+        // // Normalize weights to distribute total gap space
+        // const scale = @as(f32, @floatFromInt(num_gaps)) / total_weight;
+        // for (weights) |*wt| {
+        //     wt.* *= scale;
+        // }
+        //
+        // // Position cards based on weighted gaps
+        // var x = start_x;
+        // for (0..n) |i| {
+        //     // Calculate raise based on X proximity and Y influence
+        //     const card_center = x + card_w / 2;
+        //     const x_dist = @abs(mouse_x - card_center);
+        //     const x_inf = influenceX(x_dist);
+        //     const raise = max_raise * x_inf * y_inf;
+        //
+        //     rects[i] = .{
+        //         .x = x,
+        //         .y = base_y - raise,
+        //         .w = card_w,
+        //         .h = card_h,
+        //     };
+        //
+        //     // Advance to next card position
+        //     if (i < num_gaps) {
+        //         x += card_w + base_gap * weights[i];
+        //
+        //         // Add fixed group gap after last hand card
+        //         if (has_group_gap and self.hand_cards.len > 0 and i == self.hand_cards.len - 1) {
+        //             x += fixed_group_gap;
+        //         }
+        //     }
+        // }
 
         return rects;
     }
