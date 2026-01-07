@@ -111,7 +111,10 @@ pub const SimpleDeckDirector = struct {
             const card = w.card_registry.get(card_id) orelse continue;
             if (apply.isCardSelectionValid(agent, card, w.encounter)) {
                 const play_result = try apply.playValidCardReservingCosts(&w.events, agent, card, &w.card_registry, null);
-                try createPlayForInPlayCard(agent, play_result, null, w);
+                createPlayForInPlayCard(agent, play_result, null, w) catch |err| switch (err) {
+                    error.Conflict => continue, // card conflicts with timeline, skip it
+                    else => return err,
+                };
                 to_play -= 1;
             }
         }
@@ -149,7 +152,10 @@ pub const PoolDirector = struct {
             // Check if playable (not on cooldown, meets requirements)
             if (apply.isCardSelectionValid(agent, card, w.encounter)) {
                 const play_result = try apply.playValidCardReservingCosts(&w.events, agent, card, &w.card_registry, null);
-                try createPlayForInPlayCard(agent, play_result, null, w);
+                createPlayForInPlayCard(agent, play_result, null, w) catch |err| switch (err) {
+                    error.Conflict => continue, // card conflicts with timeline, skip it
+                    else => return err,
+                };
                 played += 1;
             }
         }
