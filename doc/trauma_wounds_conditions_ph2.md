@@ -1,5 +1,25 @@
 # Phase 2: Condition Penalties - Implementation Plan
 
+## Handover Notes (2026-01-08)
+
+### Increment 1 Progress: ✓ Complete
+
+**DONE:**
+- `body.zig`: Added `visionScore()`, `hearingScore()`, `graspingPartBySide()` after `mobilityScore()` (~line 459-507)
+- `positioning.zig`: Added `damage` import, `footworkMultForAgent()` helper (~line 52-61)
+- `positioning.zig`: Updated `calculateManoeuvreScore()` to take `footwork_mult` param and apply it
+- `positioning.zig`: Updated `resolveManoeuvreConflict()` to compute and pass footwork_mult
+- `positioning.zig`: Updated existing tests to pass `1.0` for footwork_mult param
+- `body.zig`: Added tests for `visionScore()`, `hearingScore()`, `graspingPartBySide()` (line ~1642-1715)
+- Ran `zig fmt` on modified files
+- Build passes, all tests pass
+
+**Notes:**
+- `footworkMultForAgent()` test deferred: private helper, penalty table/combine tested in damage.zig
+- Sensory score tests use `.broken` severity (0.1 integrity) to reliably trigger < 0.3 threshold
+
+---
+
 ## Current State Summary
 
 ### Existing Infrastructure

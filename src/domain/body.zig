@@ -456,6 +456,56 @@ pub const Body = struct {
         return if (count > 0) total / count else 0;
     }
 
+    /// Average effective integrity of parts with can_see flag (eyes).
+    /// Returns 0..1; used to derive .blinded condition when < 0.3.
+    pub fn visionScore(self: *const Body) f32 {
+        var buf: [256]f32 = undefined;
+        const eff = buf[0..self.parts.items.len];
+        self.computeEffectiveIntegrities(eff);
+
+        var total: f32 = 0;
+        var count: f32 = 0;
+
+        for (self.parts.items, 0..) |p, i| {
+            if (p.flags.can_see) {
+                total += eff[i];
+                count += 1;
+            }
+        }
+
+        return if (count > 0) total / count else 0;
+    }
+
+    /// Average effective integrity of parts with can_hear flag (ears).
+    /// Returns 0..1; used to derive .deafened condition when < 0.3.
+    pub fn hearingScore(self: *const Body) f32 {
+        var buf: [256]f32 = undefined;
+        const eff = buf[0..self.parts.items.len];
+        self.computeEffectiveIntegrities(eff);
+
+        var total: f32 = 0;
+        var count: f32 = 0;
+
+        for (self.parts.items, 0..) |p, i| {
+            if (p.flags.can_hear) {
+                total += eff[i];
+                count += 1;
+            }
+        }
+
+        return if (count > 0) total / count else 0;
+    }
+
+    /// Find first grasping part on the given side (for weapon hand lookup).
+    pub fn graspingPartBySide(self: *const Body, side: Side) ?PartIndex {
+        for (self.parts.items, 0..) |p, i| {
+            if (p.flags.can_grasp and p.side == side) {
+                return @intCast(i);
+            }
+        }
+        return null;
+    }
+
     /// Result of applying damage to a part
     pub const DamageResult = struct {
         wound: Wound,
@@ -1587,4 +1637,80 @@ test "part severity computed from wounds" {
     const sev = part.computeSeverity();
     try std.testing.expect(sev != .none);
     try std.testing.expect(@intFromEnum(sev) <= @intFromEnum(Severity.inhibited) + 1);
+}
+
+test "vision score with damaged eyes" {
+    const alloc = std.testing.allocator;
+    var body = try Body.fromPlan(alloc, &HumanoidPlan);
+    defer body.deinit();
+
+    // Full vision with both eyes
+    const full_vision = body.visionScore();
+    try std.testing.expect(full_vision > 0.9);
+
+    // Damage left eye
+    const left_eye_idx = body.indexOf("left_eye").?;
+    body.parts.items[left_eye_idx].severity = .disabled;
+
+    // Reduced vision (one eye at ~0, one at ~1, average ~0.5)
+    const partial_vision = body.visionScore();
+    try std.testing.expect(partial_vision < full_vision);
+    try std.testing.expect(partial_vision > 0.3);
+    try std.testing.expect(partial_vision < 0.7);
+
+    // Break both eyes completely
+    const right_eye_idx = body.indexOf("right_eye").?;
+    body.parts.items[left_eye_idx].severity = .broken;
+    body.parts.items[right_eye_idx].severity = .broken;
+
+    const no_vision = body.visionScore();
+    try std.testing.expect(no_vision < 0.3);
+}
+
+test "hearing score with damaged ears" {
+    const alloc = std.testing.allocator;
+    var body = try Body.fromPlan(alloc, &HumanoidPlan);
+    defer body.deinit();
+
+    // Full hearing with both ears
+    const full_hearing = body.hearingScore();
+    try std.testing.expect(full_hearing > 0.9);
+
+    // Damage left ear
+    const left_ear_idx = body.indexOf("left_ear").?;
+    body.parts.items[left_ear_idx].severity = .disabled;
+
+    // Reduced hearing
+    const partial_hearing = body.hearingScore();
+    try std.testing.expect(partial_hearing < full_hearing);
+    try std.testing.expect(partial_hearing > 0.3);
+    try std.testing.expect(partial_hearing < 0.7);
+
+    // Break both ears completely
+    const right_ear_idx = body.indexOf("right_ear").?;
+    body.parts.items[left_ear_idx].severity = .broken;
+    body.parts.items[right_ear_idx].severity = .broken;
+
+    const no_hearing = body.hearingScore();
+    try std.testing.expect(no_hearing < 0.3);
+}
+
+test "grasping part by side" {
+    const alloc = std.testing.allocator;
+    var body = try Body.fromPlan(alloc, &HumanoidPlan);
+    defer body.deinit();
+
+    // Find left hand - should match indexOf
+    const left_hand = body.graspingPartBySide(.left);
+    try std.testing.expect(left_hand != null);
+    try std.testing.expectEqual(body.indexOf("left_hand").?, left_hand.?);
+
+    // Find right hand - should match indexOf
+    const right_hand = body.graspingPartBySide(.right);
+    try std.testing.expect(right_hand != null);
+    try std.testing.expectEqual(body.indexOf("right_hand").?, right_hand.?);
+
+    // Central parts should return null (no grasping parts are centered)
+    const center_grasp = body.graspingPartBySide(.center);
+    try std.testing.expect(center_grasp == null);
 }

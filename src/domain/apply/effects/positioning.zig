@@ -9,6 +9,7 @@ const lib = @import("infra");
 const entity = lib.entity;
 const combat = @import("../../combat.zig");
 const cards = @import("../../cards.zig");
+const damage = @import("../../damage.zig");
 const stats = @import("../../stats.zig");
 const random = @import("../../random.zig");
 const weapon = @import("../../weapon.zig");
@@ -48,12 +49,24 @@ const standing_still_penalty: f32 = 0.3;
 /// Score differential must exceed this to avoid stalemate.
 const stalemate_threshold: f32 = 0.1;
 
+/// Compute combined footwork_mult from agent's active conditions.
+/// Iterates conditions without engagement context (footwork is pre-engagement).
+fn footworkMultForAgent(agent: *const combat.Agent) f32 {
+    var penalties = damage.CombatPenalties{};
+    var iter = agent.activeConditions(null);
+    while (iter.next()) |cond| {
+        penalties = penalties.combine(damage.penaltiesFor(cond.condition));
+    }
+    return penalties.footwork_mult;
+}
+
 /// Calculate positioning contest score for an agent.
 /// Score = Speed (0.3) + Position (0.4) + Balance (0.3) - standing still penalty.
 pub fn calculateManoeuvreScore(
     agent: *const combat.Agent,
     move: ManoeuvreType,
     position: f32,
+    footwork_mult: f32,
 ) f32 {
     const speed = stats.Block.normalize(agent.stats.speed);
     const balance = agent.balance;
@@ -66,7 +79,7 @@ pub fn calculateManoeuvreScore(
         score -= standing_still_penalty;
     }
 
-    return score;
+    return score * footwork_mult;
 }
 
 /// Resolve a positioning conflict between aggressor and defender.
@@ -79,10 +92,14 @@ pub fn resolveManoeuvreConflict(
     engagement: *const combat.Engagement,
     rng: std.Random,
 ) ContestResult {
+    // Compute footwork penalties from conditions (e.g., hypovolemic_shock reduces footwork)
+    const aggressor_footwork = footworkMultForAgent(aggressor);
+    const defender_footwork = footworkMultForAgent(defender);
+
     // Calculate scores for logging regardless of auto-win/lose rules
-    const aggressor_score = calculateManoeuvreScore(aggressor, aggressor_move, engagement.position);
+    const aggressor_score = calculateManoeuvreScore(aggressor, aggressor_move, engagement.position, aggressor_footwork);
     const defender_position = 1.0 - engagement.position;
-    const defender_score = calculateManoeuvreScore(defender, defender_move, defender_position);
+    const defender_score = calculateManoeuvreScore(defender, defender_move, defender_position, defender_footwork);
 
     // Standing still auto-loses against advance
     if (defender_move == .hold and aggressor_move == .advance) {
@@ -367,10 +384,10 @@ test "calculateManoeuvreScore uses speed, position, balance" {
     const test_agent = try makeTestAgent(alloc, 5.0);
     defer test_agent.deinit();
 
-    // Default balance = 1.0, speed = 5 (normalized to 0.5), position = 0.5
-    const score = calculateManoeuvreScore(test_agent.agent, .advance, 0.5);
+    // Default balance = 1.0, speed = 5 (normalized to 0.5), position = 0.5, no footwork penalty
+    const score = calculateManoeuvreScore(test_agent.agent, .advance, 0.5, 1.0);
 
-    // Expected: 0.5 * 0.3 + 0.5 * 0.4 + 1.0 * 0.3 = 0.15 + 0.2 + 0.3 = 0.65
+    // Expected: (0.5 * 0.3 + 0.5 * 0.4 + 1.0 * 0.3) * 1.0 = 0.15 + 0.2 + 0.3 = 0.65
     try testing.expectApproxEqAbs(@as(f32, 0.65), score, 0.01);
 }
 
@@ -379,8 +396,8 @@ test "calculateManoeuvreScore applies standing still penalty" {
     const test_agent = try makeTestAgent(alloc, 5.0);
     defer test_agent.deinit();
 
-    const advance_score = calculateManoeuvreScore(test_agent.agent, .advance, 0.5);
-    const hold_score = calculateManoeuvreScore(test_agent.agent, .hold, 0.5);
+    const advance_score = calculateManoeuvreScore(test_agent.agent, .advance, 0.5, 1.0);
+    const hold_score = calculateManoeuvreScore(test_agent.agent, .hold, 0.5, 1.0);
 
     try testing.expectApproxEqAbs(standing_still_penalty, advance_score - hold_score, 0.001);
 }
