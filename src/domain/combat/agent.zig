@@ -11,6 +11,7 @@ const SlotMap = @import("../slot_map.zig").SlotMap;
 const armour = @import("../armour.zig");
 const body = @import("../body.zig");
 const damage = @import("../damage.zig");
+const events = @import("../events.zig");
 const stats = @import("../stats.zig");
 const weapon = @import("../weapon.zig");
 
@@ -140,6 +141,10 @@ pub const Agent = struct {
         return dominant == .center or dominant.? == side;
     }
 
+    fn isPlayer(self: *const Agent) bool {
+        return self.director == .player;
+    }
+
     // Helpers for managing card arraylists
 
     pub fn poolContains(self: *const Agent, id: entity.ID) bool {
@@ -236,7 +241,7 @@ pub const Agent = struct {
 
     /// Per-tick physiology update. Call from combat pipeline or world tick.
     /// Drains blood from wounds, recovers stamina/focus.
-    pub fn tick(self: *Agent) void {
+    pub fn tick(self: *Agent, event_sink: ?*events.EventSystem) void {
         // Sum bleeding from all wounds across all body parts
         var total_bleed: f32 = 0;
         for (self.body.parts.items) |*part| {
@@ -249,6 +254,14 @@ pub const Agent = struct {
         if (total_bleed > 0) {
             self.blood.current = @max(0, self.blood.current - total_bleed);
             self.blood.available = self.blood.current;
+
+            if (event_sink) |es| {
+                es.push(.{ .blood_drained = .{
+                    .agent_id = self.id,
+                    .amount = total_bleed,
+                    .new_value = self.blood.current,
+                } }) catch {};
+            }
         }
 
         // Resource recovery

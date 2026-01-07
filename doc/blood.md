@@ -92,10 +92,33 @@ Wire `agent.tick()` at end of each combat tick for all agents.
 
 ### UI
 
-Consider displaying:
-- Blood level bar (like stamina/focus)
-- Bleeding indicator when `totalBleedingRate() > 0`
-- Condition icons for blood loss states
+- Blood level bar (red, below focus) ✓
+- Bleeding indicator when `totalBleedingRate() > 0` - TODO
+- Condition icons for blood loss states - TODO
+
+### Combat Log
+
+Blood drain and condition changes are logged via events:
+- `blood_drained` - fires each tick when bleeding
+- `condition_applied` / `condition_expired` - fires when computed conditions change
+
+Computed condition change detection: `event_processor.agentEndTurnCleanup` snapshots
+physiology-based computed conditions before/after `agent.tick()` and emits events for deltas.
+
+## Design Notes
+
+### Computed Condition Display
+
+**Problem**: Engagement-based computed conditions (`pressured`, `weapon_bound`) are relative
+to a specific opponent. In 1vN, player can have different conditions per engagement.
+
+**Current state**: These are checked during resolution with the specific engagement.
+End-of-turn logging only tracks physiology conditions (blood, balance) which don't need engagement.
+
+**Options for engagement-based conditions**:
+1. Log during resolution - show when active and mechanically relevant
+2. UI badges over enemies showing relationship state
+3. Existing advantage bars already show pressure/control values
 
 ## Future Work
 

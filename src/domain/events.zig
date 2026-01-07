@@ -214,6 +214,11 @@ pub const Event = union(enum) {
         new_value: f32,
         actor: AgentMeta,
     },
+    blood_drained: struct {
+        agent_id: entity.ID,
+        amount: f32,
+        new_value: f32,
+    },
     condition_applied: struct {
         agent_id: entity.ID,
         condition: damage.Condition,

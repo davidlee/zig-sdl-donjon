@@ -287,20 +287,6 @@ pub const TickResolver = struct {
         return &weapon_list.knights_sword;
     }
 
-    // -------------------------------------------------------------------------
-    // Tick Cleanup (Note: Cost enforcement moved to apply.zig)
-    // -------------------------------------------------------------------------
-
-    /// Reset agent resources for next tick
-    pub fn resetForNextTick(self: *TickResolver, agents: []*Agent) void {
-        _ = self;
-        for (agents) |agent| {
-            agent.time_available = 1.0;
-            agent.stamina.tick(); // refresh and reset available
-            agent.focus.tick();
-            // TODO: decrement cooldowns for always_available draw_style
-        }
-    }
 };
 
 // ============================================================================

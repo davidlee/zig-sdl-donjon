@@ -203,6 +203,8 @@ const StatusBars = struct {
     stamina_available: f32,
     focus: f32,
     focus_available: f32,
+    blood: f32,
+    blood_max: f32,
 
     fn init(player: *const combat.Agent) StatusBars {
         return .{
@@ -210,6 +212,8 @@ const StatusBars = struct {
             .stamina_available = player.stamina.available,
             .focus = player.focus.current,
             .focus_available = player.focus.available,
+            .blood = player.blood.current,
+            .blood_max = player.blood.max,
         };
     }
 
@@ -251,6 +255,26 @@ const StatusBars = struct {
             },
         };
         try focus_bar.render(alloc, list);
+
+        // Blood bar (below focus)
+        const blood_pips: u8 = @intFromFloat(@ceil(self.blood_max));
+        const blood_bar = ResourceBar{
+            .current = self.blood,
+            .available = self.blood, // blood doesn't have reserved/available distinction
+            .max_pips = blood_pips,
+            .bar_colors = .{
+                .background = Color{ .r = 40, .g = 0, .b = 0 },
+                .current = Color{ .r = 120, .g = 0, .b = 0 },
+                .available = Color{ .r = 120, .g = 0, .b = 0 },
+            },
+            .rect = .{
+                .x = status_chrome.start_x,
+                .y = status_chrome.start_y + (status_chrome.bar_height + status_chrome.bar_gap) * 2,
+                .w = status_chrome.bar_width,
+                .h = status_chrome.bar_height,
+            },
+        };
+        try blood_bar.render(alloc, list);
     }
 };
 

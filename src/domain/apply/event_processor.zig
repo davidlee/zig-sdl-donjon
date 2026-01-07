@@ -6,6 +6,7 @@
 const std = @import("std");
 const lib = @import("infra");
 const combat = @import("../combat.zig");
+const damage = @import("../damage.zig");
 const events = @import("../events.zig");
 const w = @import("../world.zig");
 
@@ -95,10 +96,40 @@ pub const EventProcessor = struct {
             }
         }
 
-        // Refresh resources
-        agent.stamina.tick();
-        agent.focus.tick();
+        // Snapshot computed conditions before tick
+        // Note: passing null for engagement - blood loss conditions don't need it
+        const before = computedConditions(agent, null);
+
+        // Blood drain, stamina/focus recovery
+        agent.tick(&self.world.events);
         agent.time_available = 1.0;
+
+        // Detect computed condition changes and emit events
+        const after = computedConditions(agent, null);
+        const is_player = self.world.player.id.eql(agent.id);
+        const actor = events.AgentMeta{ .id = agent.id, .player = is_player };
+
+        // New conditions (in after but not before)
+        for (after.slice()) |cond| {
+            if (!before.contains(cond)) {
+                try self.world.events.push(.{ .condition_applied = .{
+                    .agent_id = agent.id,
+                    .condition = cond,
+                    .actor = actor,
+                } });
+            }
+        }
+
+        // Expired conditions (in before but not after)
+        for (before.slice()) |cond| {
+            if (!after.contains(cond)) {
+                try self.world.events.push(.{ .condition_expired = .{
+                    .agent_id = agent.id,
+                    .condition = cond,
+                    .actor = actor,
+                } });
+            }
+        }
 
         // Clear turn state (push to history, clear timeline)
         enc_state.endTurn();
@@ -291,3 +322,41 @@ pub const EventProcessor = struct {
         } else return false;
     }
 };
+
+// --- Helpers ---
+
+/// Bounded set of conditions for diffing computed conditions.
+const ConditionSet = struct {
+    conditions: [8]damage.Condition = undefined,
+    len: usize = 0,
+
+    fn add(self: *ConditionSet, cond: damage.Condition) void {
+        if (self.len < self.conditions.len) {
+            self.conditions[self.len] = cond;
+            self.len += 1;
+        }
+    }
+
+    fn contains(self: ConditionSet, cond: damage.Condition) bool {
+        for (self.slice()) |c| {
+            if (c == cond) return true;
+        }
+        return false;
+    }
+
+    fn slice(self: *const ConditionSet) []const damage.Condition {
+        return self.conditions[0..self.len];
+    }
+};
+
+/// Collect computed (dynamic) conditions from an agent's condition iterator.
+fn computedConditions(agent: *const Agent, engagement: ?*const combat.Engagement) ConditionSet {
+    var set = ConditionSet{};
+    var iter = combat.ConditionIterator.init(agent, engagement);
+    while (iter.next()) |active| {
+        if (active.expiration == .dynamic) {
+            set.add(active.condition);
+        }
+    }
+    return set;
+}

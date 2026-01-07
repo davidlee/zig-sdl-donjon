@@ -270,6 +270,17 @@ pub fn format(event: Event, world: *const World, alloc: std.mem.Allocator) !?Ent
             colors.default,
         ),
 
+        .blood_drained => |e| try singleSpan(
+            alloc,
+            try std.fmt.allocPrint(alloc, "{s} {s} {d:.1}L blood ({d:.1}L remaining)", .{
+                agentName(e.agent_id, world),
+                if (world.player.id.eql(e.agent_id)) "lose" else "loses",
+                e.amount,
+                e.new_value,
+            }),
+            colors.critical,
+        ),
+
         // Events not worth logging
         // .played_action_card,
         // .card_moved,
