@@ -502,15 +502,7 @@ pub const Body = struct {
         const part = &self.parts.items[part_idx];
 
         // Generate wound based on part's tissue template
-        const wound = applyDamage(packet, part.tissue);
-
-        // Add wound to part (if any layers damaged)
-        if (wound.len > 0) {
-            try part.wounds.append(self.alloc, wound);
-        }
-
-        // Recompute severity from all wounds
-        part.severity = part.computeSeverity();
+        var wound = applyDamage(packet, part.tissue);
 
         // Check for severing: structural layer at .missing from slash,
         // or .broken+ structural from massive damage
@@ -523,6 +515,17 @@ pub const Body = struct {
         const hit_artery = part.has_major_artery and
             (@intFromEnum(wound.severityAt(.muscle)) >= @intFromEnum(Severity.inhibited) or
                 @intFromEnum(wound.severityAt(.fat)) >= @intFromEnum(Severity.disabled));
+
+        // Calculate bleeding rate based on wound characteristics
+        wound.bleeding_rate = calculateBleedingRate(&wound, hit_artery);
+
+        // Add wound to part (if any layers damaged)
+        if (wound.len > 0) {
+            try part.wounds.append(self.alloc, wound);
+        }
+
+        // Recompute severity from all wounds
+        part.severity = part.computeSeverity();
 
         return .{
             .wound = wound,
@@ -618,7 +621,8 @@ pub const Wound = struct {
     kind: DamageKind,
     len: u8 = 0,
     damages: [MAX_LAYERS]LayerDamage = undefined,
-    // TODO: dressing, infection, bleeding
+    bleeding_rate: f32 = 0.0, // litres per tick; 0 = not bleeding
+    // TODO: dressing, infection
 
     pub fn slice(self: *const Wound) []const LayerDamage {
         return self.damages[0..self.len];
@@ -837,6 +841,38 @@ fn checkSevering(part: *const Part, wound: *const Wound) bool {
     }
 
     return false;
+}
+
+/// Calculate bleeding rate (litres per tick) based on wound characteristics.
+/// Artery hits bleed fast. Slash/pierce bleed more than bludgeon.
+/// Deeper wounds bleed more. Severing stops bleeding (no longer connected).
+fn calculateBleedingRate(wound: *const Wound, hit_artery: bool) f32 {
+    if (wound.len == 0) return 0;
+
+    // Base rate from wound type
+    const type_factor: f32 = switch (wound.kind) {
+        .slash => 1.0, // cuts bleed freely
+        .pierce => 0.6, // smaller opening
+        .bludgeon, .crush => 0.2, // mostly internal
+        .shatter => 0.3, // bone fragments, some external
+        else => 0.1,
+    };
+
+    // Severity factor from worst layer damage
+    const severity_factor: f32 = switch (wound.worstSeverity()) {
+        .none => 0,
+        .minor => 0.2,
+        .inhibited => 0.5,
+        .disabled => 0.8,
+        .broken => 1.0,
+        .missing => 0.5, // severed = less connected blood flow
+    };
+
+    // Artery multiplier
+    const artery_mult: f32 = if (hit_artery) 5.0 else 1.0;
+
+    // Base bleeding: ~0.1L/tick for a bad wound, ~0.5L/tick for arterial
+    return 0.1 * type_factor * severity_factor * artery_mult;
 }
 
 // === Part definition helpers ===

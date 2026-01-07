@@ -16,11 +16,12 @@ const Templates = card_list.BaseAlwaysAvailableTemplates;
 const World = @import("domain/world.zig").World;
 
 pub fn setupEncounter(world: *World) !void {
-    var wpn = try world.alloc.create(weapon.Instance);
-    wpn.id = try world.entities.weapons.insert(wpn);
-    wpn.template = weapon_list.byName("falchion");
+    // First mob: falchion wielder
+    var wpn1 = try world.alloc.create(weapon.Instance);
+    wpn1.id = try world.entities.weapons.insert(wpn1);
+    wpn1.template = weapon_list.byName("falchion");
 
-    const mob = try combat.Agent.init(
+    const mob1 = try combat.Agent.init(
         world.alloc,
         world.entities.agents,
         ai.pool(),
@@ -29,15 +30,41 @@ pub fn setupEncounter(world: *World) !void {
         try body.Body.fromPlan(world.alloc, &body.HumanoidPlan),
         stats.Resource.init(10.0, 10.0, 2.0), // stamina
         stats.Resource.init(3.0, 5.0, 3.0), // focus
-        combat.Armament{ .single = wpn },
+        stats.Resource.init(5.0, 5.0, 0.0), // blood
+        combat.Armament{ .single = wpn1 },
     );
 
-    // Populate mob's always_available pool from card registry
-    var card_ids = try world.card_registry.createFromTemplatePtrs(&Templates, 5);
-    defer card_ids.deinit(world.alloc);
-    for (card_ids.items) |id| {
-        try mob.always_available.append(world.alloc, id);
+    var card_ids1 = try world.card_registry.createFromTemplatePtrs(&Templates, 5);
+    defer card_ids1.deinit(world.alloc);
+    for (card_ids1.items) |id| {
+        try mob1.always_available.append(world.alloc, id);
     }
 
-    try world.encounter.?.addEnemy(mob);
+    try world.encounter.?.addEnemy(mob1);
+
+    // Second mob: spear wielder (different reach)
+    var wpn2 = try world.alloc.create(weapon.Instance);
+    wpn2.id = try world.entities.weapons.insert(wpn2);
+    wpn2.template = weapon_list.byName("spear");
+
+    const mob2 = try combat.Agent.init(
+        world.alloc,
+        world.entities.agents,
+        ai.pool(),
+        .shuffled_deck,
+        stats.Block.splat(5),
+        try body.Body.fromPlan(world.alloc, &body.HumanoidPlan),
+        stats.Resource.init(8.0, 8.0, 1.5), // stamina (less)
+        stats.Resource.init(2.0, 4.0, 2.0), // focus (less)
+        stats.Resource.init(5.0, 5.0, 0.0), // blood
+        combat.Armament{ .single = wpn2 },
+    );
+
+    var card_ids2 = try world.card_registry.createFromTemplatePtrs(&Templates, 5);
+    defer card_ids2.deinit(world.alloc);
+    for (card_ids2.items) |id| {
+        try mob2.always_available.append(world.alloc, id);
+    }
+
+    try world.encounter.?.addEnemy(mob2);
 }

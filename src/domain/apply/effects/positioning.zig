@@ -354,6 +354,7 @@ fn makeTestAgent(alloc: std.mem.Allocator, speed: f32) !TestAgent {
             try body.Body.fromPlan(alloc, &body.HumanoidPlan),
             stats.Resource.init(10, 10, 2),
             stats.Resource.init(3, 5, 3),
+            stats.Resource.init(5, 5, 0),
             .{ .single = sword },
         ),
         .sword = sword,

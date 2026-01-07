@@ -108,6 +108,7 @@ fn makeTestAgent(
         agent_body,
         stats.Resource.init(10.0, 10.0, 2.0),
         stats.Resource.init(3.0, 5.0, 3.0),
+        stats.Resource.init(5.0, 5.0, 0.0),
         undefined,
     );
 }

@@ -55,6 +55,7 @@ pub const Agent = struct {
     balance: f32 = 1.0, // 0-1, intrinsic stability
     stamina: stats.Resource,
     focus: stats.Resource,
+    blood: stats.Resource,
     time_available: f32 = 1.0,
 
     conditions: std.ArrayList(damage.ActiveCondition),
@@ -71,6 +72,7 @@ pub const Agent = struct {
         bd: body.Body,
         stamina_res: stats.Resource,
         focus_res: stats.Resource,
+        blood_res: stats.Resource,
         armament: Armament,
     ) !*Agent {
         const agent = try alloc.create(combat.Agent);
@@ -85,6 +87,7 @@ pub const Agent = struct {
             .weapons = armament,
             .stamina = stamina_res,
             .focus = focus_res,
+            .blood = blood_res,
 
             // Card containers (empty by default)
             .always_available = try std.ArrayList(entity.ID).initCapacity(alloc, 10),
@@ -230,6 +233,39 @@ pub const Agent = struct {
         }
         return false;
     }
+
+    /// Per-tick physiology update. Call from combat pipeline or world tick.
+    /// Drains blood from wounds, recovers stamina/focus.
+    pub fn tick(self: *Agent) void {
+        // Sum bleeding from all wounds across all body parts
+        var total_bleed: f32 = 0;
+        for (self.body.parts.items) |*part| {
+            for (part.wounds.items) |wound| {
+                total_bleed += wound.bleeding_rate;
+            }
+        }
+
+        // Drain blood (can't go below 0)
+        if (total_bleed > 0) {
+            self.blood.current = @max(0, self.blood.current - total_bleed);
+            self.blood.available = self.blood.current;
+        }
+
+        // Resource recovery
+        self.stamina.tick();
+        self.focus.tick();
+    }
+
+    /// Total bleeding rate across all wounds (litres per tick).
+    pub fn totalBleedingRate(self: *const Agent) f32 {
+        var total: f32 = 0;
+        for (self.body.parts.items) |*part| {
+            for (part.wounds.items) |wound| {
+                total += wound.bleeding_rate;
+            }
+        }
+        return total;
+    }
 };
 
 // ============================================================================
@@ -237,11 +273,14 @@ pub const Agent = struct {
 // ============================================================================
 
 /// Iterates stored conditions, then yields computed conditions based on thresholds.
+/// Computed conditions include:
+/// - Physiology: unbalanced (balance), blood loss (lightheaded, bleeding_out, hypovolemic_shock)
+/// - Combat: pressured, weapon_bound (require engagement context)
 pub const ConditionIterator = struct {
     agent: *const Agent,
     engagement: ?*const Engagement,
     stored_index: usize = 0,
-    computed_phase: u2 = 0, // 0=unbalanced, 1=pressured, 2=weapon_bound, 3=done
+    computed_phase: u3 = 0,
 
     const Expiration = damage.ActiveCondition.Expiration;
 
@@ -258,20 +297,43 @@ pub const ConditionIterator = struct {
         }
 
         // Phase 2: yield computed conditions
-        while (self.computed_phase < 3) {
+        // Physiology conditions (no engagement needed)
+        // Blood loss conditions checked worst-first
+        while (self.computed_phase < 6) {
             const phase = self.computed_phase;
             self.computed_phase += 1;
 
             switch (phase) {
+                // Physiology: balance
                 0 => if (self.agent.balance < 0.2) {
                     return .{ .condition = .unbalanced, .expiration = .dynamic };
                 },
-                1 => if (self.engagement) |eng| {
+                // Physiology: blood loss (worst first)
+                1 => {
+                    const ratio = self.agent.blood.current / self.agent.blood.max;
+                    if (ratio < 0.4) {
+                        return .{ .condition = .hypovolemic_shock, .expiration = .dynamic };
+                    }
+                },
+                2 => {
+                    const ratio = self.agent.blood.current / self.agent.blood.max;
+                    if (ratio < 0.6) {
+                        return .{ .condition = .bleeding_out, .expiration = .dynamic };
+                    }
+                },
+                3 => {
+                    const ratio = self.agent.blood.current / self.agent.blood.max;
+                    if (ratio < 0.8) {
+                        return .{ .condition = .lightheaded, .expiration = .dynamic };
+                    }
+                },
+                // Combat: engagement-dependent
+                4 => if (self.engagement) |eng| {
                     if (eng.pressure > 0.8) {
                         return .{ .condition = .pressured, .expiration = .dynamic };
                     }
                 },
-                2 => if (self.engagement) |eng| {
+                5 => if (self.engagement) |eng| {
                     if (eng.control > 0.8) {
                         return .{ .condition = .weapon_bound, .expiration = .dynamic };
                     }
@@ -319,6 +381,7 @@ fn makeTestAgent(alloc: std.mem.Allocator, agents: *SlotMap(*Agent)) !TestAgent 
             try body.Body.fromPlan(alloc, &body.HumanoidPlan),
             stats.Resource.init(10.0, 10.0, 2.0),
             stats.Resource.init(3.0, 5.0, 3.0),
+            stats.Resource.init(5.0, 5.0, 0.0),
             Armament{ .single = sword },
         ),
         .sword = sword,

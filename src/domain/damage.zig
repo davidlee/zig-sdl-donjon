@@ -92,6 +92,11 @@ pub const Condition = enum {
     // computed: multi-opponent positioning
     flanked, // 1+ enemy with angle advantage
     surrounded, // 3+ enemies or 2+ with angle advantage
+
+    // computed: blood loss (ratio of current/max)
+    lightheaded, // < 80% blood - minor impairment
+    bleeding_out, // < 60% blood - serious impairment
+    hypovolemic_shock, // < 40% blood - critical, near unconscious
 };
 
 pub const DoTEffect = union(enum) {

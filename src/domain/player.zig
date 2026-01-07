@@ -28,8 +28,9 @@ pub fn newPlayer(
         .shuffled_deck,
         sb,
         bd,
-        stats.Resource.init(10.0, 10.0, 2.0), // stamina
+        stats.Resource.init(12.0, 12.0, 4.0), // stamina
         stats.Resource.init(3.0, 5.0, 3.0), // focus
+        stats.Resource.init(5.0, 5.0, 0.0), // blood
         combat.Armament{ .single = buckler },
     );
 }

@@ -213,6 +213,7 @@ fn makeTestEncounter(alloc: std.mem.Allocator, agents: *SlotMap(*Agent)) !struct
         agent_body,
         stats.Resource.init(10.0, 10.0, 2.0),
         stats.Resource.init(3.0, 5.0, 3.0),
+        stats.Resource.init(5.0, 5.0, 0.0),
         undefined,
     );
 
@@ -233,6 +234,7 @@ fn makeTestEnemy(alloc: std.mem.Allocator, agents: *SlotMap(*Agent)) !*Agent {
         agent_body,
         stats.Resource.init(10.0, 10.0, 2.0),
         stats.Resource.init(3.0, 5.0, 3.0),
+        stats.Resource.init(5.0, 5.0, 0.0),
         undefined,
     );
 }

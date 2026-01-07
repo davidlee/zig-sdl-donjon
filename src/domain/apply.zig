@@ -98,6 +98,7 @@ fn makeTestAgent(armament: combat.Armament) combat.Agent {
         .weapons = armament,
         .stamina = stats.Resource.init(10.0, 10.0, 2.0),
         .focus = stats.Resource.init(3.0, 5.0, 3.0),
+        .blood = stats.Resource.init(5.0, 5.0, 0.0),
         .conditions = undefined,
         .immunities = undefined,
         .resistances = undefined,

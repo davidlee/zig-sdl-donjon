@@ -396,6 +396,10 @@ fn conditionName(condition: damage.Condition) []const u8 {
         .stationary => "stationary",
         .flanked => "flanked",
         .surrounded => "surrounded",
+        // Blood loss
+        .lightheaded => "lightheaded",
+        .bleeding_out => "bleeding out",
+        .hypovolemic_shock => "in shock",
     };
 }
 
