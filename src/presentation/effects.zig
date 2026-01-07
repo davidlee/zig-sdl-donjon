@@ -14,7 +14,6 @@ const view_state = @import("view_state.zig");
 const ViewState = view_state.ViewState;
 const CombatUIState = view_state.CombatUIState;
 const Rect = view_state.Rect;
-const card_renderer = @import("card_renderer.zig");
 
 // Presentation effects - what the UI should show
 pub const Effect = union(enum) {
@@ -148,14 +147,14 @@ pub const EffectSystem = struct {
 
     // --- Card Animation Handling (updates ViewState) ---
 
-    const card_animation_duration: f32 = 0.2; // seconds
+    const card_animation_duration: f32 = 0.5; // seconds
 
     /// Process a domain event, updating card animations in ViewState
     pub fn processEvent(self: *EffectSystem, event: Event, vs: *ViewState, world: *const World) void {
         _ = self;
+        _ = world;
         switch (event) {
             .card_cloned => |data| handleCardCloned(vs, data.master_id, data.clone_id),
-            .played_action_card => |data| finalizeCardAnimation(vs, data.instance, world),
             else => {},
         }
     }
@@ -183,39 +182,4 @@ fn handleCardCloned(vs: *ViewState, master_id: entity.ID, clone_id: entity.ID) v
         anim.card_id = clone_id;
         vs.combat = cs;
     }
-}
-
-/// When a card is played, find the matching animation and set its destination rect
-fn finalizeCardAnimation(vs: *ViewState, card_id: entity.ID, world: *const World) void {
-    var cs = vs.combat orelse return;
-    const anim = cs.findAnimation(card_id) orelse return;
-
-    // Calculate destination rect based on card's position in timeline
-    const player = world.player;
-    const enc = world.encounter orelse return;
-    const enc_state = enc.stateForConst(player.id) orelse return;
-
-    // Find index of the card in timeline
-    var card_index: ?usize = null;
-    for (enc_state.current.timeline.slots(), 0..) |slot, i| {
-        if (slot.play.action.eql(card_id)) {
-            card_index = i;
-            break;
-        }
-    }
-
-    if (card_index) |idx| {
-        const start_x: f32 = 10;
-        const spacing: f32 = card_renderer.CARD_WIDTH + 10;
-        const y: f32 = 200; // played cards zone y position
-
-        anim.to_rect = .{
-            .x = start_x + @as(f32, @floatFromInt(idx)) * spacing,
-            .y = y,
-            .w = card_renderer.CARD_WIDTH,
-            .h = card_renderer.CARD_HEIGHT,
-        };
-    }
-
-    vs.combat = cs;
 }

@@ -293,7 +293,7 @@ pub const TimelineView = struct {
     const timeline_width: f32 = slot_width * num_slots;
     const timeline_height: f32 = lane_height * num_lanes;
     const start_x: f32 = 60; // left margin for labels
-    const start_y: f32 = 120; // below header area
+    const start_y: f32 = 420; // below header area
     const label_width: f32 = 70; // right-side channel labels
     const grid_color = Color{ .r = 40, .g = 40, .b = 40, .a = 255 };
     const lane_colors = [_]Color{
@@ -331,7 +331,7 @@ pub const TimelineView = struct {
     }
 
     /// Compute card rect (normal size, positioned at start of duration)
-    fn cardRect(play: *const Data) Rect {
+    pub fn cardRect(play: *const Data) Rect {
         const dims = CardLayout.defaultDimensions();
         const time_x = start_x + play.time_start * (slot_width / 0.1);
 
@@ -440,16 +440,19 @@ pub const TimelineView = struct {
 
         const duration_bar_color = Color{ .r = 30, .g = 50, .b = 80, .a = 255 }; // dark blue
 
-        // First pass: duration bars
+        // First pass: duration bars (skip animating cards)
         for (self.plays) |play| {
+            if (ui.isAnimating(play.action.id)) continue;
             try list.append(alloc, .{ .filled_rect = .{
                 .rect = durationRect(&play),
                 .color = duration_bar_color,
             } });
         }
 
-        // Second pass: cards
+        // Second pass: cards (skip animating cards - they're rendered by animation system)
         for (self.plays, 0..) |play, i| {
+            if (ui.isAnimating(play.action.id)) continue;
+
             const is_drop_target = if (ui.drag) |drag|
                 drag.target_play_index == i
             else

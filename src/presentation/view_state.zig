@@ -94,9 +94,8 @@ pub const CombatUIState = struct {
     pub fn removeCompletedAnimations(self: *CombatUIState) void {
         var write_idx: u8 = 0;
         for (self.card_animations[0..self.card_animation_len]) |anim| {
-            // Remove completed animations AND stale ones (never got destination)
-            const is_stale = anim.to_rect == null and anim.progress > 0.5;
-            if (!anim.isComplete() and !is_stale) {
+            // Remove animations when progress reaches 1.0
+            if (anim.progress < 1.0) {
                 self.card_animations[write_idx] = anim;
                 write_idx += 1;
             }
@@ -118,6 +117,11 @@ pub const CardAnimation = struct {
 
     pub fn currentRect(self: CardAnimation) Rect {
         const to = self.to_rect orelse return self.from_rect;
+        return self.interpolatedRect(to);
+    }
+
+    /// Interpolate between from_rect and an explicit destination
+    pub fn interpolatedRect(self: CardAnimation, to: Rect) Rect {
         const t = cubicEaseInOut(self.progress);
         return .{
             .x = lerp(self.from_rect.x, to.x, t),
@@ -128,7 +132,7 @@ pub const CardAnimation = struct {
     }
 
     pub fn isComplete(self: CardAnimation) bool {
-        return self.to_rect != null and self.progress >= 1.0;
+        return self.progress >= 1.0;
     }
 
     fn lerp(a: f32, b: f32, t: f32) f32 {

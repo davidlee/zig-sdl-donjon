@@ -866,13 +866,24 @@ pub const View = struct {
         cs.addAnimation(.{
             .card_id = card_id,
             .from_rect = from_rect,
-            .to_rect = null, // filled in by effect processing
+            .to_rect = null, // computed lazily during rendering
             .progress = 0,
         });
         return .{
             .vs = vs.withCombat(cs),
             .command = .{ .play_card = .{ .card_id = card_id, .target = target } },
         };
+    }
+
+    /// Find a card's rect in the timeline (for animation destination)
+    fn findCardRectInTimeline(self: *const View, card_id: entity.ID, alloc: std.mem.Allocator) ?Rect {
+        const plays = self.playerPlays(alloc);
+        for (plays) |play| {
+            if (play.action.id.eql(card_id)) {
+                return play_mod.TimelineView.cardRect(&play);
+            }
+        }
+        return null;
     }
 
     /// Enter targeting mode - store card_id pending target selection
@@ -974,8 +985,15 @@ pub const View = struct {
 
         var list = try std.ArrayList(Renderable).initCapacity(alloc, 32);
 
+        // Get encounter and primary target for enemy rendering
+        const enc = self.world.encounter;
+        const primary_target = if (enc) |e|
+            if (e.stateForConst(self.world.player.id)) |enc_state| enc_state.attention.primary else null
+        else
+            null;
+
         try list.append(alloc, self.player_avatar.renderable());
-        try self.opposition.appendRenderables(alloc, &list);
+        try self.opposition.appendRenderables(alloc, &list, enc, primary_target);
 
         // Targeting mode: highlight valid targets with red border
         if (cs.isTargeting()) {
@@ -995,7 +1013,7 @@ pub const View = struct {
                 });
             }
             // Re-render enemies on top of highlight boxes
-            try self.opposition.appendRenderables(alloc, &list);
+            try self.opposition.appendRenderables(alloc, &list, enc, primary_target);
         }
 
         // Player cards - timeline for plays, carousel for hand
@@ -1022,13 +1040,20 @@ pub const View = struct {
         // Render animating cards at their current interpolated position
         for (cs.activeAnimations()) |anim| {
             if (self.world.card_registry.getConst(.{ .index = anim.card_id.index, .generation = anim.card_id.generation })) |card| {
+                // Compute destination lazily from timeline if not set
+                const to_rect = anim.to_rect orelse self.findCardRectInTimeline(anim.card_id, alloc);
+                const current_rect = if (to_rect) |dest|
+                    anim.interpolatedRect(dest)
+                else
+                    anim.from_rect;
+
                 const card_vm = CardViewModel.fromTemplate(anim.card_id, card.template, .{
                     .target = false,
                     .played = false,
                     .disabled = false,
                     .highlighted = false,
                 });
-                try list.append(alloc, .{ .card = .{ .model = card_vm, .dst = anim.currentRect() } });
+                try list.append(alloc, .{ .card = .{ .model = card_vm, .dst = current_rect } });
             }
         }
 
