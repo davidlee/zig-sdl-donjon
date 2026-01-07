@@ -26,11 +26,12 @@ const logical_h = view.logical_h;
 const colors = .{
     .black = Color{ .r = 0, .g = 0, .b = 0 },
     .dark = Color{ .r = 10, .g = 10, .b = 10 },
+    .grimdark = Color{ .r = 5, .g = 5, .b = 5 },
     .grey = Color{ .r = 20, .g = 20, .b = 20 },
 };
 
 pub const header_h: f32 = 80;
-pub const footer_h: f32 = 100;
+pub const footer_h: f32 = 8;
 pub const sidebar_w: f32 = 500;
 
 pub const origin = s.rect.FPoint{ .x = 0, .y = header_h };
@@ -256,12 +257,17 @@ const StatusBars = struct {
 // --- Chrome Background ---
 
 const MenuBar = struct {
+    const pad = 3;
     fn render() []const Renderable {
         return &[_]Renderable{
             // Header
             .{ .filled_rect = .{
                 .rect = .{ .x = 0, .y = 0, .w = logical_w, .h = header_h },
                 .color = colors.grey,
+            } },
+            .{ .filled_rect = .{
+                .rect = .{ .x = pad, .y = pad, .w = logical_w - pad * 2, .h = header_h - pad * 2 },
+                .color = colors.grimdark,
             } },
             // Sidebar background
             .{ .filled_rect = .{
@@ -273,15 +279,15 @@ const MenuBar = struct {
                 },
                 .color = colors.grey,
             } },
-            // Sidebar inner (black)
+            // Sidebar inner
             .{ .filled_rect = .{
                 .rect = .{
-                    .x = logical_w - sidebar_w + 3,
+                    .x = logical_w - sidebar_w + pad,
                     .y = header_h,
                     .w = sidebar_w,
                     .h = logical_h - header_h - footer_h,
                 },
-                .color = colors.black,
+                .color = colors.grimdark,
             } },
             // Footer
             .{ .filled_rect = .{

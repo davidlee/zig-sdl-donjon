@@ -194,6 +194,275 @@ const CardZoneView = struct {
     }
 };
 
+/// Carousel view for hand + known cards at bottom edge.
+/// Uses dock-style positioning: cards near mouse spread apart and raise.
+const CarouselView = struct {
+    hand_cards: []const CardViewData,
+    known_cards: []const CardViewData,
+
+    // Layout constants
+    const viewport_h: f32 = 992; // logical_h - header - footer
+    const viewport_w: f32 = 1420; // logical_w - sidebar_w
+    const card_w: f32 = card_renderer.CARD_WIDTH;
+    const card_h: f32 = card_renderer.CARD_HEIGHT;
+    const base_y: f32 = viewport_h - card_h; // cards sit at bottom
+    const base_spacing: f32 = 50; // 30px overlap with 80px cards
+    const group_gap: f32 = 30; // extra gap between hand and known
+
+    // Dock effect parameters
+    const max_raise: f32 = 40; // max pixels to raise when mouse directly over
+    const influence_radius_x: f32 = 100; // horizontal influence for spreading
+    const influence_radius_y: f32 = 150; // vertical influence for raising
+    const expand_ratio: f32 = 2.5; // how much the hovered gap expands relative to base
+
+    fn init(hand: []const CardViewData, known: []const CardViewData) CarouselView {
+        return .{ .hand_cards = hand, .known_cards = known };
+    }
+
+    fn totalCards(self: CarouselView) usize {
+        return self.hand_cards.len + self.known_cards.len;
+    }
+
+    /// Get card data and zone for a carousel index
+    fn cardAt(self: CarouselView, index: usize) struct { card: CardViewData, zone: ViewZone } {
+        if (index < self.hand_cards.len) {
+            return .{ .card = self.hand_cards[index], .zone = .hand };
+        }
+        return .{ .card = self.known_cards[index - self.hand_cards.len], .zone = .always_available };
+    }
+
+    /// Calculate X influence (0-1) for spreading - sharper falloff
+    fn influenceX(dist: f32) f32 {
+        if (dist >= influence_radius_x) return 0;
+        const t = 1 - dist / influence_radius_x;
+        return t * t * t; // cubic falloff for tighter focus
+    }
+
+    /// Calculate Y influence (0-1) for raising - based on distance from carousel
+    fn influenceY(mouse_y: f32) f32 {
+        const carousel_top = base_y;
+        const dist = carousel_top - mouse_y; // positive when mouse is above carousel
+        if (dist < 0) return 1.0; // mouse is in/below carousel = full influence
+        if (dist >= influence_radius_y) return 0;
+        const t = 1 - dist / influence_radius_y;
+        return t * t;
+    }
+
+    /// Calculate base width (uniform spacing) for the carousel
+    fn baseWidth(self: CarouselView) f32 {
+        const n = self.totalCards();
+        if (n == 0) return 0;
+        const has_gap = self.hand_cards.len > 0 and self.known_cards.len > 0;
+        const gap: f32 = if (has_gap) group_gap else 0;
+        return @as(f32, @floatFromInt(n - 1)) * base_spacing + card_w + gap;
+    }
+
+    /// Calculate all card rects with anchored spread algorithm
+    /// Outer cards stay fixed, spacing redistributes based on mouse proximity
+    fn cardRects(self: CarouselView, mouse_x: f32, mouse_y: f32, alloc: std.mem.Allocator) []Rect {
+        const n = self.totalCards();
+        if (n == 0) return &.{};
+
+        const rects = alloc.alloc(Rect, n) catch return &.{};
+
+        // Fixed total width - outer cards anchored
+        const total_width = self.baseWidth();
+        const start_x = (viewport_w - total_width) / 2;
+
+        // Y influence for raising (same for all cards based on mouse Y)
+        const y_inf = influenceY(mouse_y);
+
+        if (n == 1) {
+            // Single card - just center it
+            const x_inf = influenceX(@abs(mouse_x - (start_x + card_w / 2)));
+            rects[0] = .{
+                .x = start_x,
+                .y = base_y - (max_raise * x_inf * y_inf),
+                .w = card_w,
+                .h = card_h,
+            };
+            return rects;
+        }
+
+        // Calculate gap weights based on mouse proximity
+        // More weight = more space allocated to that gap
+        const num_gaps = n - 1;
+        const weights = alloc.alloc(f32, num_gaps) catch return &.{};
+        defer alloc.free(weights);
+
+        // Total gap space available (excluding group gap which is fixed)
+        const has_group_gap = self.hand_cards.len > 0 and self.known_cards.len > 0;
+        const fixed_group_gap: f32 = if (has_group_gap) group_gap else 0;
+        const total_gap_space = total_width - @as(f32, @floatFromInt(n)) * card_w - fixed_group_gap;
+        const base_gap = total_gap_space / @as(f32, @floatFromInt(num_gaps));
+
+        // Calculate raw weights for each gap
+        var total_weight: f32 = 0;
+        for (0..num_gaps) |i| {
+            // Gap center is between card i and card i+1
+            // Use base positions to find gap center
+            const gap_x = start_x + @as(f32, @floatFromInt(i)) * base_spacing + card_w + base_gap / 2;
+
+            // Add group gap offset for gaps after hand/known boundary
+            const gap_center = if (has_group_gap and i >= self.hand_cards.len - 1 and self.hand_cards.len > 0)
+                gap_x + fixed_group_gap
+            else
+                gap_x;
+
+            const dist = @abs(mouse_x - gap_center);
+            const inf = influenceX(dist);
+
+            // Weight: 1.0 = base, higher = expanded
+            weights[i] = 1.0 + inf * (expand_ratio - 1.0);
+            total_weight += weights[i];
+        }
+
+        // Normalize weights to distribute total gap space
+        const scale = @as(f32, @floatFromInt(num_gaps)) / total_weight;
+        for (weights) |*wt| {
+            wt.* *= scale;
+        }
+
+        // Position cards based on weighted gaps
+        var x = start_x;
+        for (0..n) |i| {
+            // Calculate raise based on X proximity and Y influence
+            const card_center = x + card_w / 2;
+            const x_dist = @abs(mouse_x - card_center);
+            const x_inf = influenceX(x_dist);
+            const raise = max_raise * x_inf * y_inf;
+
+            rects[i] = .{
+                .x = x,
+                .y = base_y - raise,
+                .w = card_w,
+                .h = card_h,
+            };
+
+            // Advance to next card position
+            if (i < num_gaps) {
+                x += card_w + base_gap * weights[i];
+
+                // Add fixed group gap after last hand card
+                if (has_group_gap and self.hand_cards.len > 0 and i == self.hand_cards.len - 1) {
+                    x += fixed_group_gap;
+                }
+            }
+        }
+
+        return rects;
+    }
+
+    /// Hit test returns HitResult at given point
+    fn hitTest(self: CarouselView, vs: ViewState, pt: Point, alloc: std.mem.Allocator) ?HitResult {
+        const n = self.totalCards();
+        if (n == 0) return null;
+
+        const rects = self.cardRects(vs.mouse_vp.x, vs.mouse_vp.y, alloc);
+        if (rects.len == 0) return null;
+
+        // Reverse order so topmost (rightmost, last rendered) card is hit first
+        var i = n;
+        while (i > 0) {
+            i -= 1;
+            const card_info = self.cardAt(i);
+            const ui = vs.combat orelse CombatUIState{};
+
+            // Get rect with drag/hover adjustments
+            const rect = self.adjustedRect(rects[i], card_info.card.id, vs, ui);
+
+            if (rect.pointIn(pt)) {
+                return .{ .card = .{ .id = card_info.card.id, .zone = card_info.zone, .rect = rect } };
+            }
+        }
+        return null;
+    }
+
+    /// Adjust rect for drag/hover state
+    fn adjustedRect(self: CarouselView, base_rect: Rect, card_id: entity.ID, vs: ViewState, ui: CombatUIState) Rect {
+        _ = self;
+        const pad: f32 = 3;
+
+        if (ui.drag) |drag| {
+            if (drag.id.eql(card_id)) {
+                return .{
+                    .x = vs.mouse_vp.x - pad - (drag.original_pos.x - base_rect.x),
+                    .y = vs.mouse_vp.y - pad - (drag.original_pos.y - base_rect.y),
+                    .w = base_rect.w + pad,
+                    .h = base_rect.h + pad,
+                };
+            }
+        }
+
+        // Hover expansion
+        switch (ui.hover) {
+            .card => |id| if (id.eql(card_id)) {
+                return .{
+                    .x = base_rect.x - pad,
+                    .y = base_rect.y - pad,
+                    .w = base_rect.w + pad * 2,
+                    .h = base_rect.h + pad * 2,
+                };
+            },
+            else => {},
+        }
+
+        return base_rect;
+    }
+
+    fn cardInteractionState(card_id: entity.ID, ui: CombatUIState) CardViewState {
+        if (ui.drag) |drag| {
+            if (drag.id.eql(card_id)) return .drag;
+            if (drag.target) |id| if (id.eql(card_id)) return .target;
+        }
+        switch (ui.hover) {
+            .card => |id| if (id.eql(card_id)) return .hover,
+            else => {},
+        }
+        return .normal;
+    }
+
+    /// Render carousel cards
+    fn appendRenderables(
+        self: CarouselView,
+        alloc: std.mem.Allocator,
+        vs: ViewState,
+        list: *std.ArrayList(Renderable),
+        last: *?Renderable,
+    ) !void {
+        const n = self.totalCards();
+        if (n == 0) return;
+
+        const ui = vs.combat orelse CombatUIState{};
+        const rects = self.cardRects(vs.mouse_vp.x, vs.mouse_vp.y, alloc);
+        if (rects.len == 0) return;
+
+        for (0..n) |i| {
+            const card_info = self.cardAt(i);
+            const card = card_info.card;
+
+            // Skip cards that are being animated
+            if (ui.isAnimating(card.id)) continue;
+
+            const rect = self.adjustedRect(rects[i], card.id, vs, ui);
+            const state = cardInteractionState(card.id, ui);
+            const card_vm = CardViewModel.fromTemplate(card.id, card.template, .{
+                .target = state == .target,
+                .played = false,
+                .disabled = !card.playable,
+                .highlighted = state == .hover,
+            });
+            const item: Renderable = .{ .card = .{ .model = card_vm, .dst = rect } };
+
+            if (state == .normal or state == .target) {
+                try list.append(alloc, item);
+            } else {
+                last.* = item; // render last for z-order
+            }
+        }
+    }
+};
+
 /// View - view model for representing and interacting with combat
 /// requires an active encounter.
 pub const View = struct {
@@ -429,9 +698,8 @@ pub const View = struct {
     }
 
     fn hitTestPlayerCards(self: *View, vs: ViewState) ?HitResult {
-        if (self.alwaysZone(self.arena).hitTest(vs, vs.mouse_vp)) |hit| {
-            return hit;
-        } else if (self.handZone(self.arena).hitTest(vs, vs.mouse_vp)) |hit| {
+        // Carousel (hand + known cards at bottom)
+        if (self.carousel(self.arena).hitTest(vs, vs.mouse_vp, self.arena)) |hit| {
             return hit;
         }
         // During commit phase, hit test plays; during selection, hit test flat in_play
@@ -749,6 +1017,10 @@ pub const View = struct {
         return CardZoneView.init(.always_available, self.alwaysCards(alloc));
     }
 
+    fn carousel(self: *const View, alloc: std.mem.Allocator) CarouselView {
+        return CarouselView.init(self.handCards(alloc), self.alwaysCards(alloc));
+    }
+
     // Renderables
     pub fn renderables(self: *const View, alloc: std.mem.Allocator, vs: ViewState) !std.ArrayList(Renderable) {
         const cs = vs.combat orelse CombatUIState{};
@@ -779,7 +1051,7 @@ pub const View = struct {
             try self.opposition.appendRenderables(alloc, &list);
         }
 
-        // Player cards - render in_play first (behind), then hand (in front)
+        // Player cards - render in_play first (behind), then carousel (in front)
         var last: ?Renderable = null;
 
         // During commit phase, render plays as stacked groups; otherwise flat cards
@@ -788,8 +1060,9 @@ pub const View = struct {
         } else {
             try self.inPlayZone(alloc).appendRenderables(alloc, vs, &list, &last);
         }
-        try self.handZone(alloc).appendRenderables(alloc, vs, &list, &last);
-        try self.alwaysZone(alloc).appendRenderables(alloc, vs, &list, &last);
+
+        // Carousel: hand + known cards at bottom edge
+        try self.carousel(alloc).appendRenderables(alloc, vs, &list, &last);
 
         // enemy plays (commit phase only)
         if (self.inPhase(.commit_phase)) {
