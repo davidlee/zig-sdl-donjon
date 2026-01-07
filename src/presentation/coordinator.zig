@@ -41,6 +41,9 @@ pub const Coordinator = struct {
     current_time: f32,
     vs: ViewState,
 
+    /// Cached combat snapshot - invalidated on any domain event
+    cached_snapshot: ?query.CombatSnapshot = null,
+
     pub fn init(alloc: std.mem.Allocator, world: *World, ux: *UX) !Coordinator {
         return .{
             .alloc = alloc,
@@ -55,6 +58,7 @@ pub const Coordinator = struct {
     }
 
     pub fn deinit(self: *Coordinator) void {
+        self.invalidateSnapshot();
         self.frame_arena.deinit();
         self.effect_system.deinit();
         self.combat_log.deinit();
@@ -65,20 +69,31 @@ pub const Coordinator = struct {
         return self.frame_arena.allocator();
     }
 
-    // Get the active view based on game state
-    fn activeView(self: *Coordinator) View {
-        return self.activeViewWithSnapshot(null);
+    /// Get or rebuild the combat snapshot. Returns null if not in encounter.
+    fn getSnapshot(self: *Coordinator) ?*const query.CombatSnapshot {
+        if (self.world.fsm.currentState() != .in_encounter) return null;
+
+        if (self.cached_snapshot == null) {
+            self.cached_snapshot = query.buildSnapshot(self.alloc, self.world) catch null;
+        }
+        return if (self.cached_snapshot) |*snap| snap else null;
     }
 
-    // Get the active view with optional combat snapshot
-    fn activeViewWithSnapshot(self: *Coordinator, snapshot: ?*const query.CombatSnapshot) View {
+    /// Invalidate cached snapshot (call when domain state changes)
+    fn invalidateSnapshot(self: *Coordinator) void {
+        if (self.cached_snapshot) |*snap| {
+            snap.deinit();
+            self.cached_snapshot = null;
+        }
+    }
+
+    // Get the active view with current snapshot
+    fn activeView(self: *Coordinator) View {
         return switch (self.world.fsm.currentState()) {
             .splash => View{ .title = title.View.init(self.world) },
             .encounter_summary => View{ .summary = summary.View.init(self.world) },
-            // TODO: create proper WorldMapView when dungeon crawling is implemented
             .world_map => View{ .title = title.View.init(self.world) },
-            // Active combat - turn phase determines sub-state within CombatView
-            .in_encounter => View{ .combat = combat.View.initWithSnapshot(self.world, self.frameAlloc(), snapshot) },
+            .in_encounter => View{ .combat = combat.View.initWithSnapshot(self.world, self.frameAlloc(), self.getSnapshot()) },
         };
     }
 
@@ -148,6 +163,11 @@ pub const Coordinator = struct {
 
     // Process domain events into presentation effects
     pub fn processWorldEvents(self: *Coordinator) !void {
+        // Invalidate snapshot if any events occurred (domain state changed)
+        if (self.world.events.current_events.items.len > 0) {
+            self.invalidateSnapshot();
+        }
+
         for (self.world.events.current_events.items) |event| {
             // Delegate animation handling to EffectSystem
             self.effect_system.processEvent(event, &self.vs, self.world);
@@ -176,13 +196,7 @@ pub const Coordinator = struct {
 
         try self.ux.renderClear();
 
-        // Build combat snapshot if in encounter (freed with frame arena)
-        var snapshot: ?query.CombatSnapshot = null;
-        if (self.world.fsm.currentState() == .in_encounter) {
-            snapshot = query.buildSnapshot(frame_alloc, self.world) catch null;
-        }
-
-        var v = self.activeViewWithSnapshot(if (snapshot) |*snap| snap else null);
+        var v = self.activeView();
         // LAYER 1: Game / Active View
         var renderables = try v.renderables(frame_alloc, self.vs);
 

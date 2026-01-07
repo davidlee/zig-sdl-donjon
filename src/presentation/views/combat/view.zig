@@ -641,7 +641,8 @@ pub const View = struct {
 
     /// Check if a card is playable using snapshot.
     fn isCardPlayable(self: *const View, card_id: entity.ID) bool {
-        const snap = self.snapshot orelse return false;
+        const snap = self.snapshot orelse
+            std.debug.panic("isCardPlayable called without snapshot - coordinator must provide snapshot for combat view", .{});
         return snap.isCardPlayable(card_id);
     }
 
