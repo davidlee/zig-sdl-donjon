@@ -14,6 +14,7 @@ pub const Hit = hit.Hit;
 pub const Interaction = hit.Interaction;
 pub const PlayData = play.Data;
 pub const PlayZone = play.Zone;
+pub const TimelineView = play.TimelineView;
 pub const Player = avatar.Player;
 pub const Enemy = avatar.Enemy;
 pub const Opposition = avatar.Opposition;

@@ -48,6 +48,7 @@ const HitResult = hit_mod.Hit;
 const CardViewState = hit_mod.Interaction;
 const PlayViewData = play_mod.Data;
 const PlayZoneView = play_mod.Zone;
+const TimelineView = play_mod.TimelineView;
 const PlayerAvatar = combat_mod.Player;
 const EnemySprite = combat_mod.Enemy;
 const Opposition = combat_mod.Opposition;
@@ -333,23 +334,6 @@ const CarouselView = struct {
             points[i] = Point{ .x = card_x, .y = base_y - raise };
             weights[i] = weight;
         }
-        // points[0] = first;
-        // points[n] = last;
-
-        // Y influence for raising (same for all cards based on mouse Y)
-        // const y_inf = influenceY(mouse_y);
-
-        // if (n == 1) {
-        //     // Single card - just center it
-        //     const x_inf = influenceX(@abs(mouse_x - (start_x + card_w / 2)));
-        //     rects[0] = .{
-        //         .x = start_x,
-        //         .y = base_y - (max_raise * x_inf * y_inf),
-        //         .w = card_w,
-        //         .h = card_h,
-        //     };
-        //     return rects;
-        // }
 
         for (0..n) |i| {
             placements[i] = .{
@@ -357,72 +341,6 @@ const CarouselView = struct {
                 .rotation = weights[i] * max_rotation,
             };
         }
-
-        // // Calculate gap weights based on mouse proximity
-        // // More weight = more space allocated to that gap
-        // const num_gaps = n - 1;
-        // const weights = alloc.alloc(f32, num_gaps) catch return &.{};
-        // defer alloc.free(weights);
-        //
-        // // Total gap space available (excluding group gap which is fixed)
-        // const has_group_gap = self.hand_cards.len > 0 and self.known_cards.len > 0;
-        // const fixed_group_gap: f32 = if (has_group_gap) group_gap else 0;
-        // const total_gap_space = total_width - @as(f32, @floatFromInt(n)) * card_w - fixed_group_gap;
-        // const base_gap = total_gap_space / @as(f32, @floatFromInt(num_gaps));
-        //
-        // // Calculate raw weights for each gap
-        // var total_weight: f32 = 0;
-        // for (0..num_gaps) |i| {
-        //     // Gap center is between card i and card i+1
-        //     // Use base positions to find gap center
-        //     const gap_x = start_x + @as(f32, @floatFromInt(i)) * base_spacing + card_w + base_gap / 2;
-        //
-        //     // Add group gap offset for gaps after hand/known boundary
-        //     const gap_center = if (has_group_gap and i >= self.hand_cards.len - 1 and self.hand_cards.len > 0)
-        //         gap_x + fixed_group_gap
-        //     else
-        //         gap_x;
-        //
-        //     const dist = @abs(mouse_x - gap_center);
-        //     const inf = influenceX(dist);
-        //
-        //     // Weight: 1.0 = base, higher = expanded
-        //     weights[i] = 1.0 + inf * (expand_ratio - 1.0);
-        //     total_weight += weights[i];
-        // }
-        //
-        // // Normalize weights to distribute total gap space
-        // const scale = @as(f32, @floatFromInt(num_gaps)) / total_weight;
-        // for (weights) |*wt| {
-        //     wt.* *= scale;
-        // }
-        //
-        // // Position cards based on weighted gaps
-        // var x = start_x;
-        // for (0..n) |i| {
-        //     // Calculate raise based on X proximity and Y influence
-        //     const card_center = x + card_w / 2;
-        //     const x_dist = @abs(mouse_x - card_center);
-        //     const x_inf = influenceX(x_dist);
-        //     const raise = max_raise * x_inf * y_inf;
-        //
-        //     rects[i] = .{
-        //         .x = x,
-        //         .y = base_y - raise,
-        //         .w = card_w,
-        //         .h = card_h,
-        //     };
-        //
-        //     // Advance to next card position
-        //     if (i < num_gaps) {
-        //         x += card_w + base_gap * weights[i];
-        //
-        //         // Add fixed group gap after last hand card
-        //         if (has_group_gap and self.hand_cards.len > 0 and i == self.hand_cards.len - 1) {
-        //             x += fixed_group_gap;
-        //         }
-        //     }
-        // }
 
         return placements;
     }
@@ -623,27 +541,74 @@ pub const View = struct {
         const enc = self.world.encounter orelse return &.{};
         const enc_state = enc.stateForConst(self.world.player.id) orelse return &.{};
 
-        const slots = enc_state.current.slots();
-        const result = alloc.alloc(PlayViewData, slots.len) catch return &.{};
-        var count: usize = 0;
+        // Commit phase: use actual timeline slots
+        if (self.inPhase(.commit_phase)) {
+            const slots = enc_state.current.slots();
+            const result = alloc.alloc(PlayViewData, slots.len) catch return &.{};
+            var count: usize = 0;
 
-        for (slots, 0..) |slot, i| {
-            if (self.buildPlayViewData(&slot.play, self.world.player, i)) |pvd| {
+            for (slots, 0..) |*slot, i| {
+                if (self.buildPlayViewData(slot, self.world.player, i)) |pvd| {
+                    result[count] = pvd;
+                    count += 1;
+                }
+            }
+            return result[0..count];
+        }
+
+        // Selection phase: synthesize from in_play cards
+        const cs = self.world.player.combat_state orelse return &.{};
+        const in_play = cs.in_play.items;
+        const result = alloc.alloc(PlayViewData, in_play.len) catch return &.{};
+        var count: usize = 0;
+        var time_cursor: f32 = 0;
+
+        for (in_play) |card_id| {
+            if (self.buildPlayViewDataFromCard(card_id, self.world.player, &time_cursor)) |pvd| {
                 result[count] = pvd;
                 count += 1;
             }
         }
-
         return result[0..count];
+    }
+
+    /// Build PlayViewData from a card ID (selection phase - no TimeSlot yet)
+    fn buildPlayViewDataFromCard(
+        self: *const View,
+        card_id: entity.ID,
+        owner: *const Agent,
+        time_cursor: *f32,
+    ) ?PlayViewData {
+        const card = self.world.card_registry.getConst(card_id) orelse return null;
+        const template = card.template;
+
+        // Get technique info for channels, cost for duration
+        const technique = template.getTechnique() orelse return null;
+        const duration = template.cost.time;
+        const channels = technique.channels;
+
+        const time_start = time_cursor.*;
+        time_cursor.* += duration;
+
+        return PlayViewData{
+            .owner_id = owner.id,
+            .owner_is_player = owner.director == .player,
+            .action = CardViewData.fromInstance(card, .in_play, true),
+            .stakes = .guarded,
+            .time_start = time_start,
+            .time_end = time_start + duration,
+            .channels = channels,
+        };
     }
 
     /// Build PlayViewData from domain Play
     fn buildPlayViewData(
         self: *const View,
-        play: *const domain_combat.Play,
+        slot: *const domain_combat.TimeSlot,
         owner: *const Agent,
         play_index: usize,
     ) ?PlayViewData {
+        const play = &slot.play;
         const action_inst = self.world.card_registry.getConst(play.action) orelse return null;
 
         var pvd = PlayViewData{
@@ -651,6 +616,9 @@ pub const View = struct {
             .owner_is_player = owner.director == .player,
             .action = CardViewData.fromInstance(action_inst, .in_play, true),
             .stakes = play.effectiveStakes(),
+            .time_start = slot.time_start,
+            .time_end = slot.timeEnd(&self.world.card_registry),
+            .channels = domain_combat.getPlayChannels(slot.play, &self.world.card_registry),
         };
 
         // Add modifiers
@@ -692,8 +660,8 @@ pub const View = struct {
 
         const result = alloc.alloc(PlayViewData, slots.len) catch return &.{};
         var count: usize = 0;
-        for (slots, 0..) |slot, i| {
-            if (self.buildPlayViewData(&slot.play, agent, i)) |pvd| {
+        for (slots, 0..) |*slot, i| {
+            if (self.buildPlayViewData(slot, agent, i)) |pvd| {
                 result[count] = pvd;
                 count += 1;
             }
@@ -781,15 +749,9 @@ pub const View = struct {
         if (self.carousel(self.arena).hitTest(vs, vs.mouse_vp, self.arena)) |hit| {
             return hit;
         }
-        // During commit phase, hit test plays; during selection, hit test flat in_play
-        if (self.inPhase(.commit_phase)) {
-            if (self.playerPlayZone(self.arena).hitTest(vs, vs.mouse_vp)) |hit| {
-                return hit;
-            }
-        } else {
-            if (self.inPlayZone(self.arena).hitTest(vs, vs.mouse_vp)) |hit| {
-                return hit;
-            }
+        // Timeline for plays
+        if (self.timeline(self.arena).hitTest(vs, vs.mouse_vp)) |hit| {
+            return hit;
         }
         return null;
     }
@@ -810,35 +772,28 @@ pub const View = struct {
         if (card.template.kind != .modifier)
             return .{ .vs = vs.withCombat(new_cs) };
 
-        // During commit phase, hit test against plays for modifier attachment
-        if (self.inPhase(.commit_phase)) {
-            const play_zone = self.playerPlayZone(self.arena);
-            if (play_zone.hitTestPlay(vs, vs.mouse_vp)) |play_index| {
-                // Check predicate match via pre-computed snapshot
-                const snapshot = self.snapshot orelse return .{ .vs = vs.withCombat(new_cs) };
-                if (!snapshot.canModifierAttachToPlay(drag.id, play_index))
-                    return .{ .vs = vs.withCombat(new_cs) };
+        // Hit test against timeline plays for modifier attachment
+        const tl = self.timeline(self.arena);
+        if (tl.hitTestPlay(vs, vs.mouse_vp)) |play_index| {
+            // Check predicate match via pre-computed snapshot
+            const snapshot = self.snapshot orelse return .{ .vs = vs.withCombat(new_cs) };
+            if (!snapshot.canModifierAttachToPlay(drag.id, play_index))
+                return .{ .vs = vs.withCombat(new_cs) };
 
-                // Check for conflicts (needs actual play)
-                const enc = self.world.encounter orelse return .{ .vs = vs.withCombat(new_cs) };
-                const enc_state = enc.stateForConst(self.world.player.id) orelse
-                    return .{ .vs = vs.withCombat(new_cs) };
-                const slots = enc_state.current.slots();
-                if (play_index >= slots.len)
-                    return .{ .vs = vs.withCombat(new_cs) };
+            // Check for conflicts (needs actual play)
+            const enc = self.world.encounter orelse return .{ .vs = vs.withCombat(new_cs) };
+            const enc_state = enc.stateForConst(self.world.player.id) orelse
+                return .{ .vs = vs.withCombat(new_cs) };
+            const slots = enc_state.current.slots();
+            if (play_index >= slots.len)
+                return .{ .vs = vs.withCombat(new_cs) };
 
-                const play = &slots[play_index].play;
-                if (play.wouldConflict(card.template, &self.world.card_registry))
-                    return .{ .vs = vs.withCombat(new_cs) };
+            const play = &slots[play_index].play;
+            if (play.wouldConflict(card.template, &self.world.card_registry))
+                return .{ .vs = vs.withCombat(new_cs) };
 
-                // Valid target!
-                new_cs.drag.?.target_play_index = play_index;
-            }
-        } else {
-            // Selection phase - original card-to-card hit test
-            if (self.inPlayZone(self.arena).hitTest(vs, vs.mouse_vp)) |hit| {
-                new_cs.drag.?.target = hit.cardId();
-            }
+            // Valid target!
+            new_cs.drag.?.target_play_index = play_index;
         }
 
         return .{ .vs = vs.withCombat(new_cs) };
@@ -904,14 +859,12 @@ pub const View = struct {
             }
         }
 
-        // PLAYS (commit phase) or IN PLAY CARDS (selection phase)
-        if (in_commit) {
-            if (self.playerPlayZone(self.arena).hitTest(vs, pos)) |hit| {
+        // PLAYS on timeline
+        if (self.timeline(self.arena).hitTest(vs, pos)) |hit| {
+            if (in_commit) {
                 // Commit phase: withdraw play (1F, refund stamina)
                 return .{ .command = .{ .commit_withdraw = hit.cardId() } };
-            }
-        } else {
-            if (self.inPlayZone(self.arena).hitTest(vs, pos)) |hit| {
+            } else {
                 // Selection phase: cancel card
                 return .{ .command = .{ .cancel_card = hit.cardId() } };
             }
@@ -1086,6 +1039,11 @@ pub const View = struct {
         return CarouselView.init(self.handCards(alloc), self.alwaysCards(alloc));
     }
 
+    /// Timeline view for commit phase (plays positioned by channel × time)
+    fn timeline(self: *const View, alloc: std.mem.Allocator) TimelineView {
+        return TimelineView.init(self.playerPlays(alloc));
+    }
+
     // Renderables
     pub fn renderables(self: *const View, alloc: std.mem.Allocator, vs: ViewState) !std.ArrayList(Renderable) {
         const cs = vs.combat orelse CombatUIState{};
@@ -1116,15 +1074,11 @@ pub const View = struct {
             try self.opposition.appendRenderables(alloc, &list);
         }
 
-        // Player cards - render in_play first (behind), then carousel (in front)
+        // Player cards - timeline for plays, carousel for hand
         var last: ?Renderable = null;
 
-        // During commit phase, render plays as stacked groups; otherwise flat cards
-        if (self.inPhase(.commit_phase)) {
-            try self.playerPlayZone(alloc).appendRenderables(alloc, vs, &list, &last);
-        } else {
-            try self.inPlayZone(alloc).appendRenderables(alloc, vs, &list, &last);
-        }
+        // Timeline shows committed plays (both selection and commit phases)
+        try self.timeline(alloc).appendRenderables(alloc, vs, &list, &last);
 
         // Carousel: hand + known cards at bottom edge
         try self.carousel(alloc).appendRenderables(alloc, vs, &list, &last);
