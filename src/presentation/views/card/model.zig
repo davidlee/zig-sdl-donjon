@@ -7,6 +7,8 @@ const std = @import("std");
 const cards = @import("../../../domain/cards.zig");
 const lib = @import("infra");
 const entity = lib.entity;
+const types = @import("../types.zig");
+const AssetId = types.AssetId;
 
 /// Visual card kind (determines background color scheme)
 pub const Kind = enum {
@@ -46,6 +48,7 @@ pub const Model = struct {
     stamina_cost: f32,
     time_cost: f32,
     state: State,
+    icon: ?AssetId = null,
 
     /// Create view model from domain instance
     pub fn fromInstance(instance: cards.Instance, state: State) Model {
@@ -63,6 +66,18 @@ pub const Model = struct {
             .stamina_cost = template.cost.stamina,
             .time_cost = template.cost.time,
             .state = state,
+            .icon = mapIcon(template.icon),
+        };
+    }
+
+    fn mapIcon(icon: ?cards.RuneIcon) ?AssetId {
+        const i = icon orelse return null;
+        return switch (i) {
+            .eo => .rune_eo,
+            .th => .rune_th,
+            .u => .rune_u,
+            .y => .rune_y,
+            .f => .rune_f,
         };
     }
 

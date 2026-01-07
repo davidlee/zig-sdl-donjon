@@ -123,7 +123,7 @@ pub const CardRenderer = struct {
     }
 
     /// Get or create texture for a card
-    pub fn getCardTexture(self: *CardRenderer, card: CardViewModel) !Texture {
+    pub fn getCardTexture(self: *CardRenderer, card: CardViewModel, graphics: anytype) !Texture {
         const id_key = idToKey(card.id);
         const state_hash = stateToHash(card.state);
 
@@ -136,7 +136,7 @@ pub const CardRenderer = struct {
             try self.pending_destroy.append(self.alloc, entry.texture);
         }
 
-        const tex = try self.renderCard(card);
+        const tex = try self.renderCard(card, graphics);
         try self.cache.put(id_key, .{
             .texture = tex,
             .state_hash = state_hash,
@@ -171,7 +171,7 @@ pub const CardRenderer = struct {
     }
 
     /// Render card to a new texture
-    fn renderCard(self: *CardRenderer, card: CardViewModel) !Texture {
+    fn renderCard(self: *CardRenderer, card: CardViewModel, graphics: anytype) !Texture {
         const tex = try Texture.init(
             self.renderer,
             .packed_rgba_8_8_8_8,
@@ -190,6 +190,23 @@ pub const CardRenderer = struct {
         try self.drawCardBackground(card.kind);
         try self.drawCardBorder(card.rarity, card.state);
         try self.drawCostIndicator(card.stamina_cost);
+
+        // Icon (behind text)
+        if (card.icon) |icon_id| {
+            if (graphics.getTexture(icon_id)) |icon_tex_ref| {
+                var icon: s.render.Texture = icon_tex_ref;
+                try icon.setAlphaMod(50);
+
+                const icon_w, const icon_h = try icon.getSize();
+                const icon_dst = s.rect.FRect{
+                    .x = (CARD_WIDTH - icon_w) / 2,
+                    .y = (CARD_HEIGHT - icon_h) / 2,
+                    .w = icon_w,
+                    .h = icon_h,
+                };
+                try self.renderer.renderTexture(icon, null, icon_dst);
+            }
+        }
 
         // State overlay (exhausted, disabled)
         if (stateOverlayColor(card.state)) |overlay| {

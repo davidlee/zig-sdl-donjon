@@ -81,6 +81,12 @@ pub const UX = struct {
         .{ .filename = "assets/fredrick-snail.png", .id = .fredrick_snail },
         .{ .filename = "assets/mob-thief.png", .id = .thief },
         .{ .filename = "assets/end-turn.png", .id = .end_turn },
+        // Rune icons (48x48)
+        .{ .filename = "assets/rune_eo.png", .id = .rune_eo },
+        .{ .filename = "assets/rune_th.png", .id = .rune_th },
+        .{ .filename = "assets/rune_u.png", .id = .rune_u },
+        .{ .filename = "assets/rune_y.png", .id = .rune_y },
+        .{ .filename = "assets/rune_f.png", .id = .rune_f },
     };
 
     fn loadSprites(assets: *[AssetCount]?s.render.Texture, renderer: s.render.Renderer) !void {
@@ -186,7 +192,7 @@ pub const UX = struct {
     fn prewarmCardTextures(self: *UX, renderables: []const Renderable) !void {
         for (renderables) |r| {
             switch (r) {
-                .card => |card| _ = try self.cards.getCardTexture(card.model),
+                .card => |card| _ = try self.cards.getCardTexture(card.model, self),
                 else => {},
             }
         }
@@ -255,7 +261,7 @@ pub const UX = struct {
     }
 
     fn renderCard(self: *UX, card: view.Card) !void {
-        const tex = try self.cards.getCardTexture(card.model);
+        const tex = try self.cards.getCardTexture(card.model, self);
         const tex_w, const tex_h = try tex.getSize();
 
         const src = rect.FRect{ .x = 0, .y = 0, .w = tex_w, .h = tex_h };

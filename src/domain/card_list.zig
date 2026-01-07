@@ -664,6 +664,7 @@ const m_high = Template{
     .rarity = .common,
     .cost = .{ .stamina = 0, .time = 0 },
     .tags = .{ .offensive = true, .phase_commit = true },
+    .icon = .y,
     .rules = &.{.{
         .trigger = .on_commit,
         .valid = .always,
@@ -686,6 +687,7 @@ const m_low = Template{
     .rarity = .common,
     .cost = .{ .stamina = 0, .time = 0 },
     .tags = .{ .offensive = true, .phase_commit = true },
+    .icon = .u,
     .rules = &.{.{
         .trigger = .on_commit,
         .valid = .always,
@@ -710,6 +712,7 @@ const m_feint = Template{
     .rarity = .uncommon,
     .cost = .{ .stamina = 0, .time = 0, .focus = 1 },
     .tags = .{ .offensive = true, .phase_commit = true },
+    .icon = .f,
     .rules = &.{.{
         .trigger = .on_commit,
         .valid = .always,

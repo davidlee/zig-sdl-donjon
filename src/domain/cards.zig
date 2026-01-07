@@ -358,6 +358,15 @@ pub const Rule = struct {
     expressions: []const Expression,
 };
 
+/// Iconic dwarf rune for card display (primarily modifiers)
+pub const RuneIcon = enum {
+    eo, // ᛇ
+    th, // ᚦ
+    u, // ᚢ
+    y, // ᚣ
+    f, // ᚠ
+};
+
 pub const Template = struct {
     id: ID,
     kind: Kind,
@@ -377,6 +386,9 @@ pub const Template = struct {
     // 1 = available again next turn (cooldown set immediately on play)
     // N = available after N turns
     cooldown: ?u8 = null,
+
+    // Display icon (rune) for card - primarily used for modifiers
+    icon: ?RuneIcon = null,
 
     /// Extract combat technique from rules (first combat_technique effect found)
     pub fn getTechnique(self: *const Template) ?*const Technique {

@@ -25,6 +25,12 @@ pub const AssetId = enum {
     fredrick_snail,
     thief,
     end_turn,
+    // Rune icons for modifier cards
+    rune_eo,
+    rune_th,
+    rune_u,
+    rune_y,
+    rune_f,
 };
 
 // Renderable primitives - what UX knows how to draw
