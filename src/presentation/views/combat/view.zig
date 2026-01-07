@@ -889,8 +889,8 @@ pub const View = struct {
             return self.cancelTargeting(vs);
         }
 
-        // ALWAYS AVAILABLE CARD
-        if (self.alwaysZone(self.arena).hitTest(vs, pos)) |hit| {
+        // CAROUSEL (hand + always-available cards)
+        if (self.carousel(self.arena).hitTest(vs, pos, self.arena)) |hit| {
             const id = hit.cardId();
             if (self.isCardDraggable(id)) {
                 var new_cs = cs;
@@ -898,20 +898,6 @@ pub const View = struct {
                 return .{ .vs = vs.withCombat(new_cs) };
             }
             if (in_commit) {
-                return self.commitAddCard(vs, id);
-            } else {
-                return self.playCard(vs, id, hit.card.rect);
-            }
-        }
-
-        // IN HAND CARD
-        if (self.handZone(self.arena).hitTest(vs, pos)) |hit| {
-            const id = hit.cardId();
-            if (self.isCardDraggable(id)) {
-                var new_cs = cs;
-                new_cs.drag = .{ .original_pos = pos, .id = id };
-                return .{ .vs = vs.withCombat(new_cs) };
-            } else if (in_commit) {
                 return self.commitAddCard(vs, id);
             } else {
                 return self.playCard(vs, id, hit.card.rect);

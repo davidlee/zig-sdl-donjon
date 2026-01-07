@@ -148,7 +148,7 @@ pub const EffectSystem = struct {
 
     // --- Card Animation Handling (updates ViewState) ---
 
-    const card_animation_duration: f32 = 0.3; // seconds
+    const card_animation_duration: f32 = 0.2; // seconds
 
     /// Process a domain event, updating card animations in ViewState
     pub fn processEvent(self: *EffectSystem, event: Event, vs: *ViewState, world: *const World) void {
