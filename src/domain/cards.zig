@@ -214,6 +214,14 @@ pub const ChannelSet = packed struct {
     }
 };
 
+/// Returns default channels for cards without explicit technique channels.
+/// Used for non-combat-technique cards like skills, spells, etc.
+pub fn defaultChannelsForTags(tags: TagSet) ChannelSet {
+    if (tags.skill) return .{ .concentration = true };
+    // Future: tags.manoeuvre → footwork, tags.spell → concentration, etc.
+    return .{};
+}
+
 pub const TechniqueID = enum {
     thrust,
     swing,

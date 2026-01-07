@@ -78,14 +78,17 @@ pub const Data = struct {
             sum += 2;
             count += 1;
         }
-        // concentration ignored for now (no cards use it)
+        if (c.concentration) {
+            sum += 3;
+            count += 1;
+        }
         return if (count > 0) sum / count else 0;
     }
 
     /// Height in channel lanes (1 for single, 2 for adjacent pair, 3 for all).
     pub fn channelSpan(self: *const Data) f32 {
         const c = self.channels;
-        var min_idx: f32 = 3;
+        var min_idx: f32 = 4;
         var max_idx: f32 = 0;
         if (c.weapon) {
             min_idx = @min(min_idx, 0);
@@ -98,6 +101,10 @@ pub const Data = struct {
         if (c.footwork) {
             min_idx = @min(min_idx, 2);
             max_idx = @max(max_idx, 2);
+        }
+        if (c.concentration) {
+            min_idx = @min(min_idx, 3);
+            max_idx = @max(max_idx, 3);
         }
         return if (min_idx <= max_idx) max_idx - min_idx + 1 else 1;
     }
@@ -289,19 +296,20 @@ pub const TimelineView = struct {
     const slot_width: f32 = 100; // 100px per 0.1s slot
     const lane_height: f32 = 110; // card height per channel
     const num_slots: usize = 10; // 0.0-1.0 in 0.1 increments
-    const num_lanes: usize = 3; // weapon, off_hand, footwork
+    const num_lanes: usize = 4; // weapon, off_hand, footwork, concentration
     const timeline_width: f32 = slot_width * num_slots;
     const timeline_height: f32 = lane_height * num_lanes;
     const start_x: f32 = 60; // left margin for labels
-    const start_y: f32 = 420; // below header area
+    const start_y: f32 = 340; // below header area
     const label_width: f32 = 70; // right-side channel labels
     const grid_color = Color{ .r = 40, .g = 40, .b = 40, .a = 255 };
     const lane_colors = [_]Color{
         .{ .r = 0, .g = 0, .b = 0, .a = 255 }, // black
         .{ .r = 10, .g = 10, .b = 10, .a = 255 }, // dark grey
         .{ .r = 0, .g = 0, .b = 0, .a = 255 }, // black
+        .{ .r = 10, .g = 10, .b = 10, .a = 255 }, // dark grey
     };
-    const lane_labels = [_][]const u8{ "weapon", "off_hand", "footwork" };
+    const lane_labels = [_][]const u8{ "weapon", "off_hand", "footwork", "conc" };
 
     plays: []const Data,
 

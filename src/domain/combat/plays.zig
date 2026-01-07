@@ -351,11 +351,15 @@ pub fn getPlayDuration(play: Play, registry: *const world.CardRegistry) f32 {
 /// Get combined channels occupied by a play (lead card + modifiers).
 pub fn getPlayChannels(play: Play, registry: *const world.CardRegistry) cards.ChannelSet {
     var channels = cards.ChannelSet{};
+    var has_technique = false;
+    var lead_tags: ?cards.TagSet = null;
 
     // Get channels from lead card
     if (registry.getConst(play.action)) |instance| {
+        lead_tags = instance.template.tags;
         if (instance.template.getTechnique()) |technique| {
             channels = channels.merge(technique.channels);
+            has_technique = true;
         }
     }
 
@@ -364,7 +368,22 @@ pub fn getPlayChannels(play: Play, registry: *const world.CardRegistry) cards.Ch
         if (registry.getConst(entry.card_id)) |instance| {
             if (instance.template.getTechnique()) |technique| {
                 channels = channels.merge(technique.channels);
+                has_technique = true;
             }
+        }
+    }
+
+    // Cards without techniques get default channels based on tags
+    if (!has_technique) {
+        if (lead_tags) |tags| {
+            channels = channels.merge(cards.defaultChannelsForTags(tags));
+        }
+    }
+
+    // Warn if card still has no channels
+    if (channels.isEmpty()) {
+        if (registry.getConst(play.action)) |instance| {
+            std.log.warn("card '{s}' has no channels assigned", .{instance.template.name});
         }
     }
 
