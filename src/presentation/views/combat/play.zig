@@ -382,11 +382,15 @@ pub const TimelineView = struct {
 
     /// Hit test returning only play index (for drop targeting)
     pub fn hitTestPlay(self: TimelineView, vs: ViewState, pt: Point) ?usize {
-        if (self.hitTest(vs, pt)) |result| {
-            return switch (result) {
-                .play => |p| p.play_index,
-                .card => null,
-            };
+        _ = vs;
+        // Use durationRect for larger drop target area
+        var i = self.plays.len;
+        while (i > 0) {
+            i -= 1;
+            const play = &self.plays[i];
+            if (durationRect(play).pointIn(pt)) {
+                return i;
+            }
         }
         return null;
     }

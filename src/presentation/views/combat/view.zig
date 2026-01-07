@@ -444,6 +444,9 @@ const CarouselView = struct {
         const placements = self.cardPlacements(vs.mouse_vp.x, vs.mouse_vp.y, alloc);
         if (placements.len == 0) return;
 
+        // Track dragged card to render separately
+        var dragged_card: ?CardViewData = null;
+
         for (0..n) |i| {
             const card_info = self.cardAt(i);
             const card = card_info.card;
@@ -451,9 +454,16 @@ const CarouselView = struct {
             // Skip cards that are being animated
             if (ui.isAnimating(card.id)) continue;
 
+            const state = cardInteractionState(card.id, ui);
+
+            // Dragged cards render separately (centered on cursor, no rotation)
+            if (state == .drag) {
+                dragged_card = card;
+                continue;
+            }
+
             const placement = placements[i];
             const rect = self.adjustedRect(placement.rect, card.id, vs, ui);
-            const state = cardInteractionState(card.id, ui);
             const card_vm = CardViewModel.fromTemplate(card.id, card.template, .{
                 .target = state == .target,
                 .played = false,
@@ -471,6 +481,27 @@ const CarouselView = struct {
             } else {
                 last.* = item; // render last for z-order
             }
+        }
+
+        // Render dragged card last, centered on cursor, no rotation
+        if (dragged_card) |card| {
+            const dims = CardLayout.defaultDimensions();
+            const rect = Rect{
+                .x = vs.mouse_vp.x - dims.w / 2,
+                .y = vs.mouse_vp.y - dims.h / 2,
+                .w = dims.w,
+                .h = dims.h,
+            };
+            const card_vm = CardViewModel.fromTemplate(card.id, card.template, .{
+                .played = false,
+                .disabled = !card.playable,
+                .highlighted = true,
+            });
+            last.* = .{ .card = .{
+                .model = card_vm,
+                .dst = rect,
+                .rotation = 0,
+            } };
         }
     }
 };
