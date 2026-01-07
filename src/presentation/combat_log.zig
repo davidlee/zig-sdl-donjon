@@ -32,6 +32,7 @@ pub const colors = struct {
     pub const armour: Color = .{ .r = 150, .g = 150, .b = 200, .a = 255 }; // steel blue
     pub const advantage: Color = .{ .r = 200, .g = 200, .b = 100, .a = 255 }; // yellow
     pub const system: Color = .{ .r = 120, .g = 120, .b = 120, .a = 255 }; // dim gray
+    pub const manoeuvre: Color = .{ .r = 100, .g = 200, .b = 150, .a = 255 }; // teal/green
 };
 
 pub const CombatLog = struct {
@@ -148,15 +149,39 @@ pub fn format(event: Event, world: *const World, alloc: std.mem.Allocator) !?Ent
             colors.wound,
         ),
 
-        .technique_resolved => |e| try singleSpan(
-            alloc,
-            try std.fmt.allocPrint(alloc, "{s} vs {s}: {s}", .{
-                agentName(e.attacker_id, world),
-                agentName(e.defender_id, world),
-                @tagName(e.outcome),
-            }),
-            colors.default,
-        ),
+        .technique_resolved => |e| blk: {
+            const margin_pct = @abs(e.margin) * 100;
+            const chance_pct = e.hit_chance * 100;
+            const roll_pct = e.roll * 100;
+
+            const outcome_str = switch (e.outcome) {
+                .hit => if (margin_pct < 5) "hit (narrow)" else "hit",
+                .miss => if (margin_pct < 5) "miss (narrow)" else "miss",
+                .parried => "parried",
+                .blocked => "blocked",
+                .deflected => "deflected",
+                .dodged => "dodged",
+                .countered => "countered",
+            };
+
+            const color = if (e.outcome == .hit)
+                (if (world.player.id.eql(e.attacker_id)) colors.player_action else colors.enemy_action)
+            else
+                (if (world.player.id.eql(e.attacker_id)) colors.enemy_action else colors.player_action);
+
+            break :blk try singleSpan(
+                alloc,
+                try std.fmt.allocPrint(alloc, "{s} {s} {s}: {s} ({d:.0}% chance, rolled {d:.0})", .{
+                    agentName(e.attacker_id, world),
+                    @tagName(e.technique_id),
+                    agentName(e.defender_id, world),
+                    outcome_str,
+                    chance_pct,
+                    roll_pct,
+                }),
+                color,
+            );
+        },
 
         .advantage_changed => |e| {
             const delta = e.new_value - e.old_value;
@@ -170,6 +195,40 @@ pub fn format(event: Event, world: *const World, alloc: std.mem.Allocator) !?Ent
                     delta,
                 }),
                 colors.advantage,
+            );
+        },
+
+        .manoeuvre_contest_resolved => |e| blk: {
+            const winner_name = switch (e.outcome) {
+                .aggressor_succeeds => agentName(e.aggressor_id, world),
+                .defender_succeeds => agentName(e.defender_id, world),
+                .stalemate => "Neither",
+            };
+            const outcome_verb = switch (e.outcome) {
+                .aggressor_succeeds, .defender_succeeds => "wins footwork",
+                .stalemate => "- footwork stalemate",
+            };
+
+            const player_won = (e.outcome == .aggressor_succeeds and world.player.id.eql(e.aggressor_id)) or
+                (e.outcome == .defender_succeeds and world.player.id.eql(e.defender_id));
+            const color = if (e.outcome == .stalemate)
+                colors.default
+            else if (player_won)
+                colors.player_action
+            else
+                colors.enemy_action;
+
+            break :blk try singleSpan(
+                alloc,
+                try std.fmt.allocPrint(alloc, "{s} {s} ({s} vs {s}, {d:.2} vs {d:.2})", .{
+                    winner_name,
+                    outcome_verb,
+                    @tagName(e.aggressor_move),
+                    @tagName(e.defender_move),
+                    e.aggressor_score,
+                    e.defender_score,
+                }),
+                color,
             );
         },
 

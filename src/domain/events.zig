@@ -13,6 +13,7 @@ const world = @import("world.zig");
 const body = @import("body.zig");
 const combat = @import("combat.zig");
 const resolution = @import("resolution.zig");
+const apply = @import("apply.zig");
 const Zone = cards.Zone;
 pub const CardWithSlot = struct {
     card: entity.ID,
@@ -125,6 +126,23 @@ pub const Event = union(enum) {
         defender_id: entity.ID,
         technique_id: cards.TechniqueID,
         outcome: resolution.Outcome,
+        // Roll details
+        hit_chance: f32, // final chance after all modifiers
+        roll: f32, // actual roll value
+        margin: f32, // roll - hit_chance (positive = miss margin, negative = hit margin)
+        // Modifier totals (from conditions, etc)
+        attacker_modifier: f32, // total hit chance adjustment from attacker conditions
+        defender_modifier: f32, // total defense adjustment from defender conditions
+    },
+
+    manoeuvre_contest_resolved: struct {
+        aggressor_id: entity.ID,
+        defender_id: entity.ID,
+        aggressor_move: apply.ManoeuvreType,
+        defender_move: apply.ManoeuvreType,
+        aggressor_score: f32,
+        defender_score: f32,
+        outcome: apply.ManoeuvreOutcome,
     },
 
     advantage_changed: struct {

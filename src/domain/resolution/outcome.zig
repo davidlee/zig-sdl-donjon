@@ -53,6 +53,16 @@ pub const Outcome = enum {
     countered,
 };
 
+/// Details of a combat roll for logging/display
+pub const RollResult = struct {
+    outcome: Outcome,
+    hit_chance: f32, // final chance after all modifiers
+    roll: f32, // actual roll value
+    margin: f32, // roll - hit_chance (positive = miss margin, negative = hit margin)
+    attacker_modifier: f32, // total from attacker conditions
+    defender_modifier: f32, // total from defender conditions (defense_mult reduction)
+};
+
 /// Calculate hit probability for an attack
 pub fn calculateHitChance(attack: AttackContext, defense: DefenseContext) f32 {
     var chance: f32 = 0.5; // Base 50%
@@ -125,7 +135,7 @@ pub fn resolveOutcome(
     w: *World,
     attack: AttackContext,
     defense: DefenseContext,
-) !Outcome {
+) !RollResult {
     const hit_chance = calculateHitChance(attack, defense);
 
     // Apply attacker's overlay bonuses (from overlapping manoeuvres)
@@ -143,20 +153,31 @@ pub fn resolveOutcome(
 
     const roll = try w.drawRandom(.combat);
 
-    if (roll > final_chance) {
+    // Capture condition modifiers for logging
+    const attacker_mods = CombatModifiers.forAttacker(attack);
+    const defender_mods = CombatModifiers.forDefender(defense);
+
+    const outcome: Outcome = if (roll > final_chance) blk: {
         // Attack failed - determine how based on defense
         if (defense.technique) |def_tech| {
-            return switch (def_tech.id) {
+            break :blk switch (def_tech.id) {
                 .parry => .parried,
                 .block => .blocked,
                 .deflect => .deflected,
                 else => .miss,
             };
         }
-        return .miss;
-    }
+        break :blk .miss;
+    } else .hit;
 
-    return .hit;
+    return RollResult{
+        .outcome = outcome,
+        .hit_chance = final_chance,
+        .roll = roll,
+        .margin = roll - final_chance,
+        .attacker_modifier = attacker_mods.hit_chance,
+        .defender_modifier = 1.0 - defender_mods.defense_mult, // how much defense was reduced
+    };
 }
 
 // ============================================================================
@@ -178,11 +199,11 @@ pub fn resolveTechniqueVsDefense(
     defense: DefenseContext,
     target_part: body.PartIndex,
 ) !ResolutionResult {
-    // 1. Determine outcome (hit/miss/blocked/etc)
-    const outcome = try resolveOutcome(w, attack, defense);
+    // 1. Determine outcome (hit/miss/blocked/etc) with roll details
+    const roll_result = try resolveOutcome(w, attack, defense);
 
     // 2. Calculate and apply advantage effects (with events)
-    const adv_effect = getAdvantageEffect(attack.technique, outcome, attack.stakes);
+    const adv_effect = getAdvantageEffect(attack.technique, roll_result.outcome, attack.stakes);
     try applyAdvantageWithEvents(adv_effect, w, attack.engagement, attack.attacker, attack.defender);
 
     // 3. If hit, create damage packet and resolve through armor/body
@@ -190,7 +211,7 @@ pub fn resolveTechniqueVsDefense(
     var armour_result: ?armour.AbsorptionResult = null;
     var body_result: ?body.Body.DamageResult = null;
 
-    if (outcome == .hit) {
+    if (roll_result.outcome == .hit) {
         dmg_packet = createDamagePacket(
             attack.technique,
             attack.weapon_template,
@@ -224,16 +245,21 @@ pub fn resolveTechniqueVsDefense(
         }
     }
 
-    // Emit technique_resolved event
+    // Emit technique_resolved event with full roll details
     try w.events.push(.{ .technique_resolved = .{
         .attacker_id = attack.attacker.id,
         .defender_id = attack.defender.id,
         .technique_id = attack.technique.id,
-        .outcome = outcome,
+        .outcome = roll_result.outcome,
+        .hit_chance = roll_result.hit_chance,
+        .roll = roll_result.roll,
+        .margin = roll_result.margin,
+        .attacker_modifier = roll_result.attacker_modifier,
+        .defender_modifier = roll_result.defender_modifier,
     } });
 
     return ResolutionResult{
-        .outcome = outcome,
+        .outcome = roll_result.outcome,
         .advantage_applied = adv_effect,
         .damage_packet = dmg_packet,
         .armour_result = armour_result,

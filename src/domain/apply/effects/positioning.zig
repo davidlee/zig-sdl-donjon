@@ -31,6 +31,13 @@ pub const ManoeuvreOutcome = enum {
     stalemate,
 };
 
+/// Full result of a positioning contest including scores for logging.
+pub const ContestResult = struct {
+    outcome: ManoeuvreOutcome,
+    aggressor_score: f32,
+    defender_score: f32,
+};
+
 /// Weights for manoeuvre score calculation.
 const speed_weight: f32 = 0.3;
 const position_weight: f32 = 0.4;
@@ -71,24 +78,24 @@ pub fn resolveManoeuvreConflict(
     defender_move: ManoeuvreType,
     engagement: *const combat.Engagement,
     rng: std.Random,
-) ManoeuvreOutcome {
+) ContestResult {
+    // Calculate scores for logging regardless of auto-win/lose rules
+    const aggressor_score = calculateManoeuvreScore(aggressor, aggressor_move, engagement.position);
+    const defender_position = 1.0 - engagement.position;
+    const defender_score = calculateManoeuvreScore(defender, defender_move, defender_position);
+
     // Standing still auto-loses against advance
     if (defender_move == .hold and aggressor_move == .advance) {
-        return .aggressor_succeeds;
+        return .{ .outcome = .aggressor_succeeds, .aggressor_score = aggressor_score, .defender_score = defender_score };
     }
     if (aggressor_move == .hold and defender_move == .advance) {
-        return .defender_succeeds;
+        return .{ .outcome = .defender_succeeds, .aggressor_score = aggressor_score, .defender_score = defender_score };
     }
 
     // Both holding = stalemate (no movement contest)
     if (aggressor_move == .hold and defender_move == .hold) {
-        return .stalemate;
+        return .{ .outcome = .stalemate, .aggressor_score = aggressor_score, .defender_score = defender_score };
     }
-
-    const aggressor_score = calculateManoeuvreScore(aggressor, aggressor_move, engagement.position);
-    // Defender sees engagement from opposite perspective
-    const defender_position = 1.0 - engagement.position;
-    const defender_score = calculateManoeuvreScore(defender, defender_move, defender_position);
 
     const differential = aggressor_score - defender_score;
 
@@ -96,13 +103,14 @@ pub fn resolveManoeuvreConflict(
     const variance = (rng.float(f32) - 0.5) * 0.2;
     const adjusted_diff = differential + variance;
 
-    if (adjusted_diff > stalemate_threshold) {
-        return .aggressor_succeeds;
-    } else if (adjusted_diff < -stalemate_threshold) {
-        return .defender_succeeds;
-    } else {
-        return .stalemate;
-    }
+    const outcome: ManoeuvreOutcome = if (adjusted_diff > stalemate_threshold)
+        .aggressor_succeeds
+    else if (adjusted_diff < -stalemate_threshold)
+        .defender_succeeds
+    else
+        .stalemate;
+
+    return .{ .outcome = outcome, .aggressor_score = aggressor_score, .defender_score = defender_score };
 }
 
 /// Determine what footwork an agent is attempting this tick based on their played cards.
@@ -179,7 +187,7 @@ pub fn resolvePositioningContests(world: *World) !void {
         if (player_footwork == .hold and enemy_footwork == .hold) continue;
 
         // Resolve contest (player is "aggressor" by convention)
-        const outcome = resolveManoeuvreConflict(
+        const result = resolveManoeuvreConflict(
             world.player,
             enemy,
             player_footwork,
@@ -188,8 +196,19 @@ pub fn resolvePositioningContests(world: *World) !void {
             rng,
         );
 
+        // Emit contest event
+        try world.events.push(.{ .manoeuvre_contest_resolved = .{
+            .aggressor_id = world.player.id,
+            .defender_id = enemy.id,
+            .aggressor_move = player_footwork,
+            .defender_move = enemy_footwork,
+            .aggressor_score = result.aggressor_score,
+            .defender_score = result.defender_score,
+            .outcome = result.outcome,
+        } });
+
         // Apply contest outcome
-        try applyContestOutcome(world, enc, world.player, enemy, engagement, outcome, player_footwork, enemy_footwork);
+        try applyContestOutcome(world, enc, world.player, enemy, engagement, result.outcome, player_footwork, enemy_footwork);
     }
 }
 
@@ -384,7 +403,7 @@ test "resolveManoeuvreConflict: hold auto-loses to advance" {
         prng.random(),
     );
 
-    try testing.expectEqual(ManoeuvreOutcome.aggressor_succeeds, outcome);
+    try testing.expectEqual(ManoeuvreOutcome.aggressor_succeeds, outcome.outcome);
 }
 
 test "resolveManoeuvreConflict: aggressor hold loses to defender advance" {
@@ -406,7 +425,7 @@ test "resolveManoeuvreConflict: aggressor hold loses to defender advance" {
         prng.random(),
     );
 
-    try testing.expectEqual(ManoeuvreOutcome.defender_succeeds, outcome);
+    try testing.expectEqual(ManoeuvreOutcome.defender_succeeds, outcome.outcome);
 }
 
 test "resolveManoeuvreConflict: both hold results in stalemate" {
@@ -428,7 +447,7 @@ test "resolveManoeuvreConflict: both hold results in stalemate" {
         prng.random(),
     );
 
-    try testing.expectEqual(ManoeuvreOutcome.stalemate, outcome);
+    try testing.expectEqual(ManoeuvreOutcome.stalemate, outcome.outcome);
 }
 
 test "resolveManoeuvreConflict: faster agent tends to win" {
@@ -452,7 +471,7 @@ test "resolveManoeuvreConflict: faster agent tends to win" {
             &engagement,
             prng.random(),
         );
-        if (outcome == .aggressor_succeeds) fast_wins += 1;
+        if (outcome.outcome == .aggressor_succeeds) fast_wins += 1;
     }
 
     // Fast agent (speed 8 vs 3) should win most contests
