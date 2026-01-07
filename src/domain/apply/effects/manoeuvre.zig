@@ -43,6 +43,7 @@ fn executeAgentManoeuvres(world: *World, actor: *combat.Agent, enc: *combat.Enco
                             .all_enemies => {
                                 // Apply to all engagements (e.g., disengage)
                                 for (enc.enemies.items) |enemy| {
+                                    if (enemy.id.eql(actor.id)) continue; // skip self
                                     try applyRangeModification(
                                         world,
                                         enc,
@@ -192,6 +193,7 @@ fn applyPositionToAll(
 ) !void {
     // Apply to all enemy engagements
     for (enc.enemies.items) |enemy| {
+        if (enemy.id.eql(actor_id)) continue; // skip self
         try applyPositionModification(world, enc, actor_id, enemy.id, delta);
     }
 
