@@ -47,6 +47,7 @@ pub const getModifierTargetPredicate = targeting.getModifierTargetPredicate;
 pub const canModifierAttachToPlay = targeting.canModifierAttachToPlay;
 
 // Re-export command handler helpers
+pub const PlayResult = command_handler.PlayResult;
 pub const playValidCardReservingCosts = command_handler.playValidCardReservingCosts;
 
 // Re-export effect functions

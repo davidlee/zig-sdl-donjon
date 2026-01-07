@@ -190,15 +190,15 @@ fn finalizeCardAnimation(vs: *ViewState, card_id: entity.ID, world: *const World
     var cs = vs.combat orelse return;
     const anim = cs.findAnimation(card_id) orelse return;
 
-    // Calculate destination rect based on card's position in in_play zone
+    // Calculate destination rect based on card's position in timeline
     const player = world.player;
-    const combat_state = player.combat_state orelse return;
-    const in_play = combat_state.in_play.items;
+    const enc = world.encounter orelse return;
+    const enc_state = enc.stateForConst(player.id) orelse return;
 
-    // Find index of the card in in_play
+    // Find index of the card in timeline
     var card_index: ?usize = null;
-    for (in_play, 0..) |id, i| {
-        if (id.index == card_id.index and id.generation == card_id.generation) {
+    for (enc_state.current.timeline.slots(), 0..) |slot, i| {
+        if (slot.play.action.eql(card_id)) {
             card_index = i;
             break;
         }
@@ -207,7 +207,7 @@ fn finalizeCardAnimation(vs: *ViewState, card_id: entity.ID, world: *const World
     if (card_index) |idx| {
         const start_x: f32 = 10;
         const spacing: f32 = card_renderer.CARD_WIDTH + 10;
-        const y: f32 = 200; // in_play zone y position
+        const y: f32 = 200; // played cards zone y position
 
         anim.to_rect = .{
             .x = start_x + @as(f32, @floatFromInt(idx)) * spacing,

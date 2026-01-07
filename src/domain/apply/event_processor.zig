@@ -61,12 +61,12 @@ pub const EventProcessor = struct {
         source: ?combat.PlaySource,
     ) !void {
         if (source) |_| {
-            // Pool clone: destroy it
-            self.world.card_registry.remove(card_id);
+            // Pool clone: destroy it (idempotent)
+            self.world.card_registry.destroy(card_id);
         } else {
-            // Hand card: move to discard (if still in play)
-            if (cs.isInZone(card_id, .in_play)) {
-                try cs.moveCard(card_id, .in_play, .discard);
+            // Hand card: add to discard if not already there
+            if (!cs.isInZone(card_id, .discard) and !cs.isInZone(card_id, .exhaust)) {
+                try cs.discard.append(cs.alloc, card_id);
             }
         }
     }
@@ -93,12 +93,6 @@ pub const EventProcessor = struct {
             for (play.modifiers()) |mod| {
                 try self.cleanupCardBySource(cs, mod.card_id, mod.source);
             }
-        }
-
-        // Legacy: also clear any remaining in_play (should be empty, but ensure sync)
-        while (cs.in_play.items.len > 0) {
-            const card_id = cs.in_play.items[0];
-            _ = cs.removeFromInPlay(card_id, &self.world.card_registry) catch break;
         }
 
         // Refresh resources
@@ -145,53 +139,15 @@ pub const EventProcessor = struct {
         try self.world.events.push(event);
     }
 
-    /// Build Play structs from cards currently in in_play zone.
-    /// Called when entering commit_phase to bridge selection and resolution.
+    /// Ensure all agents have plays built for commit phase.
+    /// With the timeline model, plays are created at play time (selection phase for player,
+    /// immediately for AI). This is now a no-op safety check.
     fn buildPlaysFromInPlayCards(self: *EventProcessor) !void {
-        const enc = self.world.encounter orelse return;
-
-        // Player
-        try self.buildPlaysForAgent(self.world.player, enc);
-
-        // Mobs
-        for (enc.enemies.items) |mob| {
-            try self.buildPlaysForAgent(mob, enc);
-        }
-    }
-
-    fn buildPlaysForAgent(self: *EventProcessor, agent: *Agent, enc: *combat.Encounter) !void {
-        const enc_state = enc.stateFor(agent.id) orelse return;
-
-        // Read pending targets before clearing (they're stored per-card)
-        const cs = agent.combat_state orelse return;
-        for (cs.in_play.items) |card_id| {
-            // Skip if play already exists (created during selection phase)
-            if (enc_state.current.findPlayByCard(card_id) != null) continue;
-
-            const pending_target = enc_state.current.getPendingTarget(card_id);
-
-            // Convert in_play_sources info to PlaySource
-            const source: ?combat.PlaySource = if (cs.in_play_sources.get(card_id)) |info| blk: {
-                break :blk switch (info.source) {
-                    .always_available => .{
-                        .master_id = info.master_id orelse card_id,
-                        .source_zone = .always_available,
-                    },
-                    .spells_known => .{
-                        .master_id = info.master_id orelse card_id,
-                        .source_zone = .spells_known,
-                    },
-                    // Hand cards have null source
-                    .hand, .inventory, .environment => null,
-                };
-            } else null;
-
-            try enc_state.current.addPlay(.{
-                .action = card_id,
-                .target = pending_target,
-                .source = source,
-            }, &self.world.card_registry);
-        }
+        _ = self;
+        // Plays are now created when cards are played:
+        // - Player: playActionCard creates Play immediately during selection
+        // - AI: directors create Plays via createPlayForInPlayCard
+        // No additional bridging needed.
     }
 
     /// Check if combat should end. Returns outcome if terminated, null if combat continues.

@@ -47,10 +47,11 @@ pub fn applyCommittedCosts(
         // Move card to appropriate zone based on source
         const cs = agent.combat_state orelse continue;
         if (action.source) |_| {
-            // Pool clone: destroy it
-            _ = cs.removeFromInPlay(card.id, registry) catch continue;
+            // Pool clone: destroy it (idempotent)
+            registry.destroy(card.id);
         } else {
             // Hand card: move to discard or exhaust
+            // .in_play is virtual - this just adds to dest zone
             const combat_dest: combat.CombatZone = if (card.template.cost.exhausts)
                 .exhaust
             else

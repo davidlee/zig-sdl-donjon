@@ -1,12 +1,16 @@
 //! Combat zone state management.
 //!
 //! Handles the transient card state during combat encounters:
-//! draw pile, hand, in-play, discard, and exhaust zones.
+//! draw pile, hand, discard, and exhaust zones.
+//!
+//! Note: "in_play" is a conceptual zone tracked by the Timeline, not a backing ArrayList.
+//! Cards are moved to "in_play" when played, but storage is in the timeline's Play structs.
 
 const std = @import("std");
 const lib = @import("infra");
 const entity = lib.entity;
 const world = @import("../world.zig");
+const plays = @import("plays.zig");
 
 /// Combat-specific zones (subset of cards.Zone for transient combat state).
 pub const CombatZone = enum {
@@ -19,28 +23,24 @@ pub const CombatZone = enum {
 
 /// Transient combat state - created per encounter, holds draw/hand/discard cycle.
 /// Card IDs reference World.card_registry.
+///
+/// Note: "in_play" cards are tracked by the Timeline, not here. The CombatZone.in_play
+/// enum value exists for event semantics, but has no backing ArrayList.
 pub const CombatState = struct {
     alloc: std.mem.Allocator,
     draw: std.ArrayList(entity.ID),
     hand: std.ArrayList(entity.ID),
     discard: std.ArrayList(entity.ID),
-    in_play: std.ArrayList(entity.ID),
     exhaust: std.ArrayList(entity.ID),
-    // Source tracking: where did cards in in_play come from?
-    // For pool cards, also tracks master_id for cooldown application.
-    in_play_sources: std.AutoHashMap(entity.ID, InPlayInfo),
     // Cooldowns for pool-based cards - keyed by MASTER id (techniques, maybe spells)
     cooldowns: std.AutoHashMap(entity.ID, u8),
 
     pub const ZoneError = error{NotFound};
-    pub const CardSource = enum { hand, always_available, spells_known, inventory, environment };
 
-    /// Tracks where an in_play card came from and its master (for cloned pool cards).
-    pub const InPlayInfo = struct {
-        source: CardSource,
-        /// For pool cards (always_available, spells_known): the master instance ID.
-        /// Cooldowns are applied to this ID. Null for hand/inventory/environment cards.
-        master_id: ?entity.ID = null,
+    /// Result of creating a pool clone for play.
+    pub const PoolCloneResult = struct {
+        clone_id: entity.ID,
+        source: plays.PlaySource,
     };
 
     pub fn init(alloc: std.mem.Allocator) !CombatState {
@@ -49,9 +49,7 @@ pub const CombatState = struct {
             .draw = try std.ArrayList(entity.ID).initCapacity(alloc, 20),
             .hand = try std.ArrayList(entity.ID).initCapacity(alloc, 10),
             .discard = try std.ArrayList(entity.ID).initCapacity(alloc, 20),
-            .in_play = try std.ArrayList(entity.ID).initCapacity(alloc, 8),
             .exhaust = try std.ArrayList(entity.ID).initCapacity(alloc, 5),
-            .in_play_sources = std.AutoHashMap(entity.ID, InPlayInfo).init(alloc),
             .cooldowns = std.AutoHashMap(entity.ID, u8).init(alloc),
         };
     }
@@ -60,9 +58,7 @@ pub const CombatState = struct {
         self.draw.deinit(self.alloc);
         self.hand.deinit(self.alloc);
         self.discard.deinit(self.alloc);
-        self.in_play.deinit(self.alloc);
         self.exhaust.deinit(self.alloc);
-        self.in_play_sources.deinit();
         self.cooldowns.deinit();
     }
 
@@ -70,31 +66,33 @@ pub const CombatState = struct {
         self.draw.clearRetainingCapacity();
         self.hand.clearRetainingCapacity();
         self.discard.clearRetainingCapacity();
-        self.in_play.clearRetainingCapacity();
         self.exhaust.clearRetainingCapacity();
-        self.in_play_sources.clearRetainingCapacity();
         self.cooldowns.clearRetainingCapacity();
     }
 
-    /// Get the ArrayList for a zone.
-    pub fn zoneList(self: *CombatState, zone: CombatZone) *std.ArrayList(entity.ID) {
+    /// Get the ArrayList for a zone. Does not support .in_play (use timeline).
+    fn zoneList(self: *CombatState, zone: CombatZone) *std.ArrayList(entity.ID) {
         return switch (zone) {
             .draw => &self.draw,
             .hand => &self.hand,
-            .in_play => &self.in_play,
             .discard => &self.discard,
             .exhaust => &self.exhaust,
+            .in_play => unreachable, // Timeline is source of truth for in-play cards
         };
     }
 
     /// Check if a card ID is in a specific zone.
+    /// For .in_play, always returns false - check timeline for in-play status.
     pub fn isInZone(self: *const CombatState, id: entity.ID, zone: CombatZone) bool {
+        // .in_play has no backing ArrayList - timeline tracks in-play cards
+        if (zone == .in_play) return false;
+
         const list = switch (zone) {
             .draw => &self.draw,
             .hand => &self.hand,
-            .in_play => &self.in_play,
             .discard => &self.discard,
             .exhaust => &self.exhaust,
+            .in_play => unreachable,
         };
         for (list.items) |card_id| {
             if (card_id.eql(id)) return true;
@@ -111,10 +109,26 @@ pub const CombatState = struct {
     }
 
     /// Move a card from one zone to another.
+    /// .in_play is a virtual zone: moving TO it removes from source only,
+    /// moving FROM it adds to destination only (timeline tracks the card).
     pub fn moveCard(self: *CombatState, id: entity.ID, from: CombatZone, to: CombatZone) !void {
+        // Handle .in_play as virtual zone (timeline is source of truth)
+        if (from == .in_play) {
+            // Card coming from play - just add to destination
+            try self.zoneList(to).append(self.alloc, id);
+            return;
+        }
+        if (to == .in_play) {
+            // Card going to play - just remove from source
+            const from_list = self.zoneList(from);
+            const idx = findIndex(from_list, id) orelse return ZoneError.NotFound;
+            _ = from_list.orderedRemove(idx);
+            return;
+        }
+
+        // Normal zone-to-zone movement
         const from_list = self.zoneList(from);
         const to_list = self.zoneList(to);
-
         const idx = findIndex(from_list, id) orelse return ZoneError.NotFound;
         _ = from_list.orderedRemove(idx);
         try to_list.append(self.alloc, id);
@@ -142,38 +156,23 @@ pub const CombatState = struct {
         }
     }
 
-    /// Add card to in_play from a non-CombatZone source (always_available, spells_known, etc.)
-    /// For pool sources, creates an ephemeral clone so the master stays in the pool.
-    /// Returns the ID of the card now in in_play (clone ID for pool sources, original for others).
-    pub fn addToInPlayFrom(
-        self: *CombatState,
+    /// Create an ephemeral clone of a pool card (always_available, spells_known).
+    /// The clone gets a fresh ID while the master stays in the pool.
+    /// Returns clone ID and source info for Play creation.
+    pub fn createPoolClone(
+        _: *CombatState,
         master_id: entity.ID,
-        source: CardSource,
+        source_zone: plays.PlaySource.SourceZone,
         registry: *world.CardRegistry,
-    ) !entity.ID {
-        const is_pool_source = switch (source) {
-            .always_available, .spells_known => true,
-            .hand, .inventory, .environment => false,
-        };
-
-        if (is_pool_source) {
-            // Clone the master - ephemeral instance gets fresh ID
-            const clone = try registry.clone(master_id);
-            try self.in_play.append(self.alloc, clone.id);
-            try self.in_play_sources.put(clone.id, .{
-                .source = source,
+    ) !PoolCloneResult {
+        const clone = try registry.clone(master_id);
+        return .{
+            .clone_id = clone.id,
+            .source = .{
                 .master_id = master_id,
-            });
-            return clone.id;
-        } else {
-            // Non-pool sources: use the original ID directly
-            try self.in_play.append(self.alloc, master_id);
-            try self.in_play_sources.put(master_id, .{
-                .source = source,
-                .master_id = null,
-            });
-            return master_id;
-        }
+                .source_zone = source_zone,
+            },
+        };
     }
 
     /// Decrement all cooldowns by 1 (called at turn start)
@@ -182,30 +181,6 @@ pub const CombatState = struct {
         while (iter.next()) |entry| {
             if (entry.value_ptr.* > 0) entry.value_ptr.* -= 1;
         }
-    }
-
-    /// Remove card from in_play, destroy ephemeral clones, return master_id for cooldown.
-    /// Returns the master_id if this was a pool card (for cooldown application), null otherwise.
-    pub fn removeFromInPlay(
-        self: *CombatState,
-        id: entity.ID,
-        registry: *world.CardRegistry,
-    ) !?entity.ID {
-        const idx = findIndex(&self.in_play, id) orelse return ZoneError.NotFound;
-        _ = self.in_play.orderedRemove(idx);
-
-        const info = self.in_play_sources.get(id);
-        _ = self.in_play_sources.remove(id);
-
-        if (info) |i| {
-            if (i.master_id) |master_id| {
-                // This was a clone - destroy the ephemeral instance
-                registry.destroy(id);
-                return master_id;
-            }
-        }
-
-        return null;
     }
 
     /// Set cooldown for a pool card's master (turns until available again)

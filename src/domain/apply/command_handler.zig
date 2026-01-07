@@ -39,16 +39,22 @@ pub const CommandError = error{
 
 // Internal helpers
 
+/// Result of playing a card - contains the in-play ID and source info.
+pub const PlayResult = struct {
+    in_play_id: entity.ID,
+    source: ?combat.PlaySource,
+};
+
 /// Move a card to in_play, reserving its costs.
 /// For pool cards (always_available, spells_known), creates a clone.
-/// Returns the ID of the card in in_play (clone for pool cards, original otherwise).
+/// Returns the ID of the card in play and its source info.
 pub fn playValidCardReservingCosts(
     evs: *EventSystem,
     actor: *Agent,
     card: *Instance,
     registry: *w.CardRegistry,
     target: ?entity.ID,
-) !entity.ID {
+) !PlayResult {
     const cs = actor.combat_state orelse return error.InvalidGameState;
     const is_player = switch (actor.director) {
         .player => true,
@@ -57,11 +63,14 @@ pub fn playValidCardReservingCosts(
 
     const actor_meta: events.AgentMeta = .{ .id = actor.id, .player = is_player };
 
-    // Track the ID that ends up in in_play (may be clone for pool cards)
+    // Track the ID that ends up in play and its source
     var in_play_id: entity.ID = card.id;
+    var source: ?combat.PlaySource = null;
 
     if (actor.inAlwaysAvailable(card.id)) {
-        in_play_id = try cs.addToInPlayFrom(card.id, .always_available, registry);
+        const clone_result = try cs.createPoolClone(card.id, .always_available, registry);
+        in_play_id = clone_result.clone_id;
+        source = clone_result.source;
         try evs.push(Event{
             .card_cloned = .{ .clone_id = in_play_id, .master_id = card.id, .actor = actor_meta },
         });
@@ -70,7 +79,9 @@ pub fn playValidCardReservingCosts(
             try cs.setCooldown(card.id, cd);
         }
     } else if (actor.inSpellsKnown(card.id)) {
-        in_play_id = try cs.addToInPlayFrom(card.id, .spells_known, registry);
+        const clone_result = try cs.createPoolClone(card.id, .spells_known, registry);
+        in_play_id = clone_result.clone_id;
+        source = clone_result.source;
         try evs.push(Event{
             .card_cloned = .{ .clone_id = in_play_id, .master_id = card.id, .actor = actor_meta },
         });
@@ -78,10 +89,12 @@ pub fn playValidCardReservingCosts(
             try cs.setCooldown(card.id, cd);
         }
     } else {
+        // Hand card - remove from hand (timeline tracks it now)
         try cs.moveCard(card.id, .hand, .in_play);
         try evs.push(Event{
             .card_moved = .{ .instance = card.id, .from = .hand, .to = .in_play, .actor = actor_meta },
         });
+        // source stays null for hand cards
     }
 
     // sink an event for the card being played (use in_play_id for the clone)
@@ -97,7 +110,7 @@ pub fn playValidCardReservingCosts(
         .card_cost_reserved = .{ .stamina = card.template.cost.stamina, .time = card.template.cost.time, .actor = actor_meta },
     });
 
-    return in_play_id;
+    return .{ .in_play_id = in_play_id, .source = source };
 }
 
 pub const CommandHandler = struct {
@@ -169,7 +182,7 @@ pub const CommandHandler = struct {
         // Check play.source to determine lifecycle handling
         if (play.source) |source| {
             // Pool card clone - destroy it and clear cooldown
-            _ = try cs.removeFromInPlay(id, &self.world.card_registry);
+            self.world.card_registry.destroy(id);
             // Refund cooldown on cancel
             _ = cs.cooldowns.remove(source.master_id);
             // Event uses master_id since clone is destroyed
@@ -177,8 +190,8 @@ pub const CommandHandler = struct {
                 .card_cancelled = .{ .instance = source.master_id, .actor = .{ .id = player.id, .player = true } },
             });
         } else {
-            // Hand card - move back to hand
-            cs.moveCard(id, .in_play, .hand) catch return CommandError.CardNotInPlay;
+            // Hand card - move back to hand (adds to hand, timeline tracks removal)
+            try cs.moveCard(id, .in_play, .hand);
             try self.sink(Event{
                 .card_moved = .{ .instance = card.id, .from = .in_play, .to = .hand, .actor = .{ .id = player.id, .player = true } },
             });
@@ -218,26 +231,12 @@ pub const CommandHandler = struct {
             if (validation.wouldConflictWithTimeline(card, &enc_state.current.timeline, &self.world.card_registry))
                 return validation.ValidationError.ChannelConflict;
 
-            const in_play_id = try playValidCardReservingCosts(&self.world.events, player, card, &self.world.card_registry, target);
+            const play_result = try playValidCardReservingCosts(&self.world.events, player, card, &self.world.card_registry, target);
 
-            // Look up source info for the card
-            const source: ?combat.PlaySource = if (cs.in_play_sources.get(in_play_id)) |info| blk: {
-                break :blk switch (info.source) {
-                    .always_available => .{
-                        .master_id = info.master_id orelse in_play_id,
-                        .source_zone = .always_available,
-                    },
-                    .spells_known => .{
-                        .master_id = info.master_id orelse in_play_id,
-                        .source_zone = .spells_known,
-                    },
-                    .hand, .inventory, .environment => null,
-                };
-            } else null;
             try enc_state.current.addPlay(.{
-                .action = in_play_id,
+                .action = play_result.in_play_id,
                 .target = target,
-                .source = source,
+                .source = play_result.source,
                 .added_in_phase = .selection,
             }, &self.world.card_registry);
         } else {
@@ -323,33 +322,18 @@ pub const CommandHandler = struct {
         _ = player.focus.spend(FOCUS_COST);
 
         // Play card (move to in_play, commit stamina)
-        const in_play_id = try playValidCardReservingCosts(&self.world.events, player, card, &self.world.card_registry, target);
+        const play_result = try playValidCardReservingCosts(&self.world.events, player, card, &self.world.card_registry, target);
 
         // Store pending target if provided (for .single targeting cards)
         if (target) |target_id| {
-            enc_state.current.setPendingTarget(in_play_id, target_id);
+            enc_state.current.setPendingTarget(play_result.in_play_id, target_id);
         }
-
-        // Look up source info for the card
-        const source: ?combat.PlaySource = if (cs.in_play_sources.get(in_play_id)) |info| blk: {
-            break :blk switch (info.source) {
-                .always_available => .{
-                    .master_id = info.master_id orelse in_play_id,
-                    .source_zone = .always_available,
-                },
-                .spells_known => .{
-                    .master_id = info.master_id orelse in_play_id,
-                    .source_zone = .spells_known,
-                },
-                .hand, .inventory, .environment => null,
-            };
-        } else null;
 
         // Add to plays (commit phase plays cannot be stacked)
         try enc_state.current.addPlay(.{
-            .action = in_play_id,
+            .action = play_result.in_play_id,
             .added_in_phase = .commit,
-            .source = source,
+            .source = play_result.source,
         }, &self.world.card_registry);
 
         enc_state.current.focus_spent += FOCUS_COST;
@@ -470,30 +454,14 @@ pub const CommandHandler = struct {
         total_focus: f32,
     ) !void {
         const target_play = &enc_state.current.slotsMut()[target_play_index].play;
-        const cs = player.combat_state orelse return CommandError.BadInvariant;
 
         // Move card to in_play first - this creates a clone for pool cards
-        // Returns the ID that ends up in in_play (clone for pool cards, original for hand)
+        // Returns the ID that ends up in play and source info
         // Modifiers don't target enemies
-        const in_play_id = try playValidCardReservingCosts(&self.world.events, player, stack_validation.stack_card, &self.world.card_registry, null);
-
-        // Look up source info for the modifier card (same pattern as playActionCard)
-        const source: ?combat.PlaySource = if (cs.in_play_sources.get(in_play_id)) |info| blk: {
-            break :blk switch (info.source) {
-                .always_available => .{
-                    .master_id = info.master_id orelse in_play_id,
-                    .source_zone = .always_available,
-                },
-                .spells_known => .{
-                    .master_id = info.master_id orelse in_play_id,
-                    .source_zone = .spells_known,
-                },
-                .hand, .inventory, .environment => null,
-            };
-        } else null;
+        const play_result = try playValidCardReservingCosts(&self.world.events, player, stack_validation.stack_card, &self.world.card_registry, null);
 
         // Add the in_play ID (clone if pool card) to modifier stack with source
-        try target_play.addModifier(in_play_id, source);
+        try target_play.addModifier(play_result.in_play_id, play_result.source);
 
         // Update focus tracking
         if (paid_base_focus) {

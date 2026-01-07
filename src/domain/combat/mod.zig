@@ -29,6 +29,7 @@ pub const TurnFSM = types.TurnFSM;
 // From state.zig
 pub const CombatZone = state.CombatZone;
 pub const CombatState = state.CombatState;
+pub const PoolCloneResult = state.CombatState.PoolCloneResult;
 
 // From armament.zig
 pub const Armament = armament.Armament;

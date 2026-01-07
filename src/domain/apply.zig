@@ -46,6 +46,7 @@ pub const getModifierTargetPredicate = apply_mod.getModifierTargetPredicate;
 pub const canModifierAttachToPlay = apply_mod.canModifierAttachToPlay;
 
 // Command handler helpers
+pub const PlayResult = apply_mod.PlayResult;
 pub const playValidCardReservingCosts = apply_mod.playValidCardReservingCosts;
 
 // Effect functions

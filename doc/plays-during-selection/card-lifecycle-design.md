@@ -1,11 +1,13 @@
 # Card Lifecycle and Timeline Integration Design
 
-> **Status**: Implementation in progress. Phases 1-4 complete, Phase 5 in progress (5a-5g done). 2026-01-07.
+> **Status**: ✅ **COMPLETE**. All phases (1-5) finished. 2026-01-07.
 >
 > This document explores how card lifecycle management interacts with the
 > proposed change to create Play objects during selection phase.
 
 ## Current Implementation State
+
+**All phases complete. Timeline is now the single source of truth for in-play cards.**
 
 **Completed (Phases 1-4)**:
 - `Play` struct has `source: ?PlaySource` and `added_in_phase: Phase` fields
@@ -16,7 +18,7 @@
 - Modifier source tracking via `ModifierEntry` struct (card_id + source)
 - `commitStack` populates modifier source from `in_play_sources`
 
-**Phase 5 progress (5a-5g complete)**:
+**Completed (Phase 5a-5g)**:
 - View layer uses timeline for both selection and commit phases
 - Channel conflict checking uses `validation.wouldConflictWithTimeline()`
 - Removed dead code: `inPlayCards`, `enemyInPlayCards`, duplicate validators
@@ -26,12 +28,21 @@
 - Snapshot validation (`validateCards`) uses timeline for in-play card status
 - Debug logging uses timeline for mob card display
 
-**Pending (Phase 5h-5i)**:
-- Zone transitions rethink, remove CombatState fields
+**Completed (Phase 5h-5i)**:
+- Removed `CombatState.in_play` ArrayList field
+- Removed `CombatState.in_play_sources` HashMap field
+- Removed `InPlayInfo` struct, `CardSource` enum (no longer needed)
+- `.in_play` is now a virtual zone: `moveCard(.hand, .in_play)` removes from hand only,
+  `moveCard(.in_play, .discard)` adds to discard only
+- `isInZone(_, .in_play)` returns false (check timeline for in-play status)
+- Renamed `addToInPlayFrom` → `createPoolClone` returning `PoolCloneResult`
+- Removed `removeFromInPlay` - callers use `registry.destroy()` directly
+- `playValidCardReservingCosts` returns `PlayResult` with `{in_play_id, source}`
+- Animation positioning uses timeline instead of `in_play.items`
 
-**Key architectural change**: The system now has *two* sources of truth for
-in-play cards: `CombatState.in_play` (legacy) and `TurnState.timeline` (new).
-Phase 5 will consolidate to timeline-only.
+**Key architectural result**: Timeline is the single source of truth for in-play cards.
+`CombatState` manages deck zones (draw, hand, discard, exhaust) while timeline manages
+plays during the turn.
 
 ---
 
