@@ -486,5 +486,34 @@ pub const TimelineView = struct {
                 try list.append(alloc, item);
             }
         }
+
+        // Third pass: modifier decals (rune icons on cards)
+        const decal_size: f32 = 24; // scaled down from 48x48
+        const decal_spacing: f32 = 4;
+        for (self.plays) |play| {
+            if (ui.isAnimating(play.action.id)) continue;
+            const mods = play.modifiers();
+            if (mods.len == 0) continue;
+
+            const card_rect = cardRect(&play);
+            // Position decals in bottom-right corner, stacking upward
+            var decal_y = card_rect.y + card_rect.h - decal_size - 4;
+            const decal_x = card_rect.x + card_rect.w - decal_size - 4;
+
+            for (mods) |mod| {
+                if (CardViewModel.mapIcon(mod.template.icon)) |asset_id| {
+                    try list.append(alloc, .{ .sprite = .{
+                        .asset = asset_id,
+                        .dst = .{
+                            .x = decal_x,
+                            .y = decal_y,
+                            .w = decal_size,
+                            .h = decal_size,
+                        },
+                    } });
+                    decal_y -= decal_size + decal_spacing;
+                }
+            }
+        }
     }
 };

@@ -70,7 +70,7 @@ pub const Model = struct {
         };
     }
 
-    fn mapIcon(icon: ?cards.RuneIcon) ?AssetId {
+    pub fn mapIcon(icon: ?cards.RuneIcon) ?AssetId {
         const i = icon orelse return null;
         return switch (i) {
             .eo => .rune_eo,
