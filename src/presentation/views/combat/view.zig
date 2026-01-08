@@ -938,9 +938,14 @@ pub const View = struct {
             }
         }
 
-        // ENEMIES
+        // ENEMIES - click to focus (and select target)
         if (self.opposition.hitTest(pos)) |sprite| {
-            return .{ .command = .{ .select_target = .{ .target_id = sprite.id } } };
+            var new_cs = cs;
+            new_cs.focused_enemy = sprite.id;
+            return .{
+                .command = .{ .select_target = .{ .target_id = sprite.id } },
+                .vs = vs.withCombat(new_cs),
+            };
         }
 
         // Note: End Turn button is now handled by chrome layer

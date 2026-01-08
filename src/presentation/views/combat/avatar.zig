@@ -110,7 +110,8 @@ pub const Opposition = struct {
             // Focused enemy border (cyan) - draw before sprite
             const is_focused = if (focused_enemy) |fe| fe.eql(e.id) else false;
             if (is_focused) {
-                const border: f32 = 3;
+                const border: f32 = 4;
+                // Outer cyan rect
                 try list.append(alloc, .{
                     .filled_rect = .{
                         .rect = .{
@@ -120,6 +121,13 @@ pub const Opposition = struct {
                             .h = sprite.rect.h + border * 2,
                         },
                         .color = .{ .r = 50, .g = 200, .b = 220, .a = 255 }, // cyan
+                    },
+                });
+                // Inner black rect (creates border effect)
+                try list.append(alloc, .{
+                    .filled_rect = .{
+                        .rect = sprite.rect,
+                        .color = .{ .r = 0, .g = 0, .b = 0, .a = 255 },
                     },
                 });
             }
