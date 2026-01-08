@@ -411,6 +411,17 @@ fn conditionName(condition: damage.Condition) []const u8 {
         .lightheaded => "lightheaded",
         .bleeding_out => "bleeding out",
         .hypovolemic_shock => "in shock",
+        // Pain
+        .distracted => "distracted",
+        .suffering => "suffering",
+        .agonized => "agonized",
+        // Trauma
+        .dazed => "dazed",
+        .unsteady => "unsteady",
+        .trembling => "trembling",
+        .reeling => "reeling",
+        // Incapacitation
+        .incapacitated => "incapacitated",
     };
 }
 

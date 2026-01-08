@@ -100,6 +100,20 @@ pub const Condition = enum {
     lightheaded, // < 80% blood - minor impairment
     bleeding_out, // < 60% blood - serious impairment
     hypovolemic_shock, // < 40% blood - critical, near unconscious
+
+    // computed: pain (ratio of current/max, fills up)
+    distracted, // > 30% pain - minor impairment
+    suffering, // > 60% pain - moderate impairment
+    agonized, // > 85% pain - severe impairment
+
+    // computed: trauma (ratio of current/max, fills up)
+    dazed, // > 30% trauma - minor impairment
+    unsteady, // > 50% trauma - moderate impairment
+    trembling, // > 70% trauma - serious impairment
+    reeling, // > 90% trauma - severe impairment
+
+    // computed: incapacitation (pain or trauma at critical)
+    incapacitated, // > 95% pain or trauma - cannot act
 };
 
 // ============================================================================
@@ -207,6 +221,49 @@ pub const condition_penalties = init: {
     // Note: .blinded has special-case handling in forAttacker() based on attack mode
     table[@intFromEnum(Condition.deafened)] = .{
         .defense_mult = 0.9, // can't hear opponent's footwork
+    };
+
+    // Pain conditions
+    table[@intFromEnum(Condition.distracted)] = .{
+        .defense_mult = 0.95,
+        .hit_chance = -0.05,
+    };
+    table[@intFromEnum(Condition.suffering)] = .{
+        .defense_mult = 0.85,
+        .hit_chance = -0.15,
+        .damage_mult = 0.9,
+    };
+    table[@intFromEnum(Condition.agonized)] = .{
+        .defense_mult = 0.70,
+        .hit_chance = -0.30,
+        .damage_mult = 0.7,
+        .dodge_mod = -0.2,
+    };
+
+    // Trauma conditions
+    table[@intFromEnum(Condition.dazed)] = .{
+        .hit_chance = -0.10,
+        .defense_mult = 0.95,
+    };
+    table[@intFromEnum(Condition.unsteady)] = .{
+        .footwork_mult = 0.7,
+        .dodge_mod = -0.15,
+    };
+    table[@intFromEnum(Condition.trembling)] = .{
+        .hit_chance = -0.10,
+        .damage_mult = 0.8,
+    };
+    table[@intFromEnum(Condition.reeling)] = .{
+        .footwork_mult = 0.4,
+        .hit_chance = -0.25,
+        .defense_mult = 0.7,
+        .dodge_mod = -0.25,
+    };
+
+    // Incapacitation (terminal - agent cannot act)
+    table[@intFromEnum(Condition.incapacitated)] = .{
+        .defense_mult = 0.0,
+        .dodge_mod = -0.50,
     };
 
     break :init table;

@@ -19,6 +19,12 @@
 - `Agent.hasConditionWithContext()` additionally checks relational conditions (requires engagement)
 - `ConditionIterator` walks stored conditions then computed conditions from the definitions table
 
+## Pain & Trauma Conditions (T012)
+- Pain conditions (accumulate toward 1.0): `distracted` (>30%), `suffering` (>60%), `agonized` (>85%)
+- Trauma conditions (accumulate toward 1.0): `dazed` (>30%), `unsteady` (>50%), `trembling` (>70%), `reeling` (>90%)
+- `incapacitated` triggers at >95% pain OR >95% trauma via `.any` computation type
+- Thresholds use `.gt` comparator (contrast with blood's `.lt` since blood drains toward 0)
+
 ## Penalty System
 - `Condition` enum in `damage.zig` enumerates all conditions
 - `condition_penalties` table maps conditions to `CombatPenalties` (hit chance, damage mult, defense mult, dodge mod)

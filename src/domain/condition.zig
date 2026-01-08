@@ -233,6 +233,25 @@ pub const condition_definitions = [_]ConditionDefinition{
     .{ .condition = .bleeding_out, .computation = .{ .resource_threshold = .{ .resource = .blood, .op = .lt, .value = 0.6 } }, .category = .internal },
     .{ .condition = .lightheaded, .computation = .{ .resource_threshold = .{ .resource = .blood, .op = .lt, .value = 0.8 } }, .category = .internal },
 
+    // === Internal computed: incapacitation (pain OR trauma critical) ===
+    .{ .condition = .incapacitated, .computation = .{ .any = &[_]ComputationType{
+        .{ .resource_threshold = .{ .resource = .pain, .op = .gt, .value = 0.95 } },
+        .{ .resource_threshold = .{ .resource = .trauma, .op = .gt, .value = 0.95 } },
+    } }, .category = .internal },
+
+    // === Internal computed: pain (worst-first) ===
+    // Pain starts empty (ratio=0.0) and accumulates toward 1.0.
+    .{ .condition = .agonized, .computation = .{ .resource_threshold = .{ .resource = .pain, .op = .gt, .value = 0.85 } }, .category = .internal },
+    .{ .condition = .suffering, .computation = .{ .resource_threshold = .{ .resource = .pain, .op = .gt, .value = 0.60 } }, .category = .internal },
+    .{ .condition = .distracted, .computation = .{ .resource_threshold = .{ .resource = .pain, .op = .gt, .value = 0.30 } }, .category = .internal },
+
+    // === Internal computed: trauma (worst-first) ===
+    // Trauma starts empty (ratio=0.0) and accumulates toward 1.0.
+    .{ .condition = .reeling, .computation = .{ .resource_threshold = .{ .resource = .trauma, .op = .gt, .value = 0.90 } }, .category = .internal },
+    .{ .condition = .trembling, .computation = .{ .resource_threshold = .{ .resource = .trauma, .op = .gt, .value = 0.70 } }, .category = .internal },
+    .{ .condition = .unsteady, .computation = .{ .resource_threshold = .{ .resource = .trauma, .op = .gt, .value = 0.50 } }, .category = .internal },
+    .{ .condition = .dazed, .computation = .{ .resource_threshold = .{ .resource = .trauma, .op = .gt, .value = 0.30 } }, .category = .internal },
+
     // === Internal computed: sensory ===
     .{ .condition = .blinded, .computation = .{ .sensory_threshold = .{ .sense = .vision, .op = .lt, .value = 0.3 } }, .category = .internal },
     .{ .condition = .deafened, .computation = .{ .sensory_threshold = .{ .sense = .hearing, .op = .lt, .value = 0.3 } }, .category = .internal },
@@ -367,4 +386,127 @@ test "ConditionBitSet can hold all conditions" {
     bitset.set(@intFromEnum(damage.Condition.stunned));
     try testing.expect(bitset.isSet(@intFromEnum(damage.Condition.stunned)));
     try testing.expect(!bitset.isSet(@intFromEnum(damage.Condition.blinded)));
+}
+
+test "pain at 35% yields distracted only" {
+    // Pain ratio 0.35 should trigger distracted (>0.30) but not suffering (>0.60)
+    const ctx = ConditionCache.EvalContext{
+        .balance = 1.0,
+        .blood_ratio = 1.0,
+        .pain_ratio = 0.35,
+        .trauma_ratio = 0.0,
+        .morale_ratio = 1.0,
+        .vision_score = 1.0,
+        .hearing_score = 1.0,
+    };
+
+    // distracted should be active
+    const distracted_def = getDefinitionFor(.distracted).?;
+    try testing.expect(evaluateWithContext(distracted_def.computation, ctx));
+
+    // suffering should NOT be active (requires >0.60)
+    const suffering_def = getDefinitionFor(.suffering).?;
+    try testing.expect(!evaluateWithContext(suffering_def.computation, ctx));
+
+    // agonized should NOT be active (requires >0.85)
+    const agonized_def = getDefinitionFor(.agonized).?;
+    try testing.expect(!evaluateWithContext(agonized_def.computation, ctx));
+
+    // incapacitated should NOT be active (requires >0.95)
+    const incap_def = getDefinitionFor(.incapacitated).?;
+    try testing.expect(!evaluateWithContext(incap_def.computation, ctx));
+}
+
+test "pain at 65% yields suffering only (worst-first)" {
+    // Pain ratio 0.65 should trigger suffering (>0.60)
+    // Due to worst-first ordering, only suffering should be yielded (not distracted)
+    const ctx = ConditionCache.EvalContext{
+        .balance = 1.0,
+        .blood_ratio = 1.0,
+        .pain_ratio = 0.65,
+        .trauma_ratio = 0.0,
+        .morale_ratio = 1.0,
+        .vision_score = 1.0,
+        .hearing_score = 1.0,
+    };
+
+    // suffering should be active
+    const suffering_def = getDefinitionFor(.suffering).?;
+    try testing.expect(evaluateWithContext(suffering_def.computation, ctx));
+
+    // distracted threshold is also met but iterator yields worst first
+    const distracted_def = getDefinitionFor(.distracted).?;
+    try testing.expect(evaluateWithContext(distracted_def.computation, ctx));
+
+    // agonized should NOT be active (requires >0.85)
+    const agonized_def = getDefinitionFor(.agonized).?;
+    try testing.expect(!evaluateWithContext(agonized_def.computation, ctx));
+}
+
+test "trauma at 55% yields unsteady only" {
+    // Trauma ratio 0.55 should trigger unsteady (>0.50) but not trembling (>0.70)
+    const ctx = ConditionCache.EvalContext{
+        .balance = 1.0,
+        .blood_ratio = 1.0,
+        .pain_ratio = 0.0,
+        .trauma_ratio = 0.55,
+        .morale_ratio = 1.0,
+        .vision_score = 1.0,
+        .hearing_score = 1.0,
+    };
+
+    // unsteady should be active
+    const unsteady_def = getDefinitionFor(.unsteady).?;
+    try testing.expect(evaluateWithContext(unsteady_def.computation, ctx));
+
+    // dazed threshold is also met (>0.30)
+    const dazed_def = getDefinitionFor(.dazed).?;
+    try testing.expect(evaluateWithContext(dazed_def.computation, ctx));
+
+    // trembling should NOT be active (requires >0.70)
+    const trembling_def = getDefinitionFor(.trembling).?;
+    try testing.expect(!evaluateWithContext(trembling_def.computation, ctx));
+
+    // reeling should NOT be active (requires >0.90)
+    const reeling_def = getDefinitionFor(.reeling).?;
+    try testing.expect(!evaluateWithContext(reeling_def.computation, ctx));
+}
+
+test "pain or trauma at 96% yields incapacitated" {
+    // Pain at 96% should trigger incapacitated via .any
+    const pain_ctx = ConditionCache.EvalContext{
+        .balance = 1.0,
+        .blood_ratio = 1.0,
+        .pain_ratio = 0.96,
+        .trauma_ratio = 0.0,
+        .morale_ratio = 1.0,
+        .vision_score = 1.0,
+        .hearing_score = 1.0,
+    };
+    const incap_def = getDefinitionFor(.incapacitated).?;
+    try testing.expect(evaluateWithContext(incap_def.computation, pain_ctx));
+
+    // Trauma at 96% should also trigger incapacitated
+    const trauma_ctx = ConditionCache.EvalContext{
+        .balance = 1.0,
+        .blood_ratio = 1.0,
+        .pain_ratio = 0.0,
+        .trauma_ratio = 0.96,
+        .morale_ratio = 1.0,
+        .vision_score = 1.0,
+        .hearing_score = 1.0,
+    };
+    try testing.expect(evaluateWithContext(incap_def.computation, trauma_ctx));
+
+    // Just below threshold (0.94) should NOT trigger
+    const below_ctx = ConditionCache.EvalContext{
+        .balance = 1.0,
+        .blood_ratio = 1.0,
+        .pain_ratio = 0.94,
+        .trauma_ratio = 0.94,
+        .morale_ratio = 1.0,
+        .vision_score = 1.0,
+        .hearing_score = 1.0,
+    };
+    try testing.expect(!evaluateWithContext(incap_def.computation, below_ctx));
 }
