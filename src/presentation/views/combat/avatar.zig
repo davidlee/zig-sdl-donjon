@@ -157,11 +157,10 @@ pub const Opposition = struct {
         const conds = conditions_mod.getDisplayConditions(agent, engagement);
         if (conds.len == 0) return;
 
-        // Position below engagement info (5 bars + range label)
-        // bar_start_y + 5*(2+1) + 2 + 14 (label height) = bar_start_y + 31
+        // Position below engagement info (5 bars + range label + breathing room)
         const bar_start_y = sprite_rect.y + sprite_rect.h + 2;
-        const conditions_start_y = bar_start_y + 31;
-        const line_height: f32 = 12;
+        const conditions_start_y = bar_start_y + 38;
+        const line_height: f32 = 14; // 12px text + 2px gap
 
         // Show up to 3 conditions to avoid clutter
         const max_display = @min(conds.len, 3);

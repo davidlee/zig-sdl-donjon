@@ -164,10 +164,9 @@ pub fn build(b: *std.Build) !void {
         try buildBin(b, target, optimize);
     }
 
-    // Test step - single entry point to avoid running tests multiple times
-    // (Zig runs tests from all transitive imports, so separate test modules
-    // would cause duplication: tick→resolution→body means body tests run 3x)
-    const test_step = b.step("test", "Run unit tests");
+    // =========================================================================
+    // Test targets
+    // =========================================================================
 
     const infra_mod = b.addModule("infra", .{
         .root_source_file = b.path("src/infra.zig"),
@@ -178,23 +177,75 @@ pub fn build(b: *std.Build) !void {
     }).module("sdl3"));
     infra_mod.addImport("zigfsm", b.dependency("zigfsm", .{}).module("zigfsm"));
 
-    const main_tests = b.addTest(.{
+    const sdl3_test_mod = b.dependency("sdl3", .{
+        .target = target,
+        .optimize = optimize,
+        .callbacks = true,
+        .ext_image = true,
+        .ext_ttf = true,
+    }).module("sdl3");
+
+    const zigfsm_mod = b.dependency("zigfsm", .{}).module("zigfsm");
+
+    // -------------------------------------------------------------------------
+    // Unit tests (src/main.zig - runs all inline tests via transitive imports)
+    // -------------------------------------------------------------------------
+    const unit_tests = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/main.zig"),
             .target = target,
             .optimize = optimize,
         }),
     });
-    main_tests.root_module.addImport("infra", infra_mod);
-    main_tests.root_module.addImport("zigfsm", b.dependency("zigfsm", .{}).module("zigfsm"));
-    main_tests.root_module.addImport("sdl3", b.dependency("sdl3", .{
-        .target = target,
-        .optimize = optimize,
-        .callbacks = true,
-        .ext_image = true,
-        .ext_ttf = true,
-    }).module("sdl3"));
+    unit_tests.root_module.addImport("infra", infra_mod);
+    unit_tests.root_module.addImport("zigfsm", zigfsm_mod);
+    unit_tests.root_module.addImport("sdl3", sdl3_test_mod);
 
-    const run_main_tests = b.addRunArtifact(main_tests);
-    test_step.dependOn(&run_main_tests.step);
+    const run_unit_tests = b.addRunArtifact(unit_tests);
+    const unit_step = b.step("test-unit", "Run unit tests");
+    unit_step.dependOn(&run_unit_tests.step);
+
+    // -------------------------------------------------------------------------
+    // Integration tests (src/testing/integration/)
+    // -------------------------------------------------------------------------
+    const integration_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/testing/integration/mod.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    integration_tests.root_module.addImport("infra", infra_mod);
+    integration_tests.root_module.addImport("zigfsm", zigfsm_mod);
+    integration_tests.root_module.addImport("sdl3", sdl3_test_mod);
+
+    const run_integration_tests = b.addRunArtifact(integration_tests);
+    const integration_step = b.step("test-integration", "Run integration tests");
+    integration_step.dependOn(&run_integration_tests.step);
+
+    // -------------------------------------------------------------------------
+    // System tests (src/testing/system/)
+    // -------------------------------------------------------------------------
+    const system_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/testing/system/mod.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    system_tests.root_module.addImport("infra", infra_mod);
+    system_tests.root_module.addImport("zigfsm", zigfsm_mod);
+    system_tests.root_module.addImport("sdl3", sdl3_test_mod);
+
+    const run_system_tests = b.addRunArtifact(system_tests);
+    const system_step = b.step("test-system", "Run system/e2e tests");
+    system_step.dependOn(&run_system_tests.step);
+
+    // -------------------------------------------------------------------------
+    // Combined test target
+    // -------------------------------------------------------------------------
+    const test_step = b.step("test", "Run all tests");
+    test_step.dependOn(unit_step);
+    test_step.dependOn(integration_step);
+    test_step.dependOn(system_step);
 }

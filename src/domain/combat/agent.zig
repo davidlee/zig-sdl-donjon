@@ -28,6 +28,25 @@ pub const CombatState = state_mod.CombatState;
 pub const Armament = armament_mod.Armament;
 pub const Engagement = engagement_mod.Engagement;
 
+/// Agent name - static for NPCs (comptime), dynamic for player (runtime).
+pub const Name = union(enum) {
+    static: []const u8, // borrowed, no free needed
+    dynamic: []const u8, // owned, must free
+
+    pub fn value(self: Name) []const u8 {
+        return switch (self) {
+            .static, .dynamic => |s| s,
+        };
+    }
+
+    pub fn deinit(self: Name, alloc: std.mem.Allocator) void {
+        switch (self) {
+            .dynamic => |d| alloc.free(d),
+            .static => {},
+        }
+    }
+};
+
 // Forward reference for self-referential type
 const combat = @import("../combat.zig");
 
@@ -36,6 +55,7 @@ pub const Agent = struct {
     id: entity.ID,
     alloc: std.mem.Allocator,
     director: Director,
+    name: Name = .{ .static = "unnamed" },
     draw_style: DrawStyle = .shuffled_deck,
     stats: stats.Block,
     // may be humanoid, or not
@@ -140,6 +160,7 @@ pub const Agent = struct {
 
         self.body.deinit();
         self.armour.deinit();
+        self.name.deinit(alloc);
 
         alloc.destroy(self);
     }
@@ -155,6 +176,12 @@ pub const Agent = struct {
 
     pub fn isPlayer(self: *const Agent) bool {
         return self.director == .player;
+    }
+
+    /// Set agent name, freeing previous dynamic name if present.
+    pub fn setName(self: *Agent, new_name: Name) void {
+        self.name.deinit(self.alloc);
+        self.name = new_name;
     }
 
     // Helpers for managing card arraylists

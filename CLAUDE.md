@@ -34,4 +34,8 @@ If at any point you notice one of these memories is incomplete, outdated, or
 misleading, you should immediately update and correct or improve it as soon as
 you are certain the update is correct.
 
+## toolchain
 
+`just -l` will tell you everything you need.
+
+`just check` will format, test and compile all in one command.
