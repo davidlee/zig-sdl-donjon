@@ -34,6 +34,18 @@
 - `.blinded` retains special-case handling in `forAttacker()` for attack-mode-specific penalties
 - Sensory thresholds (< 0.3) match design doc specification
 
+### Increment 3 Progress: ✓ Complete
+
+**DONE:**
+- `context.zig`: Extended `forAttacker()` with grasp strength penalty
+  - Uses `body.graspingPartBySide(dominant_side)` to find weapon hand
+  - Applies `(1-grasp)*-0.25` hit_chance and `0.5 + grasp*0.5` damage_mult
+- `context.zig`: Extended `forDefender()` with mobility penalty
+  - Uses `body.mobilityScore()` to assess leg damage
+  - Applies `(1-mobility)*-0.30` dodge_mod
+- `context.zig`: Added tests for wound penalties (~line 545-610)
+- Build passes, all tests pass
+
 ---
 
 ## Current State Summary
@@ -283,4 +295,344 @@ if (weapon_hand) |hand_idx| {
     const grasp = attack.attacker.body.graspStrength(hand_idx);
     // ... apply penalties
 }
+```
+
+---
+
+## Addendum: Revised Increment 4 (Pain & Trauma Model)
+
+**Supersedes original Increment 4 above.**
+
+### Conceptual Model
+
+Three orthogonal damage axes, each a `stats.Resource`:
+
+| Resource | Represents | Primary Inputs | Effects |
+|----------|-----------|----------------|---------|
+| **Blood** | Circulatory capacity | Wound bleeding | Shock, syncope, death |
+| **Pain** | Sensory overload | Wound severity × sensitivity | Attention capture, guarding |
+| **Trauma** | Neurological stress | Sudden wounds, head hits | Motor/cognitive impairment |
+| **Morale** | Psychological state | (Future: witnessing, odds, reputation) | Fear, flight, surrender |
+
+**Key distinction**: Pain is about *hurting*. Trauma is about *system disruption*. Fear is about *will to fight*.
+
+### Resource Definitions
+
+```zig
+// Agent struct additions
+pain: stats.Resource,      // init(0.0, 10.0, 0.0) - accumulates, no natural recovery in combat
+trauma: stats.Resource,    // init(0.0, 10.0, 0.0) - accumulates, no natural recovery in combat
+morale: stats.Resource,    // init(10.0, 10.0, 0.0) - starts full, drains (stub for future)
+```
+
+### Wound → Resource Mapping
+
+```zig
+fn painFromWound(wound: Wound, part: PartDef) f32 {
+    const base: f32 = switch (wound.worstSeverity()) {
+        .none => 0,
+        .minor => 0.3,
+        .inhibited => 1.0,
+        .disabled => 2.5,
+        .broken => 4.0,
+        .missing => 5.0,
+    };
+    return base * part.trauma_mult;  // reuse existing sensitivity field
+}
+
+fn traumaFromWound(wound: Wound, part: PartDef, hit_artery: bool) f32 {
+    const base: f32 = switch (wound.worstSeverity()) {
+        .none => 0,
+        .minor => 0.2,
+        .inhibited => 0.5,
+        .disabled => 1.5,
+        .broken => 3.0,
+        .missing => 4.0,
+    };
+    var t = base * part.trauma_mult;
+    if (hit_artery) t += 1.5;
+    return t;
+}
+```
+
+**Note**: Using `trauma_mult` for both is a simplification. Could split into `pain_sensitivity` / `neurological_sensitivity` later.
+
+### Incapacitation
+
+When pain OR trauma reaches 95%, agent collapses:
+
+```zig
+// ConditionIterator, highest priority check:
+if (pain.ratio() >= 0.95 or trauma.ratio() >= 0.95) {
+    return .incapacitated;
+}
+```
+
+Three ways to lose a fight:
+- **Death**: blood depleted
+- **Incapacitation**: pain or trauma overwhelms
+- **Surrender**: morale breaks (future)
+
+### Conditions (Thresholds)
+
+**Pain conditions** (attention/focus effects):
+
+| Threshold | Condition | Primary Effect |
+|-----------|-----------|----------------|
+| 30% | `.distracted` | Initiative penalty, injects `Wince` |
+| 60% | `.suffering` | Global penalties, injects `Retch` |
+| 85% | `.agonized` | Severe penalties, collapse risk |
+
+**Trauma conditions** (motor/cognitive effects):
+
+| Threshold | Condition | Primary Effect |
+|-----------|-----------|----------------|
+| 30% | `.dazed` | Mild cognitive penalty |
+| 50% | `.unsteady` | Footwork degraded, injects `Stagger` |
+| 70% | `.trembling` | Fine motor degraded, injects `Tremor` |
+| 90% | `.reeling` | Near-collapse, injects `Blackout` |
+
+### Penalty Table Additions
+
+```zig
+// Pain conditions
+.distracted => .{ .defense_mult = 0.95, .hit_chance = -0.05 },
+.suffering => .{ .defense_mult = 0.85, .hit_chance = -0.15, .damage_mult = 0.9 },
+.agonized => .{ .defense_mult = 0.70, .hit_chance = -0.30, .damage_mult = 0.7, .dodge_mod = -0.2 },
+
+// Trauma conditions
+.dazed => .{ .hit_chance = -0.10, .defense_mult = 0.95 },
+.unsteady => .{ .footwork_mult = 0.7, .dodge_mod = -0.15 },
+.trembling => .{ .hit_chance = -0.10, .damage_mult = 0.8 },
+.reeling => .{ .footwork_mult = 0.4, .hit_chance = -0.25, .defense_mult = 0.7, .dodge_mod = -0.25 },
+```
+
+### Adrenaline (Condition Sequence)
+
+Applied on first significant wound:
+
+```zig
+// When first wound of severity >= .inhibited:
+if (!agent.hasCondition(.adrenaline_surge) and !agent.hasCondition(.adrenaline_crash)) {
+    agent.addCondition(.adrenaline_surge, .{ .ticks = 8 });
+}
+
+// When .adrenaline_surge expires:
+agent.addCondition(.adrenaline_crash, .{ .ticks = 12 });
+```
+
+```zig
+.adrenaline_surge => .{ .hit_chance = 0.05 },  // + suppresses pain conditions
+.adrenaline_crash => .{ .hit_chance = -0.10, .defense_mult = 0.85, .footwork_mult = 0.85 },
+```
+
+**Pain suppression**: While `.adrenaline_surge` active, skip pain condition phases in iterator. Pain still accumulates; just doesn't manifest until surge ends.
+
+---
+
+## Addendum: Dud Cards Mechanic
+
+### Concept
+
+Conditions inject "dud" cards into the hand rather than (or in addition to) applying numeric penalties. This:
+- Makes impairment visible and tactical
+- Uses existing card/tag systems
+- Creates emergent hand-clogging under multiple conditions
+
+### New Trigger Types
+
+```zig
+pub const Trigger = enum {
+    on_play,
+    on_discard,
+    start_of_turn,
+    end_of_turn,
+    while_in_hand,  // continuous effect while held
+    forced,         // must play before voluntary cards
+};
+```
+
+### Card Blocking
+
+```zig
+pub const Card = struct {
+    // ... existing fields ...
+    blocks_tags: []const Tag = &.{},  // prevents playing cards with these tags while in hand
+};
+```
+
+### Dud Card Definitions
+
+| Card | Injected By | Behavior |
+|------|-------------|----------|
+| `Wince` | `.distracted` | Occupies slot. Exhaust on play (wastes action). |
+| `Retch` | `.suffering` | Forced (must play before others). Exhaust. |
+| `Stagger` | `.unsteady` | Occupies slot. Exhaust on play. |
+| `Tremor` | `.trembling` | `blocks_tags: {.precision, .finesse}`. Exhaust on play. |
+| `Blackout` | `.reeling` | Forced. Ends turn immediately. Exhaust. |
+
+### Lifecycle
+
+1. **Injection**: On condition gain, inject corresponding dud card into hand
+2. **Persistence**: Duds cycle through hand/discard like normal cards until played
+3. **Removal**: Exhaust on play (removed from game), OR discarded via another card effect
+4. **Stacking**: Each condition gain injects one card (can accumulate multiple)
+
+### Example: Tremor Card
+
+```zig
+const tremor = Card{
+    .name = "Tremor",
+    .tags = &.{.involuntary, .status},
+    .blocks_tags = &.{.precision, .finesse},
+    .trigger = .while_in_hand,  // blocking effect active while held
+    .exhaust = true,
+    .effects = &.{},  // playing it does nothing except remove it
+};
+```
+
+### Design Decisions
+
+- **Injection timing**: On condition gain (may revisit after playtesting)
+- **Forced cards**: Must play before voluntary cards, not "immediately loses turn"
+- **Blocking**: Only while in hand; discarding clears the block
+- **No special cases**: All behavior defined via existing card/effect/trigger systems
+
+---
+
+## Files Summary (Revised)
+
+| Increment | Files Modified |
+|-----------|----------------|
+| 1 | `body.zig`, `positioning.zig` |
+| 2 | `combat/agent.zig`, `damage.zig` |
+| 3 | `resolution/context.zig` |
+| 4 | `combat/agent.zig` (pain/trauma/morale resources, ConditionIterator), `damage.zig` (conditions + penalties), damage path, card definitions (dud cards), `Trigger` enum |
+
+---
+
+## Tactical Implications
+
+| Wound Type | Blood | Pain | Trauma | Tactical Meaning |
+|------------|-------|------|--------|------------------|
+| Arterial neck | High | Med | High | Rapid collapse, disoriented |
+| Joint hyperextension | Low | High | Low | Functional but hand full of Winces |
+| Pommel to temple | Low | Low | High | Tremor blocks precision, Stagger clogs hand |
+| Shallow cuts × 5 | Low | Med | Med | Gradual hand degradation |
+| Clean amputation | Med | High→Low | High | Adrenaline delays pain cards |
+
+**Targeting choices**:
+- Head → trauma (motor impairment, blocking cards)
+- Hands/joints → pain (attention capture, forced plays)
+- Limbs → mobility + blood
+- Torso → blood (kill)
+
+---
+
+## Increment 4: Implementation Phases
+
+### Phase 4.1: Resource Scaffolding
+
+**Goal**: Add pain, trauma, morale Resources to Agent; not wired up yet.
+
+**Changes**:
+- `combat/agent.zig`: Add `pain`, `trauma`, `morale` fields to Agent struct
+- Initialize: `pain/trauma = init(0.0, 10.0, 0.0)`, `morale = init(10.0, 10.0, 0.0)`
+- Add `painRatio()`, `traumaRatio()`, `moraleRatio()` helpers
+
+**Tests**: Resources exist, can be damaged, ratios compute correctly.
+
+**Kanban**: T010
+
+---
+
+### Phase 4.2: Wound → Resource Wiring
+
+**Goal**: Wounds generate pain and trauma based on severity and body part.
+
+**Changes**:
+- Add `painFromWound()`, `traumaFromWound()` functions (location TBD - likely `damage.zig` or `body.zig`)
+- Wire into damage application path (where wounds are created)
+- Use `part.trauma_mult` for sensitivity
+
+**Tests**: Wound to hand generates more pain than wound to torso; arterial hit adds trauma.
+
+**Kanban**: T011
+
+---
+
+### Phase 4.3: Pain & Trauma Conditions
+
+**Goal**: ConditionIterator yields pain/trauma conditions at thresholds.
+
+**Changes**:
+- `damage.zig`: Add conditions to enum: `.distracted`, `.suffering`, `.agonized`, `.dazed`, `.unsteady`, `.trembling`, `.reeling`, `.incapacitated`
+- `damage.zig`: Add penalties to `condition_penalties` table
+- `combat/agent.zig`: Extend ConditionIterator with pain phases (8-10) and trauma phases (11-14)
+- Incapacitation check: `pain.ratio() >= 0.95 or trauma.ratio() >= 0.95`
+
+**Tests**: Pain at 35% yields `.distracted`; trauma at 75% yields `.trembling`; 95% either → `.incapacitated`.
+
+**Kanban**: T012
+
+---
+
+### Phase 4.4: Adrenaline
+
+**Goal**: First significant wound triggers adrenaline surge → crash sequence.
+
+**Changes**:
+- `damage.zig`: Add `.adrenaline_surge`, `.adrenaline_crash` conditions + penalties
+- Damage application: On first wound ≥ `.inhibited`, add `.adrenaline_surge` (8 ticks)
+- Condition expiry handling: When surge expires, add `.adrenaline_crash` (12 ticks)
+- ConditionIterator: Skip pain condition phases while `.adrenaline_surge` active
+
+**Tests**: First significant wound triggers surge; surge expiry triggers crash; pain suppressed during surge.
+
+**Kanban**: T013
+
+---
+
+### Phase 4.5: Dud Cards Foundation
+
+**Goal**: Card system supports blocking and forced-play mechanics.
+
+**Changes**:
+- Add `Trigger.while_in_hand`, `Trigger.forced` to trigger enum
+- Add `blocks_tags: []const Tag` field to Card struct
+- Hand management: Forced cards must be played before voluntary cards
+- Hand management: Cards with `blocks_tags` prevent playing matching cards
+
+**Tests**: Forced card blocks voluntary play; blocking card prevents tagged techniques.
+
+**Kanban**: T014
+
+---
+
+### Phase 4.6: Dud Card Definitions & Injection
+
+**Goal**: Conditions inject dud cards into hand.
+
+**Changes**:
+- Define dud cards: `Wince`, `Retch`, `Stagger`, `Tremor`, `Blackout`
+- Condition gain triggers card injection (where conditions are added)
+- Cards exhaust on play
+
+**Tests**: Gaining `.distracted` injects Wince; Tremor blocks `.precision` cards; playing dud exhausts it.
+
+**Kanban**: T015
+
+---
+
+## Dependencies
+
+```
+T010 (resources)
+  → T011 (wound wiring)
+    → T012 (conditions)
+      → T013 (adrenaline)
+
+T014 (dud foundation) → T015 (dud cards)
+
+T012 + T015 can be integrated once both complete
 ```

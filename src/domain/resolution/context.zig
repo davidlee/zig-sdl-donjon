@@ -108,6 +108,15 @@ pub const CombatModifiers = struct {
         // Apply attention penalty for attacking non-primary target
         mods.hit_chance -= attack.attention_penalty;
 
+        // Grasp strength penalty: wounded weapon hand reduces accuracy/damage
+        if (attack.attacker.body.graspingPartBySide(attack.attacker.dominant_side)) |hand_idx| {
+            const grasp = attack.attacker.body.graspStrength(hand_idx);
+            if (grasp < 1.0) {
+                mods.hit_chance += (1.0 - grasp) * -0.25; // up to -25% hit
+                mods.damage_mult *= 0.5 + (grasp * 0.5); // 50-100% damage
+            }
+        }
+
         return mods;
     }
 
@@ -154,6 +163,12 @@ pub const CombatModifiers = struct {
         // Apply table-derived penalties
         mods.defense_mult *= penalties.defense_mult;
         mods.dodge_mod += penalties.dodge_mod;
+
+        // Mobility penalty: wounded legs reduce dodge capability
+        const mobility = defense.defender.body.mobilityScore();
+        if (mobility < 1.0) {
+            mods.dodge_mod += (1.0 - mobility) * -0.30; // up to -30% dodge
+        }
 
         return mods;
     }
@@ -525,4 +540,71 @@ test "CombatModifiers.forDefender applies surrounded penalty" {
     // Surrounded: -20% dodge and 0.85x defense_mult
     try testing.expectApproxEqAbs(@as(f32, -0.20), mods.dodge_mod, 0.001);
     try testing.expectApproxEqAbs(@as(f32, 0.85), mods.defense_mult, 0.001);
+}
+
+test "CombatModifiers.forAttacker applies grasp strength penalty" {
+    const alloc = testing.allocator;
+
+    var w = try makeTestWorld(alloc);
+    defer w.deinit();
+
+    const attacker = w.player;
+    const defender = try makeTestAgent(alloc, w.entities.agents, ai.noop());
+    try w.encounter.?.addEnemy(defender);
+
+    const engagement = w.encounter.?.getPlayerEngagement(defender.id).?;
+    const technique = &cards.Technique.byID(.thrust);
+
+    // Damage the dominant hand (right by default)
+    const right_hand = attacker.body.graspingPartBySide(.right).?;
+    attacker.body.parts.items[right_hand].severity = .disabled; // 0.3 integrity
+
+    const attack = AttackContext{
+        .attacker = attacker,
+        .defender = defender,
+        .technique = technique,
+        .weapon_template = &@import("../weapon_list.zig").knights_sword,
+        .stakes = .guarded,
+        .engagement = engagement,
+        .attention_penalty = 0,
+    };
+
+    const mods = CombatModifiers.forAttacker(attack);
+
+    // Grasp strength with disabled hand (~0.3 integrity) reduces attack
+    // (1-grasp)*-0.25 for hit_chance, damage_mult = 0.5 + grasp*0.5
+    try testing.expect(mods.hit_chance < 0); // negative penalty applied
+    try testing.expect(mods.damage_mult < 1.0); // damage reduced from base
+    try testing.expect(mods.damage_mult > 0.5); // but not below 50%
+}
+
+test "CombatModifiers.forDefender applies mobility penalty" {
+    const alloc = testing.allocator;
+
+    var w = try makeTestWorld(alloc);
+    defer w.deinit();
+
+    const defender = try makeTestAgent(alloc, w.entities.agents, ai.noop());
+    try w.encounter.?.addEnemy(defender);
+
+    // Damage legs (can_stand parts) to reduce mobility
+    for (defender.body.parts.items) |*part| {
+        if (part.flags.can_stand) {
+            part.severity = .disabled; // 0.3 integrity
+        }
+    }
+
+    // Verify mobility is reduced
+    try testing.expect(defender.body.mobilityScore() < 0.5);
+
+    const defense = DefenseContext{
+        .defender = defender,
+        .technique = null,
+        .weapon_template = &@import("../weapon_list.zig").knights_sword,
+    };
+
+    const mods = CombatModifiers.forDefender(defense);
+
+    // Mobility ~0.3 → (1-0.3)*-0.30 = -0.21 dodge_mod
+    try testing.expect(mods.dodge_mod < -0.15);
 }

@@ -108,7 +108,8 @@ pub const Opposition = struct {
             // Engagement bars and label
             if (encounter) |enc| {
                 const is_primary = if (primary_target) |pt| pt.eql(e.id) else false;
-                try appendEngagementInfo(alloc, list, sprite.rect, enc.getPlayerEngagementConst(e.id), e.balance, is_primary);
+                const blood_ratio = e.blood.current / e.blood.max;
+                try appendEngagementInfo(alloc, list, sprite.rect, enc.getPlayerEngagementConst(e.id), e.balance, blood_ratio, is_primary);
             }
         }
     }
@@ -120,6 +121,7 @@ pub const Opposition = struct {
         sprite_rect: Rect,
         engagement: ?combat.Engagement,
         balance: f32,
+        blood_ratio: f32,
         is_primary: bool,
     ) !void {
         const bar_height: f32 = 2;
@@ -129,12 +131,13 @@ pub const Opposition = struct {
 
         const eng = engagement orelse combat.Engagement{};
 
-        // Bar colors: pressure=red, control=blue, position=green, balance=yellow
+        // Bar colors: pressure=red, control=blue, position=green, balance=yellow, blood=dark red
         const bars = [_]struct { value: f32, color: Color }{
             .{ .value = eng.pressure, .color = .{ .r = 180, .g = 60, .b = 60, .a = 255 } },
             .{ .value = eng.control, .color = .{ .r = 60, .g = 60, .b = 180, .a = 255 } },
             .{ .value = eng.position, .color = .{ .r = 60, .g = 140, .b = 60, .a = 255 } },
             .{ .value = balance, .color = .{ .r = 180, .g = 160, .b = 40, .a = 255 } },
+            .{ .value = blood_ratio, .color = .{ .r = 140, .g = 20, .b = 20, .a = 255 } },
         };
 
         for (bars, 0..) |bar, idx| {
@@ -152,7 +155,7 @@ pub const Opposition = struct {
         }
 
         // Range label below bars
-        const label_y = bar_start_y + 4 * (bar_height + bar_gap) + 2;
+        const label_y = bar_start_y + 5 * (bar_height + bar_gap) + 2;
         const range_str = @tagName(eng.range);
         const prefix: []const u8 = if (is_primary) "* " else "";
 
