@@ -125,6 +125,7 @@ pub const Event = union(enum) {
         attacker_id: entity.ID,
         defender_id: entity.ID,
         technique_id: cards.TechniqueID,
+        weapon_name: []const u8, // weapon used for attack
         outcome: resolution.Outcome,
         // Roll details
         hit_chance: f32, // final chance after all modifiers

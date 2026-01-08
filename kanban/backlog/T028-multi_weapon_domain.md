@@ -204,3 +204,86 @@ Traced code paths to understand full scope:
 
 **Recommendation**: Store `weapon_template` on CommittedAction during commit phase in `commitPlayerCards/commitSingleMob`. Cleaner than passing channel and resolving in resolver.
 
+### 2026-01-08 - Core implementation complete
+
+Implemented the core weapon resolution pipeline:
+
+1. **`Agent.weaponForChannel()`** - Added to `agent.zig:551-570`
+   - Returns equipped weapon for `.weapon` channel (primary)
+   - Returns equipped weapon for `.off_hand` channel (secondary in dual-wield)
+   - Falls back to natural weapon when unarmed
+   - Unit tests added
+
+2. **`Play.channel_override`** - Added field to Play struct
+   - Allows technique to use different weapon slot than template default
+   - `getPlayChannels()` respects override (early return if set)
+   - Unit test added
+
+3. **`CommittedAction.weapon_template`** - Added field
+   - Stores resolved weapon during commit phase
+   - Set in `commitPlayerCards()` and `commitSingleMob()`
+
+4. **Fixed `TickResolver.getWeaponTemplate()`**
+   - Now queries agent's primary weapon via `weaponForChannel`
+   - Falls back to knight's sword for unarmed (temporary)
+   - AttackContext uses `action.weapon_template orelse getWeaponTemplate(actor)`
+
+**Not yet implemented:**
+- `move_play` command + handler (step 7)
+- Validation for channel switch (step 8)
+
+### 2026-01-09 - Integration tests + event enrichment
+
+1. **Added `weapon_name` to `technique_resolved` event** (`events.zig:128`)
+   - Combat logs can now show weapon used in attacks
+   - Populated from `AttackContext.weapon_template.name` in `outcome.zig`
+
+2. **Added `Harness.getResolvedWeaponName()`** (`harness.zig:399-412`)
+   - Test helper to extract weapon from technique_resolved events
+
+3. **Integration tests** (`weapon_resolution.zig`)
+   - ✅ Technique resolves with equipped weapon (not hardcoded)
+   - ✅ Dual-wield main hand attack uses primary weapon
+   - ⏳ Natural weapon when unarmed - skipped, needs investigation
+
+**Ready for handover. Remaining work:**
+- `move_play` command for repositioning plays on timeline
+- Validation for channel switch (weapon↔off_hand only)
+- Fix natural weapon integration test
+
+### Debug notes: unarmed integration test - ROOT CAUSE FOUND
+
+**The bug is at `resolver.zig:190`:**
+```zig
+const weapon_mode = action.actor.weapons.getOffensiveMode(attack_mode);
+if (weapon_mode) |wm| {
+    // ... range check
+} else {
+    // No weapon for this attack mode - can't attack
+    continue;  // <-- SILENTLY SKIPS THE ATTACK
+}
+```
+
+`Armament.getOffensiveMode()` only checks EQUIPPED weapons, not natural weapons. When unarmed:
+- `getOffensiveMode()` returns null
+- The attack is silently skipped (no event emitted)
+
+**Fix options:**
+1. Update `Armament.getOffensiveMode()` to fall back to natural weapons
+2. Or use `action.weapon_template` (already resolved during commit) instead of querying armament
+3. Emit an event when attack is skipped due to no weapon mode (for debugging)
+
+**Preferred fix:** Option 2 - we already resolved the weapon during commit, use it:
+```zig
+// In resolver.resolve(), replace getOffensiveMode call:
+const weapon_mode = if (action.weapon_template) |wt|
+    switch (attack_mode) {
+        .swing => wt.swing,
+        .thrust => wt.thrust,
+        else => null,
+    }
+else null;
+```
+
+This aligns with T028's goal: weapon is resolved during commit, used during resolve.
+

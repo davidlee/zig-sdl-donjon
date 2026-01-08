@@ -544,6 +544,31 @@ pub const Agent = struct {
         return .{ .agent = self };
     }
 
+    /// Resolve which weapon serves a given channel.
+    /// Returns the appropriate weapon for weapon/off_hand channels, null otherwise.
+    /// - weapon channel: primary equipped or first natural weapon
+    /// - off_hand channel: secondary equipped (dual-wield only)
+    pub fn weaponForChannel(self: *const Agent, channel: cards.ChannelSet) ?WeaponRef {
+        if (channel.weapon) {
+            return switch (self.weapons.equipped) {
+                .unarmed => blk: {
+                    var iter = self.availableNaturalWeapons();
+                    break :blk if (iter.next()) |nw| .{ .natural = nw } else null;
+                },
+                .single => |inst| .{ .equipped = inst },
+                .dual => |d| .{ .equipped = d.primary },
+                .compound => null, // TODO: compound weapon support
+            };
+        }
+        if (channel.off_hand) {
+            return switch (self.weapons.equipped) {
+                .dual => |d| .{ .equipped = d.secondary },
+                else => null,
+            };
+        }
+        return null;
+    }
+
     /// Count of all available weapons (equipped + available natural).
     pub fn allAvailableWeaponCount(self: *const Agent) usize {
         var count: usize = 0;
@@ -1289,4 +1314,100 @@ test "WeaponRef.template works for both types" {
     // Natural weapon
     const natural_ref = iter.next().?;
     try testing.expect(natural_ref.template().categories.len > 0);
+}
+
+test "weaponForChannel returns equipped for weapon channel" {
+    const alloc = testing.allocator;
+    var agents = try SlotMap(*Agent).init(alloc);
+    defer agents.deinit();
+
+    const agent = try Agent.init(alloc, &agents, .player, .shuffled_deck, &species_mod.DWARF, stats.Block.splat(5));
+    defer agent.deinit();
+
+    const weapon_list = @import("../weapon_list.zig");
+    const sword = try alloc.create(weapon.Instance);
+    defer alloc.destroy(sword);
+    sword.* = .{ .id = testId(999), .template = &weapon_list.knights_sword };
+    agent.weapons = agent.weapons.withEquipped(.{ .single = sword });
+
+    const result = agent.weaponForChannel(.{ .weapon = true });
+    try testing.expect(result != null);
+    try testing.expect(result.? == .equipped);
+    try testing.expectEqualStrings("knight's sword", result.?.name());
+}
+
+test "weaponForChannel returns secondary for off_hand channel with dual wield" {
+    const alloc = testing.allocator;
+    var agents = try SlotMap(*Agent).init(alloc);
+    defer agents.deinit();
+
+    const agent = try Agent.init(alloc, &agents, .player, .shuffled_deck, &species_mod.DWARF, stats.Block.splat(5));
+    defer agent.deinit();
+
+    const weapon_list = @import("../weapon_list.zig");
+    const sword = try alloc.create(weapon.Instance);
+    defer alloc.destroy(sword);
+    sword.* = .{ .id = testId(998), .template = &weapon_list.knights_sword };
+
+    const buckler = try alloc.create(weapon.Instance);
+    defer alloc.destroy(buckler);
+    buckler.* = .{ .id = testId(999), .template = &weapon_list.buckler };
+
+    agent.weapons = agent.weapons.withEquipped(.{ .dual = .{ .primary = sword, .secondary = buckler } });
+
+    const result = agent.weaponForChannel(.{ .off_hand = true });
+    try testing.expect(result != null);
+    try testing.expect(result.? == .equipped);
+    try testing.expectEqualStrings("buckler", result.?.name());
+}
+
+test "weaponForChannel returns natural weapon when unarmed" {
+    const alloc = testing.allocator;
+    var agents = try SlotMap(*Agent).init(alloc);
+    defer agents.deinit();
+
+    // Unarmed DWARF has natural weapons
+    const agent = try Agent.init(alloc, &agents, .player, .shuffled_deck, &species_mod.DWARF, stats.Block.splat(5));
+    defer agent.deinit();
+
+    const result = agent.weaponForChannel(.{ .weapon = true });
+    try testing.expect(result != null);
+    try testing.expect(result.? == .natural);
+}
+
+test "weaponForChannel returns null for off_hand with single weapon" {
+    const alloc = testing.allocator;
+    var agents = try SlotMap(*Agent).init(alloc);
+    defer agents.deinit();
+
+    const agent = try Agent.init(alloc, &agents, .player, .shuffled_deck, &species_mod.DWARF, stats.Block.splat(5));
+    defer agent.deinit();
+
+    const weapon_list = @import("../weapon_list.zig");
+    const sword = try alloc.create(weapon.Instance);
+    defer alloc.destroy(sword);
+    sword.* = .{ .id = testId(999), .template = &weapon_list.knights_sword };
+    agent.weapons = agent.weapons.withEquipped(.{ .single = sword });
+
+    const result = agent.weaponForChannel(.{ .off_hand = true });
+    try testing.expect(result == null);
+}
+
+test "weaponForChannel returns null for non-weapon channels" {
+    const alloc = testing.allocator;
+    var agents = try SlotMap(*Agent).init(alloc);
+    defer agents.deinit();
+
+    const agent = try Agent.init(alloc, &agents, .player, .shuffled_deck, &species_mod.DWARF, stats.Block.splat(5));
+    defer agent.deinit();
+
+    const weapon_list = @import("../weapon_list.zig");
+    const sword = try alloc.create(weapon.Instance);
+    defer alloc.destroy(sword);
+    sword.* = .{ .id = testId(999), .template = &weapon_list.knights_sword };
+    agent.weapons = agent.weapons.withEquipped(.{ .single = sword });
+
+    // footwork and concentration channels don't have weapons
+    try testing.expect(agent.weaponForChannel(.{ .footwork = true }) == null);
+    try testing.expect(agent.weaponForChannel(.{ .concentration = true }) == null);
 }

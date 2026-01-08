@@ -284,6 +284,7 @@ pub fn resolveTechniqueVsDefense(
         .attacker_id = attack.attacker.id,
         .defender_id = attack.defender.id,
         .technique_id = attack.technique.id,
+        .weapon_name = attack.weapon_template.name,
         .outcome = roll_result.outcome,
         .hit_chance = roll_result.hit_chance,
         .roll = roll_result.roll,

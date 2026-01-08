@@ -78,6 +78,13 @@ pub const TickResolver = struct {
             // Recalculate duration from current play state (includes modifier effects)
             const duration = combat.getPlayDuration(play, &w.card_registry);
 
+            // Resolve weapon from play's channels
+            const channels = combat.getPlayChannels(play, &w.card_registry);
+            const weapon_template = if (player.weaponForChannel(channels)) |ref|
+                ref.template()
+            else
+                null;
+
             try self.addAction(.{
                 .actor = player,
                 .card = card_instance,
@@ -90,6 +97,7 @@ pub const TickResolver = struct {
                 .source = play.source,
                 .damage_mult = play.damage_mult,
                 .advantage_override = play.advantage_override,
+                .weapon_template = weapon_template,
             });
         }
     }
@@ -114,6 +122,13 @@ pub const TickResolver = struct {
             const tech_expr = template.getTechniqueWithExpression() orelse continue;
             const duration = combat.getPlayDuration(play, registry);
 
+            // Resolve weapon from play's channels
+            const channels = combat.getPlayChannels(play, registry);
+            const weapon_template = if (mob.weaponForChannel(channels)) |ref|
+                ref.template()
+            else
+                null;
+
             try self.addAction(.{
                 .actor = mob,
                 .card = card_instance,
@@ -126,6 +141,7 @@ pub const TickResolver = struct {
                 .source = play.source,
                 .damage_mult = play.damage_mult,
                 .advantage_override = play.advantage_override,
+                .weapon_template = weapon_template,
             });
         }
     }
@@ -203,7 +219,7 @@ pub const TickResolver = struct {
                     .attacker = action.actor,
                     .defender = defender,
                     .technique = action.technique,
-                    .weapon_template = self.getWeaponTemplate(action.actor),
+                    .weapon_template = action.weapon_template orelse self.getWeaponTemplate(action.actor),
                     .stakes = action.stakes,
                     .engagement = engagement,
                     .time_start = action.time_start,
@@ -303,11 +319,14 @@ pub const TickResolver = struct {
         return enc.getEngagement(attacker.id, defender.id);
     }
 
+    /// Get agent's primary weapon template (weapon channel).
+    /// Falls back to knight's sword if agent has no weapon (temporary until unarmed combat).
     fn getWeaponTemplate(self: *TickResolver, agent: *Agent) *const weapon.Template {
         _ = self;
-        _ = agent;
-        // TODO: get from agent's equipped weapon
-        // For now, use knight's sword as default
+        if (agent.weaponForChannel(.{ .weapon = true })) |ref| {
+            return ref.template();
+        }
+        // Fallback for unarmed/no-weapon case
         return &weapon_list.knights_sword;
     }
 };

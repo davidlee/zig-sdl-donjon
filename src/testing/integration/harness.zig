@@ -396,6 +396,21 @@ pub const Harness = struct {
         self.world.events.next_events.clearRetainingCapacity();
     }
 
+    /// Get weapon name from the most recent technique_resolved event.
+    /// Returns null if no such event exists.
+    pub fn getResolvedWeaponName(self: *Harness) ?[]const u8 {
+        // Search backwards to find most recent
+        const items = self.world.events.next_events.items;
+        var i = items.len;
+        while (i > 0) {
+            i -= 1;
+            if (items[i] == .technique_resolved) {
+                return items[i].technique_resolved.weapon_name;
+            }
+        }
+        return null;
+    }
+
     // ========================================================================
     // Snapshot queries
     // ========================================================================

@@ -52,6 +52,7 @@ pub const Play = struct {
     cost_mult: f32 = 1.0,
     damage_mult: f32 = 1.0,
     advantage_override: ?TechniqueAdvantage = null,
+    channel_override: ?cards.ChannelSet = null, // override technique's default channel
 
     pub fn modifiers(self: *const Play) []const ModifierEntry {
         return self.modifier_stack_buf[0..self.modifier_stack_len];
@@ -349,7 +350,13 @@ pub fn getPlayDuration(play: Play, registry: *const world.CardRegistry) f32 {
 }
 
 /// Get combined channels occupied by a play (lead card + modifiers).
+/// If the play has channel_override set, returns that instead of deriving from template.
 pub fn getPlayChannels(play: Play, registry: *const world.CardRegistry) cards.ChannelSet {
+    // Explicit override takes precedence
+    if (play.channel_override) |override| {
+        return override;
+    }
+
     var channels = cards.ChannelSet{};
     var has_technique = false;
     var lead_tags: ?cards.TagSet = null;
@@ -999,4 +1006,28 @@ test "hasFootworkInTimeline returns false when only weapon card present" {
     try timeline.insert(0.0, 0.5, .{ .action = thrust_instance.id }, channels, &registry);
 
     try testing.expect(!hasFootworkInTimeline(&timeline, &registry));
+}
+
+test "getPlayChannels returns channel_override when set" {
+    const card_list = @import("../card_list.zig");
+    var registry = try world.CardRegistry.init(testing.allocator);
+    defer registry.deinit();
+
+    // Create a weapon technique card
+    const thrust = card_list.byName("thrust");
+    const thrust_instance = try registry.create(thrust);
+
+    // Without override, should return weapon channel from template
+    const play_no_override = Play{ .action = thrust_instance.id };
+    const default_channels = getPlayChannels(play_no_override, &registry);
+    try testing.expect(default_channels.weapon);
+
+    // With override, should return the override channels
+    const play_with_override = Play{
+        .action = thrust_instance.id,
+        .channel_override = .{ .off_hand = true },
+    };
+    const override_channels = getPlayChannels(play_with_override, &registry);
+    try testing.expect(!override_channels.weapon);
+    try testing.expect(override_channels.off_hand);
 }

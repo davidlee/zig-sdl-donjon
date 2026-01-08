@@ -8,6 +8,7 @@ const entity = lib.entity;
 const cards = @import("../cards.zig");
 const combat = @import("../combat.zig");
 const resolution = @import("../resolution.zig");
+const weapon = @import("../weapon.zig");
 
 const Agent = combat.Agent;
 const Technique = cards.Technique;
@@ -27,6 +28,7 @@ pub const CommittedAction = struct {
     // From Play modifiers (set during commit phase)
     damage_mult: f32 = 1.0,
     advantage_override: ?combat.TechniqueAdvantage = null,
+    weapon_template: ?*const weapon.Template = null, // resolved from channel during commit
 
     /// Compare by time_start for sorting
     pub fn compareByTime(_: void, a: CommittedAction, b: CommittedAction) bool {
