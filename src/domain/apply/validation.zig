@@ -397,30 +397,6 @@ pub fn compareF32(lhs: f32, op: cards.Comparator, rhs: f32) bool {
 
 const testing = std.testing;
 
-test "rulePredicatesSatisfied allows card with always predicate" {
-    // Cards with .always predicate should always pass validation
-    // TODO: needs test fixtures
-    return error.SkipZigTest;
-}
-
-test "rulePredicatesSatisfied allows shield block with shield equipped" {
-    // A shield_block card should be valid when actor has shield category weapon
-    // TODO: needs test fixtures
-    return error.SkipZigTest;
-}
-
-test "rulePredicatesSatisfied denies shield block without shield" {
-    // A shield_block card should fail when actor has no shield
-    // TODO: needs test fixtures
-    return error.SkipZigTest;
-}
-
-test "rulePredicatesSatisfied allows shield block with sword and shield dual wield" {
-    // Dual wield (sword primary, shield secondary) should pass shield predicate
-    // TODO: needs test fixtures
-    return error.SkipZigTest;
-}
-
 test "compareF32 operators" {
     try testing.expect(compareF32(1.0, .lt, 2.0));
     try testing.expect(!compareF32(2.0, .lt, 1.0));
@@ -515,21 +491,6 @@ test "canWithdrawPlay returns true for non-involuntary cards with no modifiers" 
 
     // Should be withdrawable
     try testing.expect(canWithdrawPlay(&play, &registry));
-}
-
-test "validateMeleeReach passes when weapon reach >= engagement range" {
-    // TODO: needs test fixtures with Agent and Encounter setup
-    return error.SkipZigTest;
-}
-
-test "validateMeleeReach fails when weapon reach < engagement range" {
-    // TODO: needs test fixtures
-    return error.SkipZigTest;
-}
-
-test "validateMeleeReach fails when at abstract far distance" {
-    // TODO: needs test fixtures
-    return error.SkipZigTest;
 }
 
 test "cardTemplateMatchesPredicate with always predicate" {
@@ -640,12 +601,71 @@ test "cardTemplateMatchesPredicate with any predicate" {
     try testing.expect(!cardTemplateMatchesPredicate(melee_only, .{ .any = &preds_fail }));
 }
 
-test "checkOnPlayAttemptBlockers returns null when no blockers" {
-    // TODO: needs test fixtures with Agent, World, and combat_state setup
-    return error.SkipZigTest;
+// ============================================================================
+// rulePredicatesSatisfied tests
+// ============================================================================
+
+const card_list = @import("../card_list.zig");
+const weapon_list = @import("../weapon_list.zig");
+const weapon = @import("../weapon.zig");
+const ai = @import("../ai.zig");
+const stats = @import("../stats.zig");
+
+fn makeTestAgent(armament: combat.Armament) combat.Agent {
+    return combat.Agent{
+        .id = entity.ID{ .index = 99, .generation = 0 },
+        .alloc = undefined,
+        .director = ai.noop(),
+        .draw_style = .shuffled_deck,
+        .stats = undefined,
+        .body = undefined,
+        .armour = undefined,
+        .weapons = armament,
+        .stamina = stats.Resource.init(10.0, 10.0, 2.0),
+        .focus = stats.Resource.init(3.0, 5.0, 3.0),
+        .blood = stats.Resource.init(5.0, 5.0, 0.0),
+        .pain = stats.Resource.init(0.0, 10.0, 0.0),
+        .trauma = stats.Resource.init(0.0, 10.0, 0.0),
+        .morale = stats.Resource.init(10.0, 10.0, 0.0),
+        .conditions = undefined,
+        .immunities = undefined,
+        .resistances = undefined,
+        .vulnerabilities = undefined,
+    };
 }
 
-test "checkOnPlayAttemptBlockers returns blocking card ID when rule matches" {
-    // TODO: needs test fixtures with Agent, World, dud card in hand
-    return error.SkipZigTest;
+test "rulePredicatesSatisfied allows card with always predicate" {
+    const thrust_template = card_list.byName("thrust");
+    var sword_instance = weapon.Instance{ .id = entity.ID{ .index = 0, .generation = 0 }, .template = &weapon_list.knights_sword };
+    const agent = makeTestAgent(.{ .single = &sword_instance });
+
+    try testing.expect(rulePredicatesSatisfied(thrust_template, &agent, null));
+}
+
+test "rulePredicatesSatisfied allows shield block with shield equipped" {
+    const shield_block = card_list.byName("shield block");
+    var buckler_instance = weapon.Instance{ .id = entity.ID{ .index = 0, .generation = 0 }, .template = &weapon_list.buckler };
+    const agent = makeTestAgent(.{ .single = &buckler_instance });
+
+    try testing.expect(rulePredicatesSatisfied(shield_block, &agent, null));
+}
+
+test "rulePredicatesSatisfied denies shield block without shield" {
+    const shield_block = card_list.byName("shield block");
+    var sword_instance = weapon.Instance{ .id = entity.ID{ .index = 0, .generation = 0 }, .template = &weapon_list.knights_sword };
+    const agent = makeTestAgent(.{ .single = &sword_instance });
+
+    try testing.expect(!rulePredicatesSatisfied(shield_block, &agent, null));
+}
+
+test "rulePredicatesSatisfied allows shield block with sword and shield dual wield" {
+    const shield_block = card_list.byName("shield block");
+    var sword_instance = weapon.Instance{ .id = entity.ID{ .index = 0, .generation = 0 }, .template = &weapon_list.knights_sword };
+    var buckler_instance = weapon.Instance{ .id = entity.ID{ .index = 1, .generation = 0 }, .template = &weapon_list.buckler };
+    const agent = makeTestAgent(.{ .dual = .{
+        .primary = &sword_instance,
+        .secondary = &buckler_instance,
+    } });
+
+    try testing.expect(rulePredicatesSatisfied(shield_block, &agent, null));
 }

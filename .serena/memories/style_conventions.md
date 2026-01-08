@@ -63,3 +63,15 @@
 - Names describe behavior: `test "damage reduces health to minimum of zero"`
 - Test the public interface, not internal state
 - Test behaviour, not implementation
+
+## Test Fixtures (`src/testing/fixtures.zig`)
+- Use persona templates from `src/data/personas.zig` for consistent test data
+- `AgentHandle` owns allocated resources; always `defer handle.deinit()`
+- Prefer `testing.allocator` to catch leaks
+- Example:
+  ```zig
+  const handle = try fixtures.agentFromTemplate(testing.allocator, &personas.Agents.ser_marcus);
+  defer handle.deinit();
+  const agent = handle.agent;
+  ```
+- Tests needing Encounter/World setup are integration tests (T020 harness)

@@ -94,6 +94,7 @@ pub fn main() !void {
 test {
     @import("std").testing.refAllDecls(@This());
     _ = @import("domain/body.zig");
+    _ = @import("domain/species.zig");
     _ = @import("domain/resolution.zig");
     _ = @import("domain/weapon_list.zig");
     _ = @import("domain/tick.zig");

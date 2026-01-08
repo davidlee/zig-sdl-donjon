@@ -5,9 +5,11 @@
 
 const std = @import("std");
 
-pub const domain = @import("domain/mod.zig");
+pub const harness = @import("harness.zig");
+pub const domain_tests = @import("domain/mod.zig");
 // pub const presentation = @import("presentation/mod.zig");  // future
 
 test {
-    _ = domain;
+    _ = harness;
+    _ = domain_tests;
 }

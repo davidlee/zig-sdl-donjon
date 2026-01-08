@@ -14,6 +14,7 @@ const cards = @import("../cards.zig");
 const cond = @import("../condition.zig");
 const damage = @import("../damage.zig");
 const events = @import("../events.zig");
+const species_mod = @import("../species.zig");
 const stats = @import("../stats.zig");
 const weapon = @import("../weapon.zig");
 
@@ -56,6 +57,7 @@ pub const Agent = struct {
     alloc: std.mem.Allocator,
     director: Director,
     name: Name = .{ .static = "unnamed" },
+    species: *const species_mod.Species = &species_mod.DWARF,
     draw_style: DrawStyle = .shuffled_deck,
     stats: stats.Block,
     // may be humanoid, or not

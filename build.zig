@@ -207,17 +207,22 @@ pub fn build(b: *std.Build) !void {
 
     // -------------------------------------------------------------------------
     // Integration tests (src/testing/integration/)
+    // Uses src/ as root to enable relative imports within the project
     // -------------------------------------------------------------------------
     const integration_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/testing/integration/mod.zig"),
+            .root_source_file = b.path("src/integration_tests.zig"),
             .target = target,
             .optimize = optimize,
+            .imports = &.{
+                .{ .name = "infra", .module = infra_mod },
+                .{ .name = "zigfsm", .module = zigfsm_mod },
+                .{ .name = "sdl3", .module = sdl3_test_mod },
+            },
         }),
     });
-    integration_tests.root_module.addImport("infra", infra_mod);
-    integration_tests.root_module.addImport("zigfsm", zigfsm_mod);
-    integration_tests.root_module.addImport("sdl3", sdl3_test_mod);
+    // Self-reference so harness can import via "integration_root"
+    integration_tests.root_module.addImport("integration_root", integration_tests.root_module);
 
     const run_integration_tests = b.addRunArtifact(integration_tests);
     const integration_step = b.step("test-integration", "Run integration tests");

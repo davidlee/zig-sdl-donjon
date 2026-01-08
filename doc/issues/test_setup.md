@@ -266,3 +266,61 @@ test: test-unit test-integration
 3. Migrate `apply/validation.zig` skipped tests as proof of concept.
 4. Set up `src/testing/integration/domain/card_flow.zig` with first scenario.
 5. Wire up `build.zig` and `Justfile`.
+
+# Preliminary audit
+
+High-Value Areas Without Coverage
+
+  - Command stack (apply/command_handler.zig, apply/event_processor.zig): No tests exercising play/cancel/commit workflows, pending
+    targets, or event emission. These are high-risk because they mutate game state and route user commands.
+  - World lifecycle (world.zig): Card registry has tests, but world transitions (start encounter, turn FSM, tick pipeline) and
+    cleanup paths are untested.
+  - Timeline selection refactor: plays during selection design isn’t covered. No tests ensure plays are created with timing/channels
+    during selection phase or that buildPlaysFromInPlayCards replacements behave.
+  - Domain ↔ presentation query boundary: query/combat_snapshot.zig only has a couple of tiny tests; nothing verifies it stays in
+    sync with world state or supports modifier attachability, targeting DTOs, etc.
+  - Integration flows: Nothing runs a full “play card → commit → tick resolve → apply costs” scenario. Many bugs will hide until we
+    add integration tests in src/tests/integration.
+
+  ———
+
+  Brittle / Duplicated Tests
+
+  - Fixtures ad hoc everywhere: Each test re-creates weapons, agents, world state (copy/paste of makeTestAgent, manual card registry
+    setup). When templates or agent fields change, dozens of tests break. We need shared object mothers (tests/fixtures.zig).
+  - Redundant coverage: Unit tests sprinkled across apply.zig, apply/validation.zig, and apply/targeting.zig duplicate the same
+    predicate/targeting scenarios after the file split. We can consolidate them into the new module-specific tests and delete the
+    legacy ones in apply.zig.
+  - Brittle assumptions: Tests that expect exact event ordering or rely on global state (e.g., std.debug.print output) will fail with
+    minor refactors. We should focus on invariants (cards returned to hand, clones destroyed) instead of specific log strings.
+
+  ———
+
+  Pseudo-Integration Tests Still in Unit Files
+
+  Several test blocks pull in half the domain via imports, effectively running multi-module flows inside unit files:
+
+  - apply/targeting.zig tests instantiate World, call world.card_registry.create, and use real combat.Play objects. These are closer
+    to integration cases and would be better in a dedicated suite.
+  - combat/plays.zig tests exercise TurnState, Timeline, AgentEncounterState, etc., often needing multiple modules. They’re
+    legitimate but highlight the need for fixtures.
+  - resolution/context.zig and resolution/outcome.zig tests drive the full resolution pipeline (advantage, events, damage). These
+    should either be simplified to pure math helpers or moved to integration tests that call TickResolver.
+
+  ———
+
+  Actionable Plan
+
+  1. Create shared fixture module (tests/fixtures.zig) providing helper builders for agents, worlds, cards. Update a few existing
+     tests to use it.
+  2. Introduce an integration test harness under src/tests/integration/ covering at least:
+      - Play/cancel lifecycle for hand vs. pool cards
+      - Commit phase + tick resolution for a simple duel
+      - Range/manoeuvre interactions
+  3. Audit tests per module:
+      - Remove duplicate tests from src/domain/apply.zig now that modules have their own test blocks.
+      - Add missing coverage for command handler, world transitions, and query snapshots.
+  4. Document expectations in doc/issues/test_setup.md: list the gaps above, note the brittle patterns (manual setup, copy/paste
+     fixtures), and outline the integration-test plan so contributors know where to add new cases.
+
+  This brings clarity to what’s missing, reduces duplication, and sets the stage for the upcoming integration test suite.

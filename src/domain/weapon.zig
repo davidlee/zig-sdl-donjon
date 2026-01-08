@@ -26,6 +26,8 @@ pub const Category = enum {
     crossbow,
     throwing,
     shield,
+    improvised,
+    unarmed, // natural weapons: fists, bite, claws, etc.
 };
 
 pub const Ammunition = struct {
@@ -95,30 +97,30 @@ pub const Defensive = struct {
 
 pub const Grip = packed struct {
     // primary
-    one_handed: bool,
-    two_handed: bool,
+    one_handed: bool = false,
+    two_handed: bool = false,
 
     // extended
-    versatile: bool, // polearms
-    bastard: bool, // claymore, hand-and-a-half
-    half_sword: bool,
-    murder_stroke: bool,
+    versatile: bool = false, // polearms
+    bastard: bool = false, // claymore, hand-and-a-half
+    half_sword: bool = false,
+    murder_stroke: bool = false,
 };
 
 // packed struct or a []tag/enum ?
 pub const Features = packed struct {
-    hooked: bool,
-    spiked: bool,
-    crossguard: bool,
-    pommel: bool,
+    hooked: bool = false,
+    spiked: bool = false,
+    crossguard: bool = false,
+    pommel: bool = false,
 };
 
 pub const Template = struct {
     name: []const u8,
 
     categories: []const Category,
-    features: Features,
-    grip: Grip,
+    features: Features = .{},
+    grip: Grip = .{},
 
     length: f32, // in cm
     weight: f32, // multiplies stamina cost AND damage; with handedness & power
@@ -127,9 +129,9 @@ pub const Template = struct {
     swing: ?Offensive,
     thrust: ?Offensive,
     defence: Defensive,
-    ranged: ?Ranged,
+    ranged: ?Ranged = null,
 
-    integrity: f32, // total damage until broken
+    integrity: f32 = 100.0, // total damage until broken
 };
 
 pub const Instance = struct {

@@ -397,46 +397,132 @@ fn evaluateTargetIDsConst(
 // ============================================================================
 
 const testing = std.testing;
+const card_list = @import("../card_list.zig");
+const weapon_list = @import("../weapon_list.zig");
+const weapon = @import("../weapon.zig");
+const ai = @import("../ai.zig");
+const stats = @import("../stats.zig");
+
+fn testId(index: u32) entity.ID {
+    return .{ .index = index, .generation = 0 };
+}
+
+fn makeTestAgent(armament: combat.Armament) combat.Agent {
+    return combat.Agent{
+        .id = testId(99),
+        .alloc = undefined,
+        .director = ai.noop(),
+        .draw_style = .shuffled_deck,
+        .stats = undefined,
+        .body = undefined,
+        .armour = undefined,
+        .weapons = armament,
+        .stamina = stats.Resource.init(10.0, 10.0, 2.0),
+        .focus = stats.Resource.init(3.0, 5.0, 3.0),
+        .blood = stats.Resource.init(5.0, 5.0, 0.0),
+        .pain = stats.Resource.init(0.0, 10.0, 0.0),
+        .trauma = stats.Resource.init(0.0, 10.0, 0.0),
+        .morale = stats.Resource.init(10.0, 10.0, 0.0),
+        .conditions = undefined,
+        .immunities = undefined,
+        .resistances = undefined,
+        .vulnerabilities = undefined,
+    };
+}
+
+fn makeTestCardInstance(template: *const cards.Template) cards.Instance {
+    return cards.Instance{
+        .id = testId(0),
+        .template = template,
+    };
+}
 
 test "expressionAppliesToTarget returns true when no filter" {
-    // An expression without a filter should apply to any target
-    // TODO: needs test fixtures
-    return error.SkipZigTest;
+    const thrust = card_list.byName("thrust");
+    const expr = &thrust.rules[0].expressions[0];
+    var sword_instance = weapon.Instance{ .id = testId(0), .template = &weapon_list.knights_sword };
+    const actor = makeTestAgent(.{ .single = &sword_instance });
+    const target = makeTestAgent(.{ .single = &sword_instance });
+    const card = makeTestCardInstance(thrust);
+
+    try testing.expect(expressionAppliesToTarget(expr, &card, &actor, &target, null));
 }
 
 test "expressionAppliesToTarget with advantage_threshold filter passes when control high" {
-    // TODO: needs test fixtures
-    return error.SkipZigTest;
+    const riposte = card_list.byName("riposte");
+    const expr = &riposte.rules[0].expressions[0];
+    var sword_instance = weapon.Instance{ .id = testId(0), .template = &weapon_list.knights_sword };
+    const actor = makeTestAgent(.{ .single = &sword_instance });
+    const target = makeTestAgent(.{ .single = &sword_instance });
+    const card = makeTestCardInstance(riposte);
+
+    // High control engagement (0.7 >= 0.6 threshold)
+    var engagement = combat.Engagement{ .control = 0.7 };
+
+    try testing.expect(expressionAppliesToTarget(expr, &card, &actor, &target, &engagement));
 }
 
 test "expressionAppliesToTarget with advantage_threshold filter fails when control low" {
-    // TODO: needs test fixtures
-    return error.SkipZigTest;
+    const riposte = card_list.byName("riposte");
+    const expr = &riposte.rules[0].expressions[0];
+    var sword_instance = weapon.Instance{ .id = testId(0), .template = &weapon_list.knights_sword };
+    const actor = makeTestAgent(.{ .single = &sword_instance });
+    const target = makeTestAgent(.{ .single = &sword_instance });
+    const card = makeTestCardInstance(riposte);
+
+    // Low control engagement (0.4 < 0.6 threshold)
+    var engagement = combat.Engagement{ .control = 0.4 };
+
+    try testing.expect(!expressionAppliesToTarget(expr, &card, &actor, &target, &engagement));
 }
 
 test "getModifierTargetPredicate extracts predicate from modifier template" {
-    // TODO: needs test fixtures
-    return error.SkipZigTest;
+    const high = card_list.byName("high");
+    const predicate = try getModifierTargetPredicate(high);
+
+    try testing.expect(predicate != null);
+    // Modifier targets offensive plays
+    try testing.expectEqual(cards.Predicate{ .has_tag = .{ .offensive = true } }, predicate.?);
 }
 
 test "getModifierTargetPredicate returns null for non-modifier" {
-    // TODO: needs test fixtures
-    return error.SkipZigTest;
+    const thrust = card_list.byName("thrust");
+    const predicate = try getModifierTargetPredicate(thrust);
+
+    try testing.expect(predicate == null);
 }
 
 test "canModifierAttachToPlay validates offensive tag match" {
-    // TODO: needs test fixtures
-    return error.SkipZigTest;
+    // Setup: need a World with card_registry containing an offensive play
+    var wrld = try w.World.init(testing.allocator);
+    defer wrld.deinit();
+
+    // Create a play with an offensive action card (thrust)
+    const thrust_template = card_list.byName("thrust");
+    const thrust_card = try wrld.card_registry.create(thrust_template);
+    var play = combat.Play{ .action = thrust_card.id };
+
+    // High modifier targets offensive plays
+    const high = card_list.byName("high");
+    const can_attach = try canModifierAttachToPlay(high, &play, wrld);
+
+    try testing.expect(can_attach);
 }
 
 test "canModifierAttachToPlay rejects non-offensive play" {
-    // TODO: needs test fixtures
-    return error.SkipZigTest;
-}
+    var wrld = try w.World.init(testing.allocator);
+    defer wrld.deinit();
 
-test "evaluateTargetIDsConst with .single returns play_target when provided" {
-    // TODO: needs test fixtures
-    return error.SkipZigTest;
+    // Create a play with a non-offensive action card (parry is defensive)
+    const parry_template = card_list.byName("parry");
+    const parry_card = try wrld.card_registry.create(parry_template);
+    var play = combat.Play{ .action = parry_card.id };
+
+    // High modifier targets offensive plays - should reject defensive
+    const high = card_list.byName("high");
+    const can_attach = try canModifierAttachToPlay(high, &play, wrld);
+
+    try testing.expect(!can_attach);
 }
 
 test "evaluateTargetIDsConst with .single returns null when no play_target" {
@@ -448,9 +534,4 @@ test "evaluateTargetIDsConst with .single returns null when no play_target" {
         null,
     ) catch null;
     try testing.expect(result == null);
-}
-
-test "getTargetsForQuery with .single returns all enemies for validation" {
-    // TODO: needs test fixtures with mock World
-    return error.SkipZigTest;
 }
