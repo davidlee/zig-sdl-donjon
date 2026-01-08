@@ -153,7 +153,7 @@ pub const Agent = struct {
         return dominant == .center or dominant.? == side;
     }
 
-    fn isPlayer(self: *const Agent) bool {
+    pub fn isPlayer(self: *const Agent) bool {
         return self.director == .player;
     }
 

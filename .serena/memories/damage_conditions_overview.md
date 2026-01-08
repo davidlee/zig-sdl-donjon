@@ -19,6 +19,13 @@
 - `Agent.hasConditionWithContext()` additionally checks relational conditions (requires engagement)
 - `ConditionIterator` walks stored conditions then computed conditions from the definitions table
 
+## Condition Event Emission (T016)
+- `condition_applied`/`condition_expired` events defined in `events.zig`, formatted in `combat_log.zig`
+- Computed conditions (pain/trauma thresholds): emit via `invalidateConditionCache()` after resource changes
+- Stored conditions: emit directly when added (e.g., adrenaline_surge in `outcome.zig`)
+- Key call site: `outcome.zig` after pain/trauma infliction calls `invalidateConditionCache()`
+- Dud card injection (T015) consumes `condition_applied` events via `event_processor.zig`
+
 ## Pain & Trauma Conditions (T012)
 - Pain conditions (accumulate toward 1.0): `distracted` (>30%), `suffering` (>60%), `agonized` (>85%)
 - Trauma conditions (accumulate toward 1.0): `dazed` (>30%), `unsteady` (>50%), `trembling` (>70%), `reeling` (>90%)

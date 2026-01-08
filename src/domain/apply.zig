@@ -274,13 +274,19 @@ test "canModifierAttachToPlay rejects non-offensive play" {
 // ============================================================================
 
 test "canWithdrawPlay returns true for play with no modifiers" {
+    var registry = try w.CardRegistry.init(testing.allocator);
+    defer registry.deinit();
+
     var play = combat.Play{ .action = testId(0) };
-    try testing.expect(canWithdrawPlay(&play));
+    try testing.expect(canWithdrawPlay(&play, &registry));
 }
 
 test "canWithdrawPlay returns false for play with modifiers attached" {
+    var registry = try w.CardRegistry.init(testing.allocator);
+    defer registry.deinit();
+
     var play = combat.Play{ .action = testId(0) };
     try play.addModifier(testId(1), null);
 
-    try testing.expect(!canWithdrawPlay(&play));
+    try testing.expect(!canWithdrawPlay(&play, &registry));
 }

@@ -264,9 +264,9 @@ pub const CommandHandler = struct {
         const play_index = enc_state.current.findPlayByCard(card_id) orelse
             return CommandError.CardNotInPlay;
 
-        // Validate: play has no modifiers
+        // Validate: play can be withdrawn (no modifiers, not involuntary)
         const play = &enc_state.current.slots()[play_index].play;
-        if (!validation.canWithdrawPlay(play))
+        if (!validation.canWithdrawPlay(play, &self.world.card_registry))
             return CommandError.CommandInvalid;
 
         // Validate: sufficient focus

@@ -111,9 +111,18 @@ pub fn validateCardSelection(
     return true;
 }
 
-/// Check if a play can be withdrawn (no modifiers attached).
-pub fn canWithdrawPlay(play: *const combat.Play) bool {
-    return play.modifier_stack_len == 0;
+/// Check if a play can be withdrawn.
+/// Requires: no modifiers attached AND card is not involuntary.
+pub fn canWithdrawPlay(play: *const combat.Play, registry: *const w.CardRegistry) bool {
+    // Cannot withdraw if modifiers are attached (would need to unstack them first)
+    if (play.modifier_stack_len > 0) return false;
+
+    // Check if the card is involuntary (dud cards cannot be uncommitted)
+    if (registry.getConst(play.action)) |card| {
+        if (card.template.tags.involuntary) return false;
+    }
+
+    return true;
 }
 
 /// Check if all rule predicates on a card template are satisfied.
@@ -432,18 +441,80 @@ test "compareReach operators" {
 }
 
 test "canWithdrawPlay returns true for play with no modifiers" {
+    var registry = try w.CardRegistry.init(testing.allocator);
+    defer registry.deinit();
+
     var play = combat.Play{
         .action = entity.ID{ .index = 0, .generation = 0 },
     };
-    try testing.expect(canWithdrawPlay(&play));
+    try testing.expect(canWithdrawPlay(&play, &registry));
 }
 
 test "canWithdrawPlay returns false for play with modifiers attached" {
+    var registry = try w.CardRegistry.init(testing.allocator);
+    defer registry.deinit();
+
     var play = combat.Play{
         .action = entity.ID{ .index = 0, .generation = 0 },
         .modifier_stack_len = 1,
     };
-    try testing.expect(!canWithdrawPlay(&play));
+    try testing.expect(!canWithdrawPlay(&play, &registry));
+}
+
+test "canWithdrawPlay returns false for involuntary cards" {
+    var registry = try w.CardRegistry.init(testing.allocator);
+    defer registry.deinit();
+
+    // Create an involuntary card template
+    const involuntary_template = &cards.Template{
+        .id = 999,
+        .kind = .action,
+        .name = "test involuntary",
+        .description = "cannot be withdrawn",
+        .rarity = .common,
+        .cost = .{ .stamina = 0, .exhausts = true },
+        .tags = .{ .involuntary = true, .phase_selection = true },
+        .rules = &.{},
+    };
+
+    // Create card instance in registry
+    const card = try registry.create(involuntary_template);
+
+    // Create play with the involuntary card
+    var play = combat.Play{
+        .action = card.id,
+    };
+
+    // Should not be withdrawable due to involuntary tag
+    try testing.expect(!canWithdrawPlay(&play, &registry));
+}
+
+test "canWithdrawPlay returns true for non-involuntary cards with no modifiers" {
+    var registry = try w.CardRegistry.init(testing.allocator);
+    defer registry.deinit();
+
+    // Create a normal card template
+    const normal_template = &cards.Template{
+        .id = 888,
+        .kind = .action,
+        .name = "test normal",
+        .description = "can be withdrawn",
+        .rarity = .common,
+        .cost = .{ .stamina = 1 },
+        .tags = .{ .melee = true, .phase_selection = true },
+        .rules = &.{},
+    };
+
+    // Create card instance in registry
+    const card = try registry.create(normal_template);
+
+    // Create play with the normal card
+    var play = combat.Play{
+        .action = card.id,
+    };
+
+    // Should be withdrawable
+    try testing.expect(canWithdrawPlay(&play, &registry));
 }
 
 test "validateMeleeReach passes when weapon reach >= engagement range" {

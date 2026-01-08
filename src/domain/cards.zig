@@ -47,6 +47,7 @@ pub const Zone = enum {
     equipped,
     inventory,
     exhaust,
+    limbo, // virtual zone for cards created/injected from nowhere (dud cards)
     // active_passives,
     // active_meta,
     // active_reactions,

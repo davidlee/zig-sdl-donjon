@@ -286,7 +286,6 @@ pub const TickResolver = struct {
         // For now, use knight's sword as default
         return &weapon_list.knights_sword;
     }
-
 };
 
 // ============================================================================

@@ -806,3 +806,102 @@ const t_sand_in_the_eyes = Template{
         }},
     }},
 };
+
+// -----------------------------------------------------------------------------
+// Dud cards - involuntary status cards injected when conditions are gained
+// These waste a play slot and may block certain card types while in hand.
+// Exhaust automatically when played via .cost.exhausts = true.
+// -----------------------------------------------------------------------------
+
+/// Wince: minor distraction from pain. Just wastes time.
+pub const dud_wince = Template{
+    .id = hashName("wince"),
+    .kind = .action,
+    .name = "Wince",
+    .description = "Involuntary flinch. Wastes time.",
+    .rarity = .common,
+    .cost = .{ .stamina = 0, .time = 0.6, .exhausts = true },
+    .tags = .{ .involuntary = true, .phase_selection = true },
+    .playable_from = PlayableFrom.hand_only,
+    .rules = &.{}, // No blocking - just time cost
+};
+
+/// Tremor: trembling hands block precision techniques while in hand.
+pub const dud_tremor = Template{
+    .id = hashName("tremor"),
+    .kind = .action,
+    .name = "Trembling Hands",
+    .description = "Blocks precision techniques while in hand.",
+    .rarity = .common,
+    .cost = .{ .stamina = 0, .time = 0, .exhausts = true },
+    .tags = .{ .involuntary = true, .phase_selection = true },
+    .playable_from = PlayableFrom.hand_only,
+    .rules = &.{Rule{
+        .trigger = .on_play_attempt,
+        .valid = .{ .has_tag = .{ .precision = true } },
+        .expressions = &.{.{ .effect = .cancel_play, .filter = null, .target = .self }},
+    }},
+};
+
+/// Retch: nausea blocks finesse techniques while in hand.
+pub const dud_retch = Template{
+    .id = hashName("retch"),
+    .kind = .action,
+    .name = "Retch",
+    .description = "Nausea. Blocks finesse techniques while in hand.",
+    .rarity = .common,
+    .cost = .{ .stamina = 0, .time = 0.3, .exhausts = true },
+    .tags = .{ .involuntary = true, .phase_selection = true },
+    .playable_from = PlayableFrom.hand_only,
+    .rules = &.{Rule{
+        .trigger = .on_play_attempt,
+        .valid = .{ .has_tag = .{ .finesse = true } },
+        .expressions = &.{.{ .effect = .cancel_play, .filter = null, .target = .self }},
+    }},
+};
+
+/// Stagger: unsteady footing blocks manoeuvres while in hand.
+pub const dud_stagger = Template{
+    .id = hashName("stagger"),
+    .kind = .action,
+    .name = "Stagger",
+    .description = "Unsteady footing. Blocks manoeuvres while in hand.",
+    .rarity = .common,
+    .cost = .{ .stamina = 0, .time = 0.4, .exhausts = true },
+    .tags = .{ .involuntary = true, .phase_selection = true },
+    .playable_from = PlayableFrom.hand_only,
+    .rules = &.{Rule{
+        .trigger = .on_play_attempt,
+        .valid = .{ .has_tag = .{ .manoeuvre = true } },
+        .expressions = &.{.{ .effect = .cancel_play, .filter = null, .target = .self }},
+    }},
+};
+
+/// Blackout: severe trauma blocks offensive techniques while in hand.
+pub const dud_blackout = Template{
+    .id = hashName("blackout"),
+    .kind = .action,
+    .name = "Blackout",
+    .description = "Vision swimming. Blocks offensive techniques while in hand.",
+    .rarity = .common,
+    .cost = .{ .stamina = 0, .time = 0.5, .exhausts = true },
+    .tags = .{ .involuntary = true, .phase_selection = true },
+    .playable_from = PlayableFrom.hand_only,
+    .rules = &.{Rule{
+        .trigger = .on_play_attempt,
+        .valid = .{ .has_tag = .{ .offensive = true } },
+        .expressions = &.{.{ .effect = .cancel_play, .filter = null, .target = .self }},
+    }},
+};
+
+/// Lookup table for condition → dud card template mapping.
+/// Used by event processor to inject dud cards when conditions are gained.
+pub const condition_dud_cards = blk: {
+    var arr = std.EnumArray(damage.Condition, ?*const Template).initFill(null);
+    arr.set(.distracted, &dud_wince);
+    arr.set(.trembling, &dud_tremor);
+    arr.set(.nauseous, &dud_retch);
+    arr.set(.unsteady, &dud_stagger);
+    arr.set(.reeling, &dud_blackout);
+    break :blk arr;
+};

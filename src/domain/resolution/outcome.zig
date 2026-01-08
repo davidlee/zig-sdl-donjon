@@ -12,6 +12,7 @@ const damage_mod = @import("../damage.zig");
 const armour = @import("../armour.zig");
 const body = @import("../body.zig");
 const world = @import("../world.zig");
+const events = @import("../events.zig");
 
 // Import from sibling modules
 const context = @import("context.zig");
@@ -251,6 +252,10 @@ pub fn resolveTechniqueVsDefense(
                 attack.defender.pain.inflict(pain);
                 attack.defender.trauma.inflict(trauma);
 
+                // Emit events for computed condition changes (pain/trauma thresholds)
+                const is_defender_player = attack.defender.isPlayer();
+                attack.defender.invalidateConditionCache(&w.events, is_defender_player);
+
                 // Trigger adrenaline surge on first significant wound
                 const severity = @intFromEnum(result.wound.worstSeverity());
                 const inhibited = @intFromEnum(body.Severity.inhibited);
@@ -262,6 +267,12 @@ pub fn resolveTechniqueVsDefense(
                             .condition = .adrenaline_surge,
                             .expiration = .{ .ticks = 8.0 },
                         });
+                        // Emit event for adrenaline surge
+                        try w.events.push(.{ .condition_applied = .{
+                            .agent_id = attack.defender.id,
+                            .condition = .adrenaline_surge,
+                            .actor = .{ .id = attack.defender.id, .player = is_defender_player },
+                        } });
                     }
                 }
             }
@@ -669,4 +680,70 @@ test "CombatModifiers.forDefender reduces defense_mult when pressured" {
 
     // Pressured should reduce defense_mult to 0.85
     try std.testing.expectApproxEqAbs(@as(f32, 0.85), mods.defense_mult, 0.001);
+}
+
+test "resolveTechniqueVsDefense emits condition_applied for pain threshold" {
+    const alloc = std.testing.allocator;
+
+    var w = try makeTestWorld(alloc);
+    defer w.deinit();
+    w.attachEventHandlers();
+
+    const attacker = w.player;
+    const defender = try makeTestAgent(alloc, w.entities.agents, ai.noop());
+    try w.encounter.?.addEnemy(defender);
+
+    const engagement = w.encounter.?.getPlayerEngagement(defender.id).?;
+
+    // Use a heavy technique for maximum damage
+    const technique = &cards.Technique.byID(.swing);
+
+    const attack = AttackContext{
+        .attacker = attacker,
+        .defender = defender,
+        .technique = technique,
+        .weapon_template = &weapon_list.knights_sword,
+        .stakes = .reckless,
+        .engagement = engagement,
+    };
+
+    const defense = DefenseContext{
+        .defender = defender,
+        .technique = null,
+        .weapon_template = &weapon_list.knights_sword,
+    };
+
+    const target_part: body.PartIndex = 0; // torso
+
+    // Stack odds for a guaranteed hit
+    defender.balance = 0.0;
+    engagement.pressure = 0.95;
+    engagement.control = 0.95;
+    engagement.position = 0.95;
+
+    // Pre-inflict some pain to ensure we cross threshold
+    defender.pain.inflict(2.5); // 25% - any additional wound should push us over 30%
+
+    const result = try resolveTechniqueVsDefense(w, attack, defense, target_part);
+
+    // Only test if we got a hit with body damage
+    if (result.outcome == .hit and result.body_result != null) {
+        w.events.swap_buffers();
+
+        var found_distracted = false;
+        while (w.events.pop()) |event| {
+            switch (event) {
+                .condition_applied => |e| {
+                    if (e.condition == .distracted) {
+                        found_distracted = true;
+                        try std.testing.expectEqual(defender.id, e.agent_id);
+                    }
+                },
+                else => {},
+            }
+        }
+
+        // Defender should now have distracted condition from pain
+        try std.testing.expect(found_distracted);
+    }
 }

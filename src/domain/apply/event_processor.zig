@@ -5,12 +5,15 @@
 
 const std = @import("std");
 const lib = @import("infra");
+const card_list = @import("../card_list.zig");
+const cards = @import("../cards.zig");
 const combat = @import("../combat.zig");
 const damage = @import("../damage.zig");
 const events = @import("../events.zig");
 const w = @import("../world.zig");
 
 const entity = lib.entity;
+const Zone = cards.Zone;
 
 const commit = @import("effects/commit.zig");
 
@@ -195,6 +198,38 @@ pub const EventProcessor = struct {
         return null; // Combat continues
     }
 
+    /// Inject a dud card into an agent's hand if the condition maps to one.
+    fn injectDudCardIfMapped(
+        self: *EventProcessor,
+        agent_id: entity.ID,
+        condition: damage.Condition,
+        actor: events.AgentMeta,
+    ) !void {
+        // Look up if this condition has a mapped dud card
+        const template = card_list.condition_dud_cards.get(condition) orelse return;
+
+        // Get the agent and their combat state
+        const agent_ptr = self.world.entities.agents.get(agent_id) orelse return;
+        const agent = agent_ptr.*;
+        const cs = agent.combat_state orelse return; // No combat state = not in combat
+
+        // Create card instance from template
+        const instance = try self.world.card_registry.create(template);
+
+        // Add to agent's hand
+        try cs.hand.append(cs.alloc, instance.id);
+
+        // Emit card_moved event for UI
+        try self.world.events.push(.{
+            .card_moved = .{
+                .instance = instance.id,
+                .from = .limbo, // Injected from nowhere
+                .to = .hand,
+                .actor = actor,
+            },
+        });
+    }
+
     /// Clean up encounter after loot collected. Called when entering world_map state.
     fn cleanupEncounter(self: *EventProcessor) !void {
         // Clean up combat state for player
@@ -316,6 +351,12 @@ pub const EventProcessor = struct {
                     }
                 },
                 .draw_random => {},
+
+                // Dud card injection when conditions are gained
+                .condition_applied => |e| {
+                    try self.injectDudCardIfMapped(e.agent_id, e.condition, e.actor);
+                },
+
                 else => |data| std.debug.print("event processed: {}\n", .{data}),
             }
             return true;
