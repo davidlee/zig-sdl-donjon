@@ -46,28 +46,6 @@ pub fn expressionAppliesToTarget(
     });
 }
 
-/// Check if a card has any valid targets based on its expressions.
-pub fn cardHasValidTargets(
-    template: *const cards.Template,
-    card: *const cards.Instance,
-    actor: *const Agent,
-    world: *const World,
-) bool {
-    for (template.rules) |rule| {
-        for (rule.expressions) |expr| {
-            // Get potential targets
-            const targets = getTargetsForQuery(expr.target, actor, world);
-            for (targets) |target| {
-                const engagement = getEngagementBetween(world.encounter, actor, target);
-                if (expressionAppliesToTarget(&expr, card, actor, target, engagement)) {
-                    return true;
-                }
-            }
-        }
-    }
-    return false;
-}
-
 /// Evaluate targets for an expression query, returning a list of agents.
 pub fn evaluateTargets(
     alloc: std.mem.Allocator,
@@ -261,37 +239,68 @@ fn filterTargetsByMeleeRange(
     return filtered;
 }
 
-/// Check if an offensive card has any enemy target within weapon reach.
-/// Returns true for:
-/// - Non-technique cards (no range requirement)
-/// - Defensive techniques (attack_mode == .none)
-/// - Offensive techniques with at least one enemy in range
-/// Returns false only for offensive techniques where no enemy is in weapon reach.
-pub fn hasAnyTargetInRange(
-    template: *const cards.Template,
+/// Check if a card has any valid targets based on its expressions.
+/// For each expression, checks if at least one potential target is valid.
+/// A valid target must be:
+/// - Not incapacitated
+/// - Within weapon reach (for technique effects)
+/// - Passing any expression filter (e.g., advantage threshold)
+pub fn hasAnyValidTarget(
+    card: *const cards.Instance,
     actor: *const Agent,
+    world: *const World,
+) bool {
+    const encounter = world.encounter orelse return true; // No encounter = no targeting requirement
+
+    for (card.template.rules) |rule| {
+        for (rule.expressions) |*expr| {
+            // Self-targeting expressions always have a valid target (the actor)
+            if (expr.target == .self) return true;
+
+            // Get potential targets for this expression
+            const targets = getTargetsForQuery(expr.target, actor, world);
+            for (targets) |target| {
+                if (isValidTargetForExpression(expr, card, actor, target, encounter)) {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+/// Check if a specific target is valid for an expression.
+fn isValidTargetForExpression(
+    expr: *const cards.Expression,
+    card: *const cards.Instance,
+    actor: *const Agent,
+    target: *const Agent,
     encounter: *const combat.Encounter,
 ) bool {
-    // Get technique - if no technique, no range requirement
-    const technique = template.getTechnique() orelse return true;
-    const attack_mode = technique.attack_mode;
+    // Skip incapacitated targets
+    if (target.isIncapacitated()) return false;
 
-    // Defensive techniques have no reach requirement
-    if (attack_mode == .none) return true;
+    const engagement_opt = encounter.getEngagementConst(actor.id, target.id);
 
-    // Get weapon's reach for this attack type
-    const weapon_mode = actor.weapons.getOffensiveMode(attack_mode) orelse return false;
-    const weapon_reach = @intFromEnum(weapon_mode.reach);
-
-    // Check if any enemy is in range
-    for (encounter.enemies.items) |enemy| {
-        const engagement = encounter.getEngagementConst(actor.id, enemy.id) orelse continue;
-        if (weapon_reach >= @intFromEnum(engagement.range)) {
-            return true;
+    // For technique effects, check weapon reach
+    if (expr.effect == .combat_technique) {
+        const technique = expr.effect.combat_technique;
+        const attack_mode = technique.attack_mode;
+        // Defensive techniques have no reach requirement
+        if (attack_mode != .none) {
+            const engagement = engagement_opt orelse return false; // No engagement = can't target
+            const weapon_mode = actor.weapons.getOffensiveMode(attack_mode) orelse return false;
+            if (@intFromEnum(weapon_mode.reach) < @intFromEnum(engagement.range)) return false;
         }
     }
 
-    return false;
+    // Check expression filter - need a pointer for PredicateContext
+    if (engagement_opt) |engagement| {
+        var eng = engagement; // Copy to local var so we can take address
+        return expressionAppliesToTarget(expr, card, actor, target, &eng);
+    } else {
+        return expressionAppliesToTarget(expr, card, actor, target, null);
+    }
 }
 
 /// Get the target predicate from a modifier card template.

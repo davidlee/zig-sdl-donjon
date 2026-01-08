@@ -205,3 +205,63 @@ test "Card status shows no warning when attack has valid targets in range" {
     // And has_valid_targets should be true (enemy is in range)
     try testing.expect(status.has_valid_targets);
 }
+
+// ============================================================================
+// Advantage Threshold Filter (Riposte)
+// ============================================================================
+
+test "Riposte shows warning when control below threshold" {
+    var harness = try Harness.init(testing.allocator);
+    defer harness.deinit();
+
+    try harness.setPlayerFromTemplate(&personas.Agents.player_swordsman);
+    const enemy = try harness.addEnemyFromTemplate(&personas.Agents.ser_marcus);
+
+    // Set range to sabre (in weapon reach)
+    harness.setRange(enemy.id, .sabre);
+
+    // Set control below threshold (riposte requires >= 0.6)
+    harness.setControl(enemy.id, 0.4);
+
+    try harness.beginSelection();
+
+    const riposte_id = harness.findAlwaysAvailable("riposte") orelse
+        return error.RiposteNotFound;
+
+    const status = try harness.getCardStatus(riposte_id) orelse
+        return error.CardNotInSnapshot;
+
+    // Card should be playable (no hard validation failures)
+    try testing.expect(status.playable);
+
+    // But has_valid_targets should be false (control < 0.6)
+    try testing.expect(!status.has_valid_targets);
+}
+
+test "Riposte shows no warning when control meets threshold" {
+    var harness = try Harness.init(testing.allocator);
+    defer harness.deinit();
+
+    try harness.setPlayerFromTemplate(&personas.Agents.player_swordsman);
+    const enemy = try harness.addEnemyFromTemplate(&personas.Agents.ser_marcus);
+
+    // Set range to sabre (in weapon reach)
+    harness.setRange(enemy.id, .sabre);
+
+    // Set control at threshold (riposte requires >= 0.6)
+    harness.setControl(enemy.id, 0.7);
+
+    try harness.beginSelection();
+
+    const riposte_id = harness.findAlwaysAvailable("riposte") orelse
+        return error.RiposteNotFound;
+
+    const status = try harness.getCardStatus(riposte_id) orelse
+        return error.CardNotInSnapshot;
+
+    // Card should be playable
+    try testing.expect(status.playable);
+
+    // And has_valid_targets should be true (control >= 0.6)
+    try testing.expect(status.has_valid_targets);
+}

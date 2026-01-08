@@ -83,6 +83,38 @@ tk:
 yk:
     yazi kanban
 
+new-card:
+    #!/usr/bin/env python3
+    import shutil
+    import sys
+    import re
+    from pathlib import Path
+
+    repo_root = Path.cwd()
+    kanban_dir = repo_root / "kanban"
+    backlog_dir = kanban_dir / "backlog"
+    template_path = kanban_dir / "template.md"
+
+    if not template_path.exists():
+        sys.exit(f"Template not found: {template_path}")
+
+    pattern = re.compile(r"T(\d{3,})\.md$", re.IGNORECASE)
+    max_id = 0
+    for path in kanban_dir.rglob("T*.md"):
+        match = pattern.match(path.name)
+        if match:
+            max_id = max(max_id, int(match.group(1)))
+
+    next_id = max_id + 1
+    dest_name = f"T{next_id:03d}.md"
+    dest_path = backlog_dir / dest_name
+
+    if dest_path.exists():
+        sys.exit(f"Destination already exists: {dest_path}")
+
+    shutil.copyfile(template_path, dest_path)
+    print(f"Created {dest_path}")
+
 # create kanban task interactively
 [group('shortcut')]
 ck:

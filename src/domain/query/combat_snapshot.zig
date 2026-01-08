@@ -138,7 +138,7 @@ fn validateCards(
         for (cs.hand.items) |card_id| {
             const inst = world.card_registry.getConst(card_id) orelse continue;
             const playable = validation.validateCardSelection(player, inst, phase, encounter) catch false;
-            const has_targets = targeting.hasAnyTargetInRange(inst.template, player, encounter);
+            const has_targets = targeting.hasAnyValidTarget(inst, player, world);
             try snapshot.card_statuses.put(card_id, .{
                 .card_id = card_id,
                 .playable = playable,
@@ -152,7 +152,7 @@ fn validateCards(
                 // Action card
                 const action_inst = world.card_registry.getConst(slot.play.action) orelse continue;
                 const action_playable = validation.validateCardSelection(player, action_inst, phase, encounter) catch false;
-                const action_has_targets = targeting.hasAnyTargetInRange(action_inst.template, player, encounter);
+                const action_has_targets = targeting.hasAnyValidTarget(action_inst, player, world);
                 try snapshot.card_statuses.put(slot.play.action, .{
                     .card_id = slot.play.action,
                     .playable = action_playable,
@@ -178,7 +178,7 @@ fn validateCards(
     for (player.always_available.items) |card_id| {
         const inst = world.card_registry.getConst(card_id) orelse continue;
         const playable = validation.validateCardSelection(player, inst, phase, encounter) catch false;
-        const has_targets = targeting.hasAnyTargetInRange(inst.template, player, encounter);
+        const has_targets = targeting.hasAnyValidTarget(inst, player, world);
         try snapshot.card_statuses.put(card_id, .{
             .card_id = card_id,
             .playable = playable,
@@ -190,7 +190,7 @@ fn validateCards(
     for (player.spells_known.items) |card_id| {
         const inst = world.card_registry.getConst(card_id) orelse continue;
         const playable = validation.validateCardSelection(player, inst, phase, encounter) catch false;
-        const has_targets = targeting.hasAnyTargetInRange(inst.template, player, encounter);
+        const has_targets = targeting.hasAnyValidTarget(inst, player, world);
         try snapshot.card_statuses.put(card_id, .{
             .card_id = card_id,
             .playable = playable,

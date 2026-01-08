@@ -312,6 +312,13 @@ pub const Harness = struct {
         }
     }
 
+    /// Set the control advantage against an enemy.
+    pub fn setControl(self: *Harness, enemy_id: entity.ID, control: f32) void {
+        if (self.getEngagement(enemy_id)) |eng| {
+            eng.control = control;
+        }
+    }
+
     /// Configure the player from an AgentTemplate (persona).
     /// Applies name, stats, resources, and armament from the template.
     /// Does not change body or director.
