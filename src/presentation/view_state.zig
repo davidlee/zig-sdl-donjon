@@ -59,6 +59,7 @@ pub const CombatUIState = struct {
     selected_card: ?entity.ID = null,
     pending_target_card: ?entity.ID = null, // card awaiting target selection
     targeting_for_commit: bool = false, // true = commit_add, false = play_card
+    focused_enemy: ?entity.ID = null, // UI focus for timeline display / default targeting
     hover: EntityRef = .none,
     log_scroll: i32 = 0, // pixel scroll offset for combat log (0 = bottom/most recent)
     card_animations: [max_card_animations]CardAnimation = undefined,

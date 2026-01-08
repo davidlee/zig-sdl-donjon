@@ -289,19 +289,34 @@ fn cardRectWithHover(base: Rect, is_hovered: bool) Rect {
     };
 }
 
+// Shared timeline axis constants (used by both player and enemy views)
+pub const timeline_axis = struct {
+    pub const start_x: f32 = 60; // left margin for labels
+    pub const slot_width: f32 = 80; // pixels per 0.1s slot
+    pub const num_slots: usize = 10; // 0.0-1.0 in 0.1 increments
+    pub const width: f32 = slot_width * num_slots;
+
+    /// Convert time (0.0-1.0) to X position
+    pub fn timeToX(t: f32) f32 {
+        return start_x + t * (slot_width / 0.1);
+    }
+};
+
 /// Timeline view: renders plays positioned by channel × time.
 /// Phase 0 prototype - channel lanes with time grid.
 pub const TimelineView = struct {
-    // Layout constants
-    const slot_width: f32 = 80; // 100px per 0.1s slot
+    // Layout constants (Y-axis specific to player view)
     const lane_height: f32 = 110; // card height per channel
-    const num_slots: usize = 10; // 0.0-1.0 in 0.1 increments
     const num_lanes: usize = 4; // weapon, off_hand, footwork, concentration
-    const timeline_width: f32 = slot_width * num_slots;
     const timeline_height: f32 = lane_height * num_lanes;
-    const start_x: f32 = 60; // left margin for labels
-    const start_y: f32 = 340; // below header area
+    pub const start_y: f32 = 340; // below header area
     const label_width: f32 = 50; // right-side channel labels
+
+    // Re-export shared constants for internal use
+    const start_x = timeline_axis.start_x;
+    const slot_width = timeline_axis.slot_width;
+    const num_slots = timeline_axis.num_slots;
+    const timeline_width = timeline_axis.width;
     const grid_color = Color{ .r = 40, .g = 40, .b = 40, .a = 255 };
     const lane_colors = [_]Color{
         .{ .r = 0, .g = 0, .b = 0, .a = 255 }, // black
@@ -515,5 +530,183 @@ pub const TimelineView = struct {
                 }
             }
         }
+    }
+};
+
+/// Channel colors for timeline capsules
+pub const channel_colors = struct {
+    pub const weapon = Color{ .r = 180, .g = 80, .b = 60, .a = 255 }; // red-orange
+    pub const off_hand = Color{ .r = 60, .g = 100, .b = 180, .a = 255 }; // blue
+    pub const footwork = Color{ .r = 60, .g = 160, .b = 80, .a = 255 }; // green
+    pub const concentration = Color{ .r = 140, .g = 80, .b = 180, .a = 255 }; // purple
+
+    pub fn forChannels(channels: domain_cards.ChannelSet) Color {
+        // Priority: weapon > off_hand > footwork > concentration
+        if (channels.weapon) return weapon;
+        if (channels.off_hand) return off_hand;
+        if (channels.footwork) return footwork;
+        if (channels.concentration) return concentration;
+        return Color{ .r = 100, .g = 100, .b = 100, .a = 255 }; // grey fallback
+    }
+};
+
+/// Compact enemy timeline strip: single row of capsules above player timeline.
+/// Shares X-axis with TimelineView for visual alignment.
+pub const EnemyTimelineStrip = struct {
+    const axis = timeline_axis;
+
+    // Layout constants
+    const row_height: f32 = 35;
+    const capsule_height: f32 = 28;
+    const capsule_inset: f32 = 3;
+    const header_height: f32 = 20;
+    const arrow_width: f32 = 20;
+
+    // Positioned above player timeline
+    pub const start_y: f32 = TimelineView.start_y - row_height - header_height - 10;
+
+    plays: []const Data,
+    enemy_name: []const u8,
+    enemy_index: usize,
+    enemy_count: usize,
+
+    pub fn init(
+        play_data: []const Data,
+        enemy_name: []const u8,
+        enemy_index: usize,
+        enemy_count: usize,
+    ) EnemyTimelineStrip {
+        return .{
+            .plays = play_data,
+            .enemy_name = enemy_name,
+            .enemy_index = enemy_index,
+            .enemy_count = enemy_count,
+        };
+    }
+
+    /// Compute capsule rect for a play (horizontal bar showing time span)
+    fn capsuleRect(play: *const Data) Rect {
+        const x = axis.timeToX(play.time_start);
+        const duration = play.time_end - play.time_start;
+        const w = duration * (axis.slot_width / 0.1);
+        return .{
+            .x = x + capsule_inset,
+            .y = start_y + header_height + capsule_inset,
+            .w = @max(w - capsule_inset * 2, 30), // minimum width for visibility
+            .h = capsule_height,
+        };
+    }
+
+    /// Generate renderables for enemy timeline strip
+    pub fn appendRenderables(
+        self: EnemyTimelineStrip,
+        alloc: std.mem.Allocator,
+        list: *std.ArrayList(Renderable),
+    ) !void {
+        // Background strip
+        try list.append(alloc, .{ .filled_rect = .{
+            .rect = .{
+                .x = axis.start_x,
+                .y = start_y + header_height,
+                .w = axis.width,
+                .h = row_height,
+            },
+            .color = .{ .r = 20, .g = 20, .b = 25, .a = 255 },
+        } });
+
+        // Header: ◄ Name ►
+        const header_y = start_y;
+        const center_x = axis.start_x + axis.width / 2;
+
+        // Left arrow (if multiple enemies)
+        if (self.enemy_count > 1) {
+            try list.append(alloc, .{ .text = .{
+                .content = "<",
+                .pos = .{ .x = center_x - 60, .y = header_y },
+                .color = .{ .r = 180, .g = 180, .b = 180, .a = 255 },
+            } });
+        }
+
+        // Enemy name (centered)
+        try list.append(alloc, .{
+            .text = .{
+                .content = self.enemy_name,
+                .pos = .{ .x = center_x - 30, .y = header_y }, // approximate centering
+                .color = .{ .r = 220, .g = 220, .b = 220, .a = 255 },
+            },
+        });
+
+        // Right arrow (if multiple enemies)
+        if (self.enemy_count > 1) {
+            try list.append(alloc, .{ .text = .{
+                .content = ">",
+                .pos = .{ .x = center_x + 50, .y = header_y },
+                .color = .{ .r = 180, .g = 180, .b = 180, .a = 255 },
+            } });
+        }
+
+        // Render capsules for each play
+        for (self.plays) |play| {
+            const rect = capsuleRect(&play);
+            const color = channel_colors.forChannels(play.channels);
+
+            // Capsule background
+            try list.append(alloc, .{ .filled_rect = .{
+                .rect = rect,
+                .color = color,
+            } });
+
+            // Card name (truncated to fit)
+            const name = play.action.template.name;
+            try list.append(alloc, .{ .text = .{
+                .content = name,
+                .pos = .{ .x = rect.x + 4, .y = rect.y + 6 },
+                .font_size = .small,
+                .color = .{ .r = 255, .g = 255, .b = 255, .a = 255 },
+            } });
+        }
+
+        // Vertical grid lines (aligned with player timeline)
+        const grid_color = Color{ .r = 50, .g = 50, .b = 55, .a = 255 };
+        for (0..axis.num_slots + 1) |slot| {
+            const x = axis.start_x + @as(f32, @floatFromInt(slot)) * axis.slot_width;
+            try list.append(alloc, .{ .filled_rect = .{
+                .rect = .{
+                    .x = x,
+                    .y = start_y + header_height,
+                    .w = 1,
+                    .h = row_height,
+                },
+                .color = grid_color,
+            } });
+        }
+    }
+
+    /// Hit test for nav arrows. Returns -1 for left, 1 for right, null for no hit.
+    pub fn hitTestNav(self: EnemyTimelineStrip, pt: Point) ?i8 {
+        if (self.enemy_count <= 1) return null;
+
+        const header_y = start_y;
+        const center_x = axis.start_x + axis.width / 2;
+
+        // Left arrow region
+        const left_rect = Rect{
+            .x = center_x - 70,
+            .y = header_y - 5,
+            .w = arrow_width,
+            .h = header_height + 10,
+        };
+        if (left_rect.pointIn(pt)) return -1;
+
+        // Right arrow region
+        const right_rect = Rect{
+            .x = center_x + 40,
+            .y = header_y - 5,
+            .w = arrow_width,
+            .h = header_height + 10,
+        };
+        if (right_rect.pointIn(pt)) return 1;
+
+        return null;
     }
 };

@@ -31,6 +31,8 @@ pub const AssetId = enum {
     rune_u,
     rune_y,
     rune_f,
+    // Status overlays
+    skull,
 };
 
 // Renderable primitives - what UX knows how to draw

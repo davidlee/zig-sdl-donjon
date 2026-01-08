@@ -87,6 +87,8 @@ pub const UX = struct {
         .{ .filename = "assets/rune_u.png", .id = .rune_u },
         .{ .filename = "assets/rune_y.png", .id = .rune_y },
         .{ .filename = "assets/rune_f.png", .id = .rune_f },
+        // Status overlays (48x48)
+        .{ .filename = "assets/skull.png", .id = .skull },
     };
 
     fn loadSprites(assets: *[AssetCount]?s.render.Texture, renderer: s.render.Renderer) !void {

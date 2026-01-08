@@ -102,12 +102,31 @@ pub const Opposition = struct {
         list: *std.ArrayList(Renderable),
         encounter: ?*const combat.Encounter,
         primary_target: ?entity.ID,
+        focused_enemy: ?entity.ID,
     ) !void {
         for (self.enemies, 0..) |e, i| {
             const sprite = Enemy.init(e.id, i);
+
+            // Focused enemy border (cyan) - draw before sprite
+            const is_focused = if (focused_enemy) |fe| fe.eql(e.id) else false;
+            if (is_focused) {
+                const border: f32 = 3;
+                try list.append(alloc, .{
+                    .filled_rect = .{
+                        .rect = .{
+                            .x = sprite.rect.x - border,
+                            .y = sprite.rect.y - border,
+                            .w = sprite.rect.w + border * 2,
+                            .h = sprite.rect.h + border * 2,
+                        },
+                        .color = .{ .r = 50, .g = 200, .b = 220, .a = 255 }, // cyan
+                    },
+                });
+            }
+
             try list.append(alloc, sprite.renderable());
 
-            // Incapacitated overlay - big white X
+            // Incapacitated overlay - skull
             if (conditions_mod.isIncapacitated(e)) {
                 try appendIncapacitatedOverlay(alloc, list, sprite.rect);
             }
@@ -123,7 +142,7 @@ pub const Opposition = struct {
         }
     }
 
-    /// Render incapacitated overlay - white X over sprite
+    /// Render incapacitated overlay - skull sprite centered on mob
     fn appendIncapacitatedOverlay(
         alloc: std.mem.Allocator,
         list: *std.ArrayList(Renderable),
@@ -134,15 +153,18 @@ pub const Opposition = struct {
             .rect = sprite_rect,
             .color = .{ .r = 0, .g = 0, .b = 0, .a = 180 },
         } });
-        // White X centered on sprite
-        const x_size: f32 = 24;
+        // Skull sprite centered on mob (48x48)
+        const skull_size: f32 = 48;
         const center_x = sprite_rect.x + sprite_rect.w / 2;
         const center_y = sprite_rect.y + sprite_rect.h / 2;
-        try list.append(alloc, .{ .text = .{
-            .content = "X",
-            .pos = .{ .x = center_x - x_size / 2, .y = center_y - x_size / 2 },
-            .font_size = .normal,
-            .color = .{ .r = 255, .g = 255, .b = 255, .a = 255 },
+        try list.append(alloc, .{ .sprite = .{
+            .asset = .skull,
+            .dst = .{
+                .x = center_x - skull_size / 2,
+                .y = center_y - skull_size / 2,
+                .w = skull_size,
+                .h = skull_size,
+            },
         } });
     }
 

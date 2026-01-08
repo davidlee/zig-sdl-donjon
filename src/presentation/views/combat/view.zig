@@ -50,6 +50,7 @@ const CardViewState = hit_mod.Interaction;
 const PlayViewData = play_mod.Data;
 const PlayZoneView = play_mod.Zone;
 const TimelineView = play_mod.TimelineView;
+const EnemyTimelineStrip = play_mod.EnemyTimelineStrip;
 const PlayerAvatar = combat_mod.Player;
 const EnemySprite = combat_mod.Enemy;
 const Opposition = combat_mod.Opposition;
@@ -655,6 +656,82 @@ pub const View = struct {
         return .{ .plays = self.enemyPlays(alloc, agent), .layout = layout };
     }
 
+    const FocusedEnemy = struct {
+        agent: *const Agent,
+        index: usize,
+    };
+
+    /// Cycle focused enemy by direction (-1 = left, 1 = right), returns updated CombatUIState
+    fn cycleFocusedEnemy(self: *const View, cs: CombatUIState, dir: i8) ?CombatUIState {
+        const enemy_count = self.opposition.enemies.len;
+        if (enemy_count <= 1) return null;
+
+        const focused = self.getFocusedEnemy(cs) orelse return null;
+
+        var new_cs = cs;
+        if (dir < 0) {
+            // Left - go to previous (or wrap to end)
+            new_cs.focused_enemy = if (focused.index == 0)
+                self.opposition.enemies[enemy_count - 1].id
+            else
+                self.opposition.enemies[focused.index - 1].id;
+        } else {
+            // Right - go to next (or wrap to start)
+            new_cs.focused_enemy = if (focused.index >= enemy_count - 1)
+                self.opposition.enemies[0].id
+            else
+                self.opposition.enemies[focused.index + 1].id;
+        }
+        return new_cs;
+    }
+
+    /// Hit test enemy timeline nav arrows, returns updated CombatUIState if hit
+    fn hitTestEnemyNav(self: *const View, cs: CombatUIState, pos: Point) ?CombatUIState {
+        const enemy_count = self.opposition.enemies.len;
+        if (enemy_count <= 1) return null;
+
+        const focused = self.getFocusedEnemy(cs) orelse return null;
+
+        // Create strip just for hit testing (plays data not needed)
+        const strip = EnemyTimelineStrip.init(&.{}, "", focused.index, enemy_count);
+
+        if (strip.hitTestNav(pos)) |dir| {
+            return self.cycleFocusedEnemy(cs, dir);
+        }
+        return null;
+    }
+
+    /// Get the currently focused enemy (for timeline display and default targeting).
+    /// Priority: UI focused_enemy > attention.primary > first enemy
+    fn getFocusedEnemy(self: *const View, ui: CombatUIState) ?FocusedEnemy {
+        if (self.opposition.enemies.len == 0) return null;
+
+        // Check explicit UI focus
+        if (ui.focused_enemy) |focused_id| {
+            for (self.opposition.enemies, 0..) |e, i| {
+                if (e.id.eql(focused_id)) {
+                    return .{ .agent = e, .index = i };
+                }
+            }
+        }
+
+        // Fall back to attention primary
+        if (self.world.encounter) |enc| {
+            if (enc.stateForConst(self.world.player.id)) |enc_state| {
+                if (enc_state.attention.primary) |primary_id| {
+                    for (self.opposition.enemies, 0..) |e, i| {
+                        if (e.id.eql(primary_id)) {
+                            return .{ .agent = e, .index = i };
+                        }
+                    }
+                }
+            }
+        }
+
+        // Default to first enemy
+        return .{ .agent = self.opposition.enemies[0], .index = 0 };
+    }
+
     fn buildCardList(
         self: *const View,
         alloc: std.mem.Allocator,
@@ -830,6 +907,11 @@ pub const View = struct {
             return self.cancelTargeting(vs);
         }
 
+        // ENEMY TIMELINE NAV ARROWS (both phases)
+        if (self.hitTestEnemyNav(cs, pos)) |new_cs| {
+            return .{ .vs = vs.withCombat(new_cs) };
+        }
+
         // CAROUSEL (hand + always-available cards)
         if (self.carousel(self.arena).hitTest(vs, pos, self.arena)) |hit| {
             const id = hit.cardId();
@@ -913,6 +995,16 @@ pub const View = struct {
                     return .{ .command = .{ .end_turn = {} } };
                 }
             },
+            .left => {
+                if (self.cycleFocusedEnemy(cs, -1)) |new_cs| {
+                    return .{ .vs = vs.withCombat(new_cs) };
+                }
+            },
+            .right => {
+                if (self.cycleFocusedEnemy(cs, 1)) |new_cs| {
+                    return .{ .vs = vs.withCombat(new_cs) };
+                }
+            },
             else => {},
         }
         return .{};
@@ -989,9 +1081,14 @@ pub const View = struct {
             return self.startCardAnimation(vs, card_id, from_rect, null);
 
         if (card.template.requiresSingleTarget()) {
+            const cs = vs.combat orelse CombatUIState{};
+            // Use focused enemy as default target (skips targeting mode)
+            if (self.getFocusedEnemy(cs)) |focused| {
+                return self.startCardAnimation(vs, card_id, from_rect, focused.agent.id);
+            }
+            // Fallback: single enemy auto-target or targeting mode
             const enemy_count = self.opposition.enemies.len;
             if (enemy_count == 1) {
-                // Auto-assign single enemy
                 const target_id = self.opposition.enemies[0].id;
                 return self.startCardAnimation(vs, card_id, from_rect, target_id);
             }
@@ -1007,9 +1104,14 @@ pub const View = struct {
             return .{ .command = .{ .commit_add = .{ .card_id = card_id } } };
 
         if (card.template.requiresSingleTarget()) {
+            const cs = vs.combat orelse CombatUIState{};
+            // Use focused enemy as default target (skips targeting mode)
+            if (self.getFocusedEnemy(cs)) |focused| {
+                return .{ .command = .{ .commit_add = .{ .card_id = card_id, .target = focused.agent.id } } };
+            }
+            // Fallback: single enemy auto-target or targeting mode
             const enemy_count = self.opposition.enemies.len;
             if (enemy_count == 1) {
-                // Auto-assign single enemy
                 const target_id = self.opposition.enemies[0].id;
                 return .{ .command = .{ .commit_add = .{ .card_id = card_id, .target = target_id } } };
             }
@@ -1050,8 +1152,11 @@ pub const View = struct {
         else
             null;
 
+        // Get focused enemy for border highlight
+        const focused_enemy_id = if (self.getFocusedEnemy(cs)) |f| f.agent.id else null;
+
         try list.append(alloc, self.player_avatar.renderable());
-        try self.opposition.appendRenderables(alloc, &list, enc, primary_target);
+        try self.opposition.appendRenderables(alloc, &list, enc, primary_target, focused_enemy_id);
 
         // Targeting mode: highlight valid targets with red border
         if (cs.isTargeting()) {
@@ -1071,7 +1176,7 @@ pub const View = struct {
                 });
             }
             // Re-render enemies on top of highlight boxes
-            try self.opposition.appendRenderables(alloc, &list, enc, primary_target);
+            try self.opposition.appendRenderables(alloc, &list, enc, primary_target, focused_enemy_id);
         }
 
         // Player cards - timeline for plays, carousel for hand
@@ -1083,16 +1188,19 @@ pub const View = struct {
         // Carousel: hand + known cards at bottom edge
         try self.carousel(alloc).appendRenderables(alloc, vs, &list, &last);
 
-        // enemy plays (commit phase only)
-        if (self.inPhase(.commit_phase)) {
-            for (self.opposition.enemies, 0..) |enemy_agent, i| {
-                const offset = Point{
-                    .x = 400 + @as(f32, @floatFromInt(i)) * 200,
-                    .y = 0,
-                };
-                const enemy_zone = self.enemyPlayZone(alloc, enemy_agent, offset);
-                try enemy_zone.appendRenderables(alloc, vs, &list, &last);
-            }
+        // Enemy timeline strip - shows name/arrows always, plays only in commit phase
+        if (self.getFocusedEnemy(cs)) |focused| {
+            const plays = if (self.inPhase(.commit_phase))
+                self.enemyPlays(alloc, focused.agent)
+            else
+                &[_]PlayViewData{}; // empty during selection phase
+            const strip = EnemyTimelineStrip.init(
+                plays,
+                focused.agent.name.value(),
+                focused.index,
+                self.opposition.enemies.len,
+            );
+            try strip.appendRenderables(alloc, &list);
         }
 
         // Render animating cards at their current interpolated position
