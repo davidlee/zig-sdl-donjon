@@ -35,6 +35,8 @@ pub const canWithdrawPlay = apply_mod.canWithdrawPlay;
 pub const evaluatePredicate = apply_mod.evaluatePredicate;
 pub const compareReach = apply_mod.compareReach;
 pub const compareF32 = apply_mod.compareF32;
+pub const checkOnPlayAttemptBlockers = apply_mod.checkOnPlayAttemptBlockers;
+pub const cardTemplateMatchesPredicate = apply_mod.cardTemplateMatchesPredicate;
 
 // Targeting functions
 pub const expressionAppliesToTarget = apply_mod.expressionAppliesToTarget;

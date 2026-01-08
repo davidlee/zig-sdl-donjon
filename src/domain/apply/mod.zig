@@ -36,6 +36,8 @@ pub const canWithdrawPlay = validation.canWithdrawPlay;
 pub const evaluatePredicate = validation.evaluatePredicate;
 pub const compareReach = validation.compareReach;
 pub const compareF32 = validation.compareF32;
+pub const checkOnPlayAttemptBlockers = validation.checkOnPlayAttemptBlockers;
+pub const cardTemplateMatchesPredicate = validation.cardTemplateMatchesPredicate;
 
 // Re-export commonly used targeting functions
 pub const expressionAppliesToTarget = targeting.expressionAppliesToTarget;

@@ -32,6 +32,7 @@ pub const ValidationError = error{
     ConditionPreventsPlay, // Global condition restriction (stunned, paralysed, etc.)
     ChannelConflict, // Technique uses same channel as existing play
     OutOfRange, // Melee card but no enemy within weapon reach
+    BlockedByDudCard, // Card in hand with on_play_attempt rule blocks this play
     NotImplemented,
 };
 
@@ -46,6 +47,12 @@ pub fn canPlayerPlayCard(world: *World, card_id: entity.ID) bool {
 
     // Look up card via card_registry (new system)
     const card = world.card_registry.get(card_id) orelse return false;
+
+    // Check if any dud card in hand blocks this play attempt
+    if (checkOnPlayAttemptBlockers(player, card.template, world) != null) {
+        return false;
+    }
+
     return validateCardSelection(player, card, phase, world.encounter) catch false;
 }
 
@@ -188,6 +195,68 @@ fn getCardChannels(template: *const cards.Template) cards.ChannelSet {
         return technique.channels;
     }
     return .{};
+}
+
+// ============================================================================
+// Play Attempt Blocking (for dud cards)
+// ============================================================================
+
+/// Check if a card's template matches a predicate (for on_play_attempt rules).
+/// This evaluates predicates against the *attempted* card, not the rule owner.
+pub fn cardTemplateMatchesPredicate(template: *const cards.Template, p: cards.Predicate) bool {
+    return switch (p) {
+        .always => true,
+        .has_tag => |tag| template.tags.hasTag(tag),
+        .not => |inner| !cardTemplateMatchesPredicate(template, inner.*),
+        .all => |preds| {
+            for (preds) |pred| {
+                if (!cardTemplateMatchesPredicate(template, pred)) return false;
+            }
+            return true;
+        },
+        .any => |preds| {
+            for (preds) |pred| {
+                if (cardTemplateMatchesPredicate(template, pred)) return true;
+            }
+            return false;
+        },
+        // Other predicates (weapon, range, condition, etc.) not applicable
+        // to card template matching - they require actor/engagement context
+        else => false,
+    };
+}
+
+/// Check if any card in hand blocks the attempted play via on_play_attempt rules.
+/// Returns the blocking card's ID if blocked, null otherwise.
+pub fn checkOnPlayAttemptBlockers(
+    actor: *const Agent,
+    attempted_template: *const cards.Template,
+    world: *const World,
+) ?entity.ID {
+    const cs = actor.combat_state orelse return null;
+
+    // Iterate all cards in hand
+    for (cs.hand.items) |hand_card_id| {
+        const hand_card = world.card_registry.getConst(hand_card_id) orelse continue;
+
+        // Check each rule on the hand card
+        for (hand_card.template.rules) |rule| {
+            // Only interested in on_play_attempt triggers
+            if (rule.trigger != .on_play_attempt) continue;
+
+            // Check if the predicate matches the attempted card
+            if (!cardTemplateMatchesPredicate(attempted_template, rule.valid)) continue;
+
+            // Check if any effect is cancel_play
+            for (rule.expressions) |expr| {
+                if (expr.effect == .cancel_play) {
+                    return hand_card_id;
+                }
+            }
+        }
+    }
+
+    return null;
 }
 
 // ============================================================================
@@ -389,5 +458,123 @@ test "validateMeleeReach fails when weapon reach < engagement range" {
 
 test "validateMeleeReach fails when at abstract far distance" {
     // TODO: needs test fixtures
+    return error.SkipZigTest;
+}
+
+test "cardTemplateMatchesPredicate with always predicate" {
+    const template = &cards.Template{
+        .id = 1,
+        .kind = .action,
+        .name = "test",
+        .description = "",
+        .rarity = .common,
+        .cost = .{ .stamina = 0 },
+        .tags = .{ .melee = true },
+        .rules = &.{},
+    };
+    try testing.expect(cardTemplateMatchesPredicate(template, .always));
+}
+
+test "cardTemplateMatchesPredicate with has_tag matches" {
+    const precision_card = &cards.Template{
+        .id = 1,
+        .kind = .action,
+        .name = "precision strike",
+        .description = "",
+        .rarity = .common,
+        .cost = .{ .stamina = 0 },
+        .tags = .{ .precision = true, .melee = true },
+        .rules = &.{},
+    };
+
+    // Matching tag
+    try testing.expect(cardTemplateMatchesPredicate(precision_card, .{ .has_tag = .{ .precision = true } }));
+    try testing.expect(cardTemplateMatchesPredicate(precision_card, .{ .has_tag = .{ .melee = true } }));
+
+    // Non-matching tag
+    try testing.expect(!cardTemplateMatchesPredicate(precision_card, .{ .has_tag = .{ .finesse = true } }));
+}
+
+test "cardTemplateMatchesPredicate with not predicate" {
+    const finesse_card = &cards.Template{
+        .id = 1,
+        .kind = .action,
+        .name = "finesse",
+        .description = "",
+        .rarity = .common,
+        .cost = .{ .stamina = 0 },
+        .tags = .{ .finesse = true },
+        .rules = &.{},
+    };
+
+    const not_precision: cards.Predicate = .{ .has_tag = .{ .precision = true } };
+
+    // Card has finesse but not precision, so "not precision" should pass
+    try testing.expect(cardTemplateMatchesPredicate(finesse_card, .{ .not = &not_precision }));
+}
+
+test "cardTemplateMatchesPredicate with all predicate" {
+    const melee_precision = &cards.Template{
+        .id = 1,
+        .kind = .action,
+        .name = "melee precision",
+        .description = "",
+        .rarity = .common,
+        .cost = .{ .stamina = 0 },
+        .tags = .{ .melee = true, .precision = true },
+        .rules = &.{},
+    };
+
+    const preds: [2]cards.Predicate = .{
+        .{ .has_tag = .{ .melee = true } },
+        .{ .has_tag = .{ .precision = true } },
+    };
+
+    // All predicates must match
+    try testing.expect(cardTemplateMatchesPredicate(melee_precision, .{ .all = &preds }));
+
+    // Add a non-matching predicate
+    const preds_fail: [2]cards.Predicate = .{
+        .{ .has_tag = .{ .melee = true } },
+        .{ .has_tag = .{ .finesse = true } }, // card doesn't have finesse
+    };
+    try testing.expect(!cardTemplateMatchesPredicate(melee_precision, .{ .all = &preds_fail }));
+}
+
+test "cardTemplateMatchesPredicate with any predicate" {
+    const melee_only = &cards.Template{
+        .id = 1,
+        .kind = .action,
+        .name = "melee only",
+        .description = "",
+        .rarity = .common,
+        .cost = .{ .stamina = 0 },
+        .tags = .{ .melee = true },
+        .rules = &.{},
+    };
+
+    const preds: [2]cards.Predicate = .{
+        .{ .has_tag = .{ .precision = true } },
+        .{ .has_tag = .{ .melee = true } },
+    };
+
+    // Any predicate matching is enough
+    try testing.expect(cardTemplateMatchesPredicate(melee_only, .{ .any = &preds }));
+
+    // None match
+    const preds_fail: [2]cards.Predicate = .{
+        .{ .has_tag = .{ .precision = true } },
+        .{ .has_tag = .{ .finesse = true } },
+    };
+    try testing.expect(!cardTemplateMatchesPredicate(melee_only, .{ .any = &preds_fail }));
+}
+
+test "checkOnPlayAttemptBlockers returns null when no blockers" {
+    // TODO: needs test fixtures with Agent, World, and combat_state setup
+    return error.SkipZigTest;
+}
+
+test "checkOnPlayAttemptBlockers returns blocking card ID when rule matches" {
+    // TODO: needs test fixtures with Agent, World, dud card in hand
     return error.SkipZigTest;
 }

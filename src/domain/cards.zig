@@ -75,6 +75,8 @@ pub const Trigger = union(enum) {
     on_event: EventTag,
     on_commit, // fires during commit phase (e.g., Feint)
     on_resolve, // fires during tick resolution (e.g., recovery effects)
+    while_in_hand, // continuous effect while card is in hand
+    on_play_attempt, // fires when any card play is attempted (for dud cards)
 };
 
 pub const TagSet = packed struct {
@@ -94,16 +96,20 @@ pub const TagSet = packed struct {
     // Playability phase flags
     phase_selection: bool = false, // playable during card selection (default for most)
     phase_commit: bool = false, // playable during commit phase (Focus cards)
+    // Technique requirement tags (for dud card blocking)
+    precision: bool = false, // fine motor techniques (blocked by tremor)
+    finesse: bool = false, // dexterous techniques
+    involuntary: bool = false, // status/dud cards (cannot be voluntarily discarded)
 
     pub fn hasTag(self: *const TagSet, required: TagSet) bool {
-        const me: u15 = @bitCast(self.*);
-        const req: u15 = @bitCast(required);
+        const me: u18 = @bitCast(self.*);
+        const req: u18 = @bitCast(required);
         return (me & req) == req; // all required bits present
     }
 
     pub fn hasAnyTag(self: *const TagSet, mask: TagSet) bool {
-        const me: u15 = @bitCast(self.*);
-        const bm: u15 = @bitCast(mask);
+        const me: u18 = @bitCast(self.*);
+        const bm: u18 = @bitCast(mask);
         return (me & bm) != 0; // at least one bit matches
     }
 
@@ -601,4 +607,49 @@ test "Template.requiresSingleTarget detects .single targeting" {
     try testing.expect(single_target_template.requiresSingleTarget());
     try testing.expect(!all_enemies_template.requiresSingleTarget());
     try testing.expect(!empty_template.requiresSingleTarget());
+}
+
+test "TagSet.hasTag with dud card tags (precision, finesse, involuntary)" {
+    const precision_tag: TagSet = .{ .precision = true };
+    const finesse_tag: TagSet = .{ .finesse = true };
+    const involuntary_tag: TagSet = .{ .involuntary = true };
+    const precision_melee: TagSet = .{ .precision = true, .melee = true };
+
+    // Check individual tags
+    try testing.expect(precision_tag.hasTag(.{ .precision = true }));
+    try testing.expect(finesse_tag.hasTag(.{ .finesse = true }));
+    try testing.expect(involuntary_tag.hasTag(.{ .involuntary = true }));
+
+    // Check combined tags
+    try testing.expect(precision_melee.hasTag(.{ .precision = true }));
+    try testing.expect(precision_melee.hasTag(.{ .melee = true }));
+    try testing.expect(precision_melee.hasTag(.{ .precision = true, .melee = true }));
+
+    // Check non-matching
+    try testing.expect(!precision_tag.hasTag(.{ .finesse = true }));
+    try testing.expect(!precision_melee.hasTag(.{ .finesse = true }));
+}
+
+test "TagSet.hasAnyTag with dud card tags" {
+    const precision_finesse: TagSet = .{ .precision = true, .finesse = true };
+    const melee_only: TagSet = .{ .melee = true };
+
+    // hasAnyTag matches if any bit overlaps
+    try testing.expect(precision_finesse.hasAnyTag(.{ .precision = true }));
+    try testing.expect(precision_finesse.hasAnyTag(.{ .finesse = true }));
+    try testing.expect(precision_finesse.hasAnyTag(.{ .precision = true, .involuntary = true }));
+
+    // No overlap
+    try testing.expect(!precision_finesse.hasAnyTag(.{ .involuntary = true }));
+    try testing.expect(!melee_only.hasAnyTag(.{ .precision = true, .finesse = true }));
+}
+
+test "Trigger union includes dud card triggers" {
+    // Compile-time verification that new triggers exist and can be used
+    const while_in_hand: Trigger = .while_in_hand;
+    const on_play_attempt: Trigger = .on_play_attempt;
+
+    // Verify tag names are as expected
+    try testing.expectEqualStrings("while_in_hand", @tagName(while_in_hand));
+    try testing.expectEqualStrings("on_play_attempt", @tagName(on_play_attempt));
 }

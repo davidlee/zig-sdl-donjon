@@ -473,10 +473,12 @@ pub const Card = struct {
 
 ### Lifecycle
 
-1. **Injection**: On condition gain, inject corresponding dud card into hand
+1. **Injection**: On condition gain, clone dud card template → instance, add to hand
 2. **Persistence**: Duds cycle through hand/discard like normal cards until played
 3. **Removal**: Exhaust on play (removed from game), OR discarded via another card effect
 4. **Stacking**: Each condition gain injects one card (can accumulate multiple)
+
+*Implementation note*: Clone-on-demand from templates (like `always_available`), not pre-allocated limbo zone. See Phase 4.6 for implementation details.
 
 ### Example: Tremor Card
 
@@ -732,7 +734,13 @@ const tremor_blocking_rule = Rule{
 
 **Goal**: Conditions inject dud cards into hand via event system.
 
-**Architectural approach**: Condition gain emits event; dud cards subscribe via `Trigger.on_event`. This keeps injection declarative in card definitions.
+**Architectural approach**: Clone-on-demand with condition→card mapping table. Dud card instances don't exist until needed, so they can't subscribe to events for self-injection. Instead:
+1. Condition gain emits `condition_gained` event
+2. Event processor consults a mapping table (condition → dud card template)
+3. If mapping exists, clone Template → Instance and add to affected agent's hand
+4. Dud cards define only in-hand behavior (blocking, exhaust on play)
+
+This matches the `always_available` instantiation pattern - scalable, no pre-allocation.
 
 **Changes**:
 
@@ -744,56 +752,48 @@ pub const EventTag = enum {
 };
 ```
 
-2. Define dud cards as Templates with appropriate rules:
+2. Condition→DudCard mapping table:
+```zig
+// In damage.zig or dud_cards.zig
+pub const condition_dud_cards = std.EnumMap(Condition, ?TemplateID).init(.{
+    .distracted = .wince,
+    .trembling = .tremor,
+    .nauseous = .retch,
+    .unsteady = .stagger,
+    .reeling = .blackout,
+    // ... others null
+});
+```
+
+3. Define dud cards as Templates (exhaust via cost flag, rules only for blocking):
 ```zig
 pub const wince = Template{
     .id = .wince,
     .kind = .status,
-    .tags = .{ .involuntary = true },
-    .rules = &.{
-        // Inject into hand when distracted condition gained
-        Rule{
-            .trigger = .{ .on_event = .condition_gained },
-            .predicate = .{ .event_condition = .distracted },
-            .expressions = &.{.{ .effect = .{ .move_card = .{ .to = .hand } } }},
-        },
-        // Exhaust on play
-        Rule{
-            .trigger = .on_play,
-            .predicate = .always,
-            .expressions = &.{.{ .effect = .exhaust_card }},
-        },
-    },
+    .name = "Wince",
+    .tags = .{ .involuntary = true, .phase_selection = true },
+    .cost = .{ .stamina = 0, .time = 0, .exhausts = true },
+    .rules = &.{}, // No rules - just wastes a play slot
 };
 
 pub const tremor = Template{
     .id = .tremor,
     .kind = .status,
-    .tags = .{ .involuntary = true },
+    .name = "Trembling Hands",
+    .tags = .{ .involuntary = true, .phase_selection = true },
+    .cost = .{ .stamina = 0, .time = 0, .exhausts = true },
     .rules = &.{
-        // Inject on trembling condition
-        Rule{
-            .trigger = .{ .on_event = .condition_gained },
-            .predicate = .{ .event_condition = .trembling },
-            .expressions = &.{.{ .effect = .{ .move_card = .{ .to = .hand } } }},
-        },
         // Block precision cards while in hand
         Rule{
             .trigger = .on_play_attempt,
-            .predicate = .{ .card_has_tag = .{ .precision = true } },
-            .expressions = &.{.{ .effect = .cancel_play }},
-        },
-        // Exhaust on play
-        Rule{
-            .trigger = .on_play,
-            .predicate = .always,
-            .expressions = &.{.{ .effect = .exhaust_card }},
+            .valid = .{ .has_tag = .{ .precision = true } },
+            .expressions = &.{.{ .effect = .cancel_play, .target = .self }},
         },
     },
 };
 ```
 
-3. Condition gain path emits `condition_gained` event; card system processes subscribed rules.
+4. Event processor handles injection when processing `condition_gained` events.
 
 **Tests**: Gaining `.distracted` injects Wince; Tremor blocks `.precision` cards; playing dud exhausts it.
 
