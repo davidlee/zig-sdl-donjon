@@ -17,9 +17,9 @@ pub fn newPlayer(
     sb: stats.Block,
     bd: body.Body,
 ) !*combat.Agent {
-    var buckler = try alloc.create(weapon.Instance);
-    buckler.template = weapon_list.byName("buckler");
-    buckler.id = try world.entities.weapons.insert(buckler);
+    var weapn = try alloc.create(weapon.Instance);
+    weapn.template = weapon_list.byName("falchion");
+    weapn.id = try world.entities.weapons.insert(weapn);
 
     return combat.Agent.init(
         alloc,
@@ -31,6 +31,6 @@ pub fn newPlayer(
         stats.Resource.init(12.0, 12.0, 4.0), // stamina
         stats.Resource.init(3.0, 5.0, 3.0), // focus
         stats.Resource.init(5.0, 5.0, 0.0), // blood
-        combat.Armament{ .single = buckler },
+        combat.Armament{ .single = weapn },
     );
 }

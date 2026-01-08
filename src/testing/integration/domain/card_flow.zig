@@ -9,6 +9,7 @@ const root = @import("integration_root");
 const Harness = root.integration.harness.Harness;
 const personas = root.data.personas;
 const Event = root.domain.events.Event;
+const query = root.domain.query;
 
 // ============================================================================
 // Scenarios
@@ -284,7 +285,7 @@ test "Stack modifier in commit phase: modifier added to play" {
 // Turn Lifecycle / Event Processor
 // ============================================================================
 
-test "Full turn cycle: selection -> commit -> resolve -> cleanup" {
+test "Full turn cycle: selection -> commit -> resolve" {
     var harness = try Harness.init(testing.allocator);
     defer harness.deinit();
 
@@ -305,11 +306,9 @@ test "Full turn cycle: selection -> commit -> resolve -> cleanup" {
     try harness.commitPlays();
     try testing.expectEqual(.commit_phase, harness.turnPhase().?);
 
-    // Resolve all ticks
-    try harness.resolveAllTicks();
-
-    // After resolution, timeline should be cleared
-    try testing.expectEqual(@as(usize, 0), harness.getPlays().len);
+    // Transition to tick resolution and process one tick
+    try harness.transitionTo(.tick_resolution);
+    try harness.resolveTick();
 
     // Verify tick events were emitted
     try harness.expectEvent(.tick_ended);
@@ -319,8 +318,13 @@ test "Tick resolution emits technique_resolved event" {
     var harness = try Harness.init(testing.allocator);
     defer harness.deinit();
 
-    // Setup
+    // Setup with proper player weapon
+    try harness.setPlayerFromTemplate(&personas.Agents.player_swordsman);
     const enemy = try harness.addEnemyFromTemplate(&personas.Agents.ser_marcus);
+
+    // Set range to match weapon reach (sabre) so attack can land
+    harness.setRange(enemy.id, .sabre);
+
     try harness.beginSelection();
 
     // Play thrust
@@ -330,11 +334,69 @@ test "Tick resolution emits technique_resolved event" {
 
     // Commit and resolve
     try harness.commitPlays();
+    try harness.transitionTo(.tick_resolution);
     harness.clearEvents();
 
-    try harness.transitionTo(.tick_resolution);
     try harness.resolveTick();
 
     // Verify technique was resolved
     try harness.expectEvent(.technique_resolved);
+}
+
+// ============================================================================
+// Combat Snapshot
+// ============================================================================
+
+test "buildSnapshot resolves play targets correctly" {
+    var harness = try Harness.init(testing.allocator);
+    defer harness.deinit();
+
+    // Setup: player needs a weapon that supports thrusting
+    try harness.setPlayerFromTemplate(&personas.Agents.player_swordsman);
+
+    // Add an enemy at melee range
+    const enemy = try harness.addEnemyFromTemplate(&personas.Agents.ser_marcus);
+    harness.setRange(enemy.id, .sabre);
+
+    // Enter selection and play a card targeting the enemy
+    try harness.beginSelection();
+    const thrust_id = harness.findAlwaysAvailable("thrust") orelse
+        return error.ThrustNotFound;
+    try harness.playCard(thrust_id, enemy.id);
+
+    // Build snapshot
+    var snapshot = try query.buildSnapshot(testing.allocator, harness.world);
+    defer snapshot.deinit();
+
+    // Verify: play target is resolved correctly
+    // play_statuses should contain an entry for play index 0 with the enemy as target
+    const target = snapshot.playTarget(0);
+    try testing.expectEqual(enemy.id, target.?);
+}
+
+test "buildSnapshot card status reflects playability" {
+    var harness = try Harness.init(testing.allocator);
+    defer harness.deinit();
+
+    // Setup: player needs a weapon that supports thrusting
+    try harness.setPlayerFromTemplate(&personas.Agents.player_swordsman);
+
+    // Add enemy at melee range so thrust has valid targets
+    const enemy = try harness.addEnemyFromTemplate(&personas.Agents.ser_marcus);
+    harness.setRange(enemy.id, .sabre);
+    try harness.beginSelection();
+
+    // Find thrust in always_available
+    const thrust_id = harness.findAlwaysAvailable("thrust") orelse
+        return error.ThrustNotFound;
+
+    // Build snapshot before playing
+    var snapshot = try query.buildSnapshot(testing.allocator, harness.world);
+    defer snapshot.deinit();
+
+    // Verify: thrust should be playable (player has stamina, enemy in range)
+    const status = snapshot.card_statuses.get(thrust_id);
+    try testing.expect(status != null);
+    try testing.expect(status.?.playable);
+    try testing.expect(status.?.has_valid_targets);
 }

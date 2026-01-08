@@ -210,7 +210,10 @@ fn filterTargetsByMeleeRange(
     actor: *const Agent,
     world: *const World,
 ) !?[]const entity.ID {
-    const enc = world.encounter orelse return null;
+    const enc = world.encounter orelse {
+        alloc.free(target_ids);
+        return null;
+    };
 
     // Get technique and attack mode
     const technique = template.getTechnique() orelse return target_ids; // no technique = allow all
@@ -220,7 +223,10 @@ fn filterTargetsByMeleeRange(
     if (attack_mode == .none) return target_ids;
 
     // Get weapon's reach for this attack type
-    const weapon_mode = actor.weapons.getOffensiveMode(attack_mode) orelse return null;
+    const weapon_mode = actor.weapons.getOffensiveMode(attack_mode) orelse {
+        alloc.free(target_ids);
+        return null;
+    };
     const weapon_reach = @intFromEnum(weapon_mode.reach);
 
     // Filter to targets in range

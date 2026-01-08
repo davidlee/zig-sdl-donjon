@@ -293,7 +293,7 @@ fn cardRectWithHover(base: Rect, is_hovered: bool) Rect {
 /// Phase 0 prototype - channel lanes with time grid.
 pub const TimelineView = struct {
     // Layout constants
-    const slot_width: f32 = 100; // 100px per 0.1s slot
+    const slot_width: f32 = 80; // 100px per 0.1s slot
     const lane_height: f32 = 110; // card height per channel
     const num_slots: usize = 10; // 0.0-1.0 in 0.1 increments
     const num_lanes: usize = 4; // weapon, off_hand, footwork, concentration
@@ -301,7 +301,7 @@ pub const TimelineView = struct {
     const timeline_height: f32 = lane_height * num_lanes;
     const start_x: f32 = 60; // left margin for labels
     const start_y: f32 = 340; // below header area
-    const label_width: f32 = 70; // right-side channel labels
+    const label_width: f32 = 50; // right-side channel labels
     const grid_color = Color{ .r = 40, .g = 40, .b = 40, .a = 255 };
     const lane_colors = [_]Color{
         .{ .r = 0, .g = 0, .b = 0, .a = 255 }, // black
