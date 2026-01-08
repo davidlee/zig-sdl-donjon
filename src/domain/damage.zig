@@ -4,7 +4,10 @@
 /// used by resolution. Does not apply damage to agents directly.
 const std = @import("std");
 const lib = @import("infra");
-const PartTag = @import("body.zig").PartTag;
+const body = @import("body.zig");
+const PartTag = body.PartTag;
+const Severity = body.Severity;
+const Wound = body.Wound;
 const Scaling = @import("stats.zig").Scaling;
 const armour = @import("armour.zig");
 
@@ -344,5 +347,66 @@ pub const Packet = struct {
 //         }
 //     }
 // }
+
+// --- Pain/Trauma calculation (see doc/trauma_wounds_conditions_ph2.md) ---
+
+/// Calculate pain inflicted by a wound.
+/// Pain = base severity value × body part sensitivity (trauma_mult).
+pub fn painFromWound(wound: Wound, trauma_mult: f32) f32 {
+    const base: f32 = switch (wound.worstSeverity()) {
+        .none => 0,
+        .minor => 0.3,
+        .inhibited => 1.0,
+        .disabled => 2.5,
+        .broken => 4.0,
+        .missing => 5.0,
+    };
+    return base * trauma_mult;
+}
+
+/// Calculate trauma (neurological stress) inflicted by a wound.
+/// Trauma = base severity value × sensitivity + arterial bonus.
+pub fn traumaFromWound(wound: Wound, trauma_mult: f32, hit_artery: bool) f32 {
+    const base: f32 = switch (wound.worstSeverity()) {
+        .none => 0,
+        .minor => 0.2,
+        .inhibited => 0.5,
+        .disabled => 1.5,
+        .broken => 3.0,
+        .missing => 4.0,
+    };
+    var t = base * trauma_mult;
+    if (hit_artery) t += 1.5;
+    return t;
+}
+
+const testing = std.testing;
+
+test "painFromWound scales by severity and trauma_mult" {
+    var wound = Wound{ .kind = .slash };
+    wound.append(.{ .layer = .skin, .severity = .minor });
+    wound.append(.{ .layer = .muscle, .severity = .disabled });
+
+    // worst severity is .disabled (2.5 base)
+    const pain = painFromWound(wound, 1.0);
+    try testing.expectApproxEqAbs(@as(f32, 2.5), pain, 0.001);
+
+    // with higher sensitivity (hand = 1.5)
+    const hand_pain = painFromWound(wound, 1.5);
+    try testing.expectApproxEqAbs(@as(f32, 3.75), hand_pain, 0.001);
+}
+
+test "traumaFromWound includes arterial bonus" {
+    var wound = Wound{ .kind = .slash };
+    wound.append(.{ .layer = .skin, .severity = .inhibited });
+
+    // .inhibited = 0.5 base
+    const trauma = traumaFromWound(wound, 1.0, false);
+    try testing.expectApproxEqAbs(@as(f32, 0.5), trauma, 0.001);
+
+    // with arterial hit
+    const arterial_trauma = traumaFromWound(wound, 1.0, true);
+    try testing.expectApproxEqAbs(@as(f32, 2.0), arterial_trauma, 0.001); // 0.5 + 1.5
+}
 
 test "Kind" {}

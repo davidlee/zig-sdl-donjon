@@ -563,13 +563,63 @@ const tremor = Card{
 
 ### Phase 4.3: Pain & Trauma Conditions
 
-**Goal**: ConditionIterator yields pain/trauma conditions at thresholds.
+**Goal**: ConditionIterator yields pain/trauma conditions at thresholds via data table.
+
+**Architectural approach**: Use a table-driven structure instead of if-chains so future resources (morale, fatigue) hook in by adding rows.
 
 **Changes**:
-- `damage.zig`: Add conditions to enum: `.distracted`, `.suffering`, `.agonized`, `.dazed`, `.unsteady`, `.trembling`, `.reeling`, `.incapacitated`
-- `damage.zig`: Add penalties to `condition_penalties` table
-- `combat/agent.zig`: Extend ConditionIterator with pain phases (8-10) and trauma phases (11-14)
-- Incapacitation check: `pain.ratio() >= 0.95 or trauma.ratio() >= 0.95`
+
+1. `damage.zig`: Add conditions to enum + penalties table (as before)
+
+2. `damage.zig`: Add resource→condition threshold table:
+```zig
+pub const ResourceAccessor = enum { pain, trauma, blood, morale };
+
+pub const ResourceConditionThreshold = struct {
+    resource: ResourceAccessor,
+    min_ratio: f32,      // condition active when ratio >= this
+    condition: Condition,
+};
+
+/// Computed conditions from resource levels. Ordered worst-first per resource
+/// so iterator yields only the most severe applicable condition.
+pub const resource_condition_thresholds = [_]ResourceConditionThreshold{
+    // Incapacitation (highest priority)
+    .{ .resource = .pain, .min_ratio = 0.95, .condition = .incapacitated },
+    .{ .resource = .trauma, .min_ratio = 0.95, .condition = .incapacitated },
+    // Pain conditions (check worst first)
+    .{ .resource = .pain, .min_ratio = 0.85, .condition = .agonized },
+    .{ .resource = .pain, .min_ratio = 0.60, .condition = .suffering },
+    .{ .resource = .pain, .min_ratio = 0.30, .condition = .distracted },
+    // Trauma conditions (check worst first)
+    .{ .resource = .trauma, .min_ratio = 0.90, .condition = .reeling },
+    .{ .resource = .trauma, .min_ratio = 0.70, .condition = .trembling },
+    .{ .resource = .trauma, .min_ratio = 0.50, .condition = .unsteady },
+    .{ .resource = .trauma, .min_ratio = 0.30, .condition = .dazed },
+};
+```
+
+3. `combat/agent.zig`: ConditionIterator loops over table instead of switch cases:
+```zig
+// In computed condition phase:
+fn yieldResourceConditions(self: *ConditionIterator) ?ActiveCondition {
+    var yielded_pain = false;
+    var yielded_trauma = false;
+    for (damage.resource_condition_thresholds) |rc| {
+        // Skip if already yielded a condition for this resource
+        if (rc.resource == .pain and yielded_pain) continue;
+        if (rc.resource == .trauma and yielded_trauma) continue;
+
+        const ratio = self.agent.getResourceRatio(rc.resource);
+        if (ratio >= rc.min_ratio) {
+            if (rc.resource == .pain) yielded_pain = true;
+            if (rc.resource == .trauma) yielded_trauma = true;
+            return .{ .condition = rc.condition, .expiration = .dynamic };
+        }
+    }
+    return null;
+}
+```
 
 **Tests**: Pain at 35% yields `.distracted`; trauma at 75% yields `.trembling`; 95% either → `.incapacitated`.
 
@@ -581,11 +631,38 @@ const tremor = Card{
 
 **Goal**: First significant wound triggers adrenaline surge → crash sequence.
 
+**Architectural approach**: Model condition transitions as data; add "suppresses" field to condition effects.
+
 **Changes**:
-- `damage.zig`: Add `.adrenaline_surge`, `.adrenaline_crash` conditions + penalties
-- Damage application: On first wound ≥ `.inhibited`, add `.adrenaline_surge` (8 ticks)
-- Condition expiry handling: When surge expires, add `.adrenaline_crash` (12 ticks)
-- ConditionIterator: Skip pain condition phases while `.adrenaline_surge` active
+
+1. `damage.zig`: Add conditions + penalties:
+```zig
+.adrenaline_surge => .{ .hit_chance = 0.05 },
+.adrenaline_crash => .{ .hit_chance = -0.10, .defense_mult = 0.85, .footwork_mult = 0.85 },
+```
+
+2. `damage.zig`: Add condition metadata table for transitions and suppression:
+```zig
+pub const ConditionMeta = struct {
+    on_expire: ?Condition = null,      // condition to apply when this expires
+    on_expire_duration: ?f32 = null,   // duration for successor condition
+    suppresses: []const ResourceAccessor = &.{}, // resources whose conditions are suppressed
+};
+
+pub const condition_meta = init: {
+    var table: [@typeInfo(Condition).@"enum".fields.len]ConditionMeta = .{.{}} ** ...;
+    table[@intFromEnum(Condition.adrenaline_surge)] = .{
+        .on_expire = .adrenaline_crash,
+        .on_expire_duration = 12.0,
+        .suppresses = &.{.pain},  // pain conditions suppressed while active
+    };
+    break :init table;
+};
+```
+
+3. Condition expiry processing checks `on_expire` field and adds successor condition.
+
+4. ConditionIterator checks if any active condition suppresses resource before yielding resource conditions.
 
 **Tests**: First significant wound triggers surge; surge expiry triggers crash; pain suppressed during surge.
 
@@ -595,13 +672,55 @@ const tremor = Card{
 
 ### Phase 4.5: Dud Cards Foundation
 
-**Goal**: Card system supports blocking and forced-play mechanics.
+**Goal**: Card system supports blocking and forced-play mechanics via Rule/Effect pipeline.
+
+**Architectural approach**: Extend existing Trigger union (don't replace with plain enum). Use existing TagSet bitmask. Model blocking via Rule/Predicate/Expression, not bespoke fields.
 
 **Changes**:
-- Add `Trigger.while_in_hand`, `Trigger.forced` to trigger enum
-- Add `blocks_tags: []const Tag` field to Card struct
-- Hand management: Forced cards must be played before voluntary cards
-- Hand management: Cards with `blocks_tags` prevent playing matching cards
+
+1. `cards.zig`: Extend `Trigger` union with new cases:
+```zig
+pub const Trigger = union(enum) {
+    on_play,
+    on_draw,
+    on_tick,
+    on_event: EventTag,
+    on_commit,
+    on_resolve,
+    while_in_hand,     // NEW: continuous effect while card is in hand
+    on_play_attempt,   // NEW: fires when any card play is attempted
+};
+```
+
+2. `cards.zig`: Extend `TagSet` with precision/finesse tags:
+```zig
+pub const TagSet = packed struct {
+    // ... existing tags ...
+    precision: bool = false,  // NEW: fine motor techniques
+    finesse: bool = false,    // NEW: dexterous techniques
+    involuntary: bool = false, // NEW: status/dud cards
+};
+```
+
+3. `cards.zig`: Add `Effect.cancel_play` variant:
+```zig
+pub const Effect = union(enum) {
+    // ... existing effects ...
+    cancel_play,  // NEW: prevents the triggering play from resolving
+};
+```
+
+4. Model blocking via Rule, not bespoke field:
+```zig
+// Tremor card blocks precision techniques while in hand:
+const tremor_blocking_rule = Rule{
+    .trigger = .on_play_attempt,
+    .predicate = .{ .card_has_tag = .{ .precision = true } },
+    .expressions = &.{.{ .effect = .cancel_play }},
+};
+```
+
+5. Hand management: Check for `on_play_attempt` rules in hand before allowing play.
 
 **Tests**: Forced card blocks voluntary play; blocking card prevents tagged techniques.
 
@@ -611,12 +730,70 @@ const tremor = Card{
 
 ### Phase 4.6: Dud Card Definitions & Injection
 
-**Goal**: Conditions inject dud cards into hand.
+**Goal**: Conditions inject dud cards into hand via event system.
+
+**Architectural approach**: Condition gain emits event; dud cards subscribe via `Trigger.on_event`. This keeps injection declarative in card definitions.
 
 **Changes**:
-- Define dud cards: `Wince`, `Retch`, `Stagger`, `Tremor`, `Blackout`
-- Condition gain triggers card injection (where conditions are added)
-- Cards exhaust on play
+
+1. `events.zig`: Add condition gain event:
+```zig
+pub const EventTag = enum {
+    // ... existing events ...
+    condition_gained,
+};
+```
+
+2. Define dud cards as Templates with appropriate rules:
+```zig
+pub const wince = Template{
+    .id = .wince,
+    .kind = .status,
+    .tags = .{ .involuntary = true },
+    .rules = &.{
+        // Inject into hand when distracted condition gained
+        Rule{
+            .trigger = .{ .on_event = .condition_gained },
+            .predicate = .{ .event_condition = .distracted },
+            .expressions = &.{.{ .effect = .{ .move_card = .{ .to = .hand } } }},
+        },
+        // Exhaust on play
+        Rule{
+            .trigger = .on_play,
+            .predicate = .always,
+            .expressions = &.{.{ .effect = .exhaust_card }},
+        },
+    },
+};
+
+pub const tremor = Template{
+    .id = .tremor,
+    .kind = .status,
+    .tags = .{ .involuntary = true },
+    .rules = &.{
+        // Inject on trembling condition
+        Rule{
+            .trigger = .{ .on_event = .condition_gained },
+            .predicate = .{ .event_condition = .trembling },
+            .expressions = &.{.{ .effect = .{ .move_card = .{ .to = .hand } } }},
+        },
+        // Block precision cards while in hand
+        Rule{
+            .trigger = .on_play_attempt,
+            .predicate = .{ .card_has_tag = .{ .precision = true } },
+            .expressions = &.{.{ .effect = .cancel_play }},
+        },
+        // Exhaust on play
+        Rule{
+            .trigger = .on_play,
+            .predicate = .always,
+            .expressions = &.{.{ .effect = .exhaust_card }},
+        },
+    },
+};
+```
+
+3. Condition gain path emits `condition_gained` event; card system processes subscribed rules.
 
 **Tests**: Gaining `.distracted` injects Wince; Tremor blocks `.precision` cards; playing dud exhausts it.
 

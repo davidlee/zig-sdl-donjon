@@ -242,6 +242,15 @@ pub fn resolveTechniqueVsDefense(
                 target_part,
                 armour_result.?.remaining,
             );
+
+            // Apply pain and trauma from wound
+            if (body_result) |result| {
+                const trauma_mult = target_body_part.trauma_mult;
+                const pain = damage_mod.painFromWound(result.wound, trauma_mult);
+                const trauma = damage_mod.traumaFromWound(result.wound, trauma_mult, result.hit_major_artery);
+                attack.defender.pain.inflict(pain);
+                attack.defender.trauma.inflict(trauma);
+            }
         }
     }
 

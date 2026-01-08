@@ -193,6 +193,7 @@ pub const Part = struct {
     flags: PartDef.Flags, // capability flags copied from def
     tissue: TissueTemplate, // tissue composition
     has_major_artery: bool, // major blood vessel present
+    trauma_mult: f32, // pain/trauma sensitivity multiplier
 
     severity: Severity, // overall part damage state
     wounds: std.ArrayList(Wound),
@@ -295,6 +296,7 @@ pub const Body = struct {
                 .flags = def.flags,
                 .tissue = def.tissue,
                 .has_major_artery = def.has_major_artery,
+                .trauma_mult = def.trauma_mult,
                 .severity = .none, // undamaged
                 .wounds = try std.ArrayList(Wound).initCapacity(alloc, 0),
                 .is_severed = false,
