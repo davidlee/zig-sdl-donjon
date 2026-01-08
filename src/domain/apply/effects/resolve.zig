@@ -6,6 +6,8 @@
 const lib = @import("infra");
 const cards = @import("../../cards.zig");
 const combat = @import("../../combat.zig");
+const condition = @import("../../condition.zig");
+const damage = @import("../../damage.zig");
 const events = @import("../../events.zig");
 const World = @import("../../world.zig").World;
 const targeting = @import("../targeting.zig");
@@ -166,6 +168,20 @@ pub fn tickConditions(agent: *Agent, event_system: *EventSystem) !void {
                 .condition = removed_condition,
                 .actor = actor_meta,
             } });
+
+            // Check for successor condition in metadata
+            const meta = condition.metaFor(removed_condition);
+            if (meta.on_expire) |successor| {
+                try agent.conditions.append(agent.alloc, .{
+                    .condition = successor,
+                    .expiration = .{ .ticks = meta.on_expire_duration.? },
+                });
+                try event_system.push(.{ .condition_applied = .{
+                    .agent_id = agent.id,
+                    .condition = successor,
+                    .actor = actor_meta,
+                } });
+            }
         }
     }
 }

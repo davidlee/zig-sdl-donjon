@@ -250,6 +250,20 @@ pub fn resolveTechniqueVsDefense(
                 const trauma = damage_mod.traumaFromWound(result.wound, trauma_mult, result.hit_major_artery);
                 attack.defender.pain.inflict(pain);
                 attack.defender.trauma.inflict(trauma);
+
+                // Trigger adrenaline surge on first significant wound
+                const severity = @intFromEnum(result.wound.worstSeverity());
+                const inhibited = @intFromEnum(body.Severity.inhibited);
+                if (severity >= inhibited) {
+                    if (!attack.defender.hasCondition(.adrenaline_surge) and
+                        !attack.defender.hasCondition(.adrenaline_crash))
+                    {
+                        try attack.defender.conditions.append(w.alloc, .{
+                            .condition = .adrenaline_surge,
+                            .expiration = .{ .ticks = 8.0 },
+                        });
+                    }
+                }
             }
         }
     }

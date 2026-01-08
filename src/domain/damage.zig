@@ -86,6 +86,10 @@ pub const Condition = enum {
     pickled,
     munted,
 
+    // adrenaline response
+    adrenaline_surge, // temporary boost after first significant wound
+    adrenaline_crash, // debuff after surge wears off
+
     // computed: advantage
     pressured,
     weapon_bound,
@@ -264,6 +268,16 @@ pub const condition_penalties = init: {
     table[@intFromEnum(Condition.incapacitated)] = .{
         .defense_mult = 0.0,
         .dodge_mod = -0.50,
+    };
+
+    // Adrenaline response
+    table[@intFromEnum(Condition.adrenaline_surge)] = .{
+        .hit_chance = 0.05,
+    };
+    table[@intFromEnum(Condition.adrenaline_crash)] = .{
+        .hit_chance = -0.10,
+        .defense_mult = 0.85,
+        .footwork_mult = 0.85,
     };
 
     break :init table;

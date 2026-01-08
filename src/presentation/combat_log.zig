@@ -422,6 +422,9 @@ fn conditionName(condition: damage.Condition) []const u8 {
         .reeling => "reeling",
         // Incapacitation
         .incapacitated => "incapacitated",
+        // Adrenaline
+        .adrenaline_surge => "surging with adrenaline",
+        .adrenaline_crash => "crashing",
     };
 }
 

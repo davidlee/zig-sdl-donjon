@@ -25,6 +25,13 @@
 - `incapacitated` triggers at >95% pain OR >95% trauma via `.any` computation type
 - Thresholds use `.gt` comparator (contrast with blood's `.lt` since blood drains toward 0)
 
+## Adrenaline Response (T013)
+- `adrenaline_surge`: triggered on first significant wound (severity >= inhibited), lasts 8 ticks
+- `adrenaline_crash`: successor to surge via `ConditionMeta.on_expire`, lasts 12 ticks
+- Surge suppresses pain conditions via `ConditionMeta.suppresses = &.{.pain}`
+- `ConditionIterator.isResourceSuppressed()` checks stored conditions' metadata before yielding resource conditions
+- Successor transitions handled in `resolve.zig tickConditions()` on expiry
+
 ## Penalty System
 - `Condition` enum in `damage.zig` enumerates all conditions
 - `condition_penalties` table maps conditions to `CombatPenalties` (hit chance, damage mult, defense mult, dodge mod)

@@ -74,6 +74,33 @@ pub const ConditionDefinition = struct {
     category: Category,
 };
 
+/// Metadata for condition behaviors: transitions, suppression, etc.
+pub const ConditionMeta = struct {
+    on_expire: ?damage.Condition = null,
+    on_expire_duration: ?f32 = null,
+    suppresses: []const ResourceAccessor = &.{},
+};
+
+/// Condition metadata table, indexed by @intFromEnum(Condition).
+pub const condition_meta = init: {
+    const count = @typeInfo(damage.Condition).@"enum".fields.len;
+    var table: [count]ConditionMeta = undefined;
+    for (&table) |*m| m.* = .{}; // default: no metadata
+
+    table[@intFromEnum(damage.Condition.adrenaline_surge)] = .{
+        .on_expire = .adrenaline_crash,
+        .on_expire_duration = 12.0,
+        .suppresses = &.{.pain},
+    };
+
+    break :init table;
+};
+
+/// Look up metadata for a condition.
+pub fn metaFor(condition: damage.Condition) ConditionMeta {
+    return condition_meta[@intFromEnum(condition)];
+}
+
 // =============================================================================
 // Condition State (replaces ActiveCondition)
 // =============================================================================
@@ -220,6 +247,10 @@ pub const condition_definitions = [_]ConditionDefinition{
     .{ .condition = .hammered, .computation = .stored, .category = .stored },
     .{ .condition = .pickled, .computation = .stored, .category = .stored },
     .{ .condition = .munted, .computation = .stored, .category = .stored },
+
+    // Adrenaline response
+    .{ .condition = .adrenaline_surge, .computation = .stored, .category = .stored },
+    .{ .condition = .adrenaline_crash, .computation = .stored, .category = .stored },
 
     // Stored: stationary (no footwork)
     .{ .condition = .stationary, .computation = .stored, .category = .stored },
@@ -509,4 +540,30 @@ test "pain or trauma at 96% yields incapacitated" {
         .hearing_score = 1.0,
     };
     try testing.expect(!evaluateWithContext(incap_def.computation, below_ctx));
+}
+
+test "adrenaline surge metadata has correct successor" {
+    const meta = metaFor(.adrenaline_surge);
+    try testing.expectEqual(damage.Condition.adrenaline_crash, meta.on_expire.?);
+    try testing.expectApproxEqAbs(@as(f32, 12.0), meta.on_expire_duration.?, 0.001);
+}
+
+test "adrenaline surge suppresses pain resource" {
+    const meta = metaFor(.adrenaline_surge);
+    try testing.expectEqual(@as(usize, 1), meta.suppresses.len);
+    try testing.expectEqual(ResourceAccessor.pain, meta.suppresses[0]);
+}
+
+test "adrenaline crash has no successor" {
+    const meta = metaFor(.adrenaline_crash);
+    try testing.expect(meta.on_expire == null);
+    try testing.expectEqual(@as(usize, 0), meta.suppresses.len);
+}
+
+test "most conditions have no metadata" {
+    // Verify default metadata for a regular condition
+    const meta = metaFor(.stunned);
+    try testing.expect(meta.on_expire == null);
+    try testing.expect(meta.on_expire_duration == null);
+    try testing.expectEqual(@as(usize, 0), meta.suppresses.len);
 }

@@ -454,9 +454,11 @@ pub const ConditionIterator = struct {
 
             // For resource thresholds: only yield worst per resource
             // (table is ordered worst-first within each resource)
+            // Also check if resource is suppressed by any active condition
             if (def.computation == .resource_threshold) {
                 const rt = def.computation.resource_threshold;
                 if (self.yielded_resources.contains(rt.resource)) continue;
+                if (self.isResourceSuppressed(rt.resource)) continue;
             }
 
             if (self.evaluate(def.computation)) {
@@ -474,6 +476,18 @@ pub const ConditionIterator = struct {
         }
 
         return null;
+    }
+
+    /// Check if a resource is suppressed by any active stored condition.
+    /// Used to prevent pain conditions from being yielded during adrenaline surge.
+    fn isResourceSuppressed(self: *const ConditionIterator, resource: cond.ResourceAccessor) bool {
+        for (self.agent.conditions.items) |ac| {
+            const meta = cond.metaFor(ac.condition);
+            for (meta.suppresses) |suppressed| {
+                if (suppressed == resource) return true;
+            }
+        }
+        return false;
     }
 
     /// Evaluate whether a computation is active for the current context.
@@ -851,4 +865,46 @@ test "condition cache emits events on threshold crossing" {
         }
     }
     try testing.expect(found_bleeding_out);
+}
+
+test "adrenaline surge suppresses pain conditions" {
+    var agents = try SlotMap(*Agent).init(testing.allocator);
+    defer agents.deinit();
+
+    const test_agent = try makeTestAgent(testing.allocator, &agents);
+    defer test_agent.destroy(&agents);
+
+    var agent = test_agent.agent;
+
+    // Inflict enough pain to trigger distracted (>30%)
+    agent.pain.inflict(4.0); // 40% of 10 max
+    try testing.expect(agent.pain.ratio() > 0.30);
+
+    // Without adrenaline surge, should have pain condition
+    var iter = agent.activeConditions(null);
+    var found_distracted = false;
+    while (iter.next()) |ac| {
+        if (ac.condition == .distracted) {
+            found_distracted = true;
+            break;
+        }
+    }
+    try testing.expect(found_distracted);
+
+    // Add adrenaline surge condition
+    try agent.conditions.append(testing.allocator, .{
+        .condition = .adrenaline_surge,
+        .expiration = .{ .ticks = 8.0 },
+    });
+
+    // Now pain conditions should be suppressed
+    var iter2 = agent.activeConditions(null);
+    var found_distracted2 = false;
+    while (iter2.next()) |ac| {
+        if (ac.condition == .distracted) {
+            found_distracted2 = true;
+            break;
+        }
+    }
+    try testing.expect(!found_distracted2);
 }
