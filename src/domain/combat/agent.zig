@@ -264,10 +264,13 @@ pub const Agent = struct {
             return true;
         }
 
-        // Unconscious or comatose condition
+        // Incapacitating conditions
         var iter = self.activeConditions(null);
         while (iter.next()) |ac| {
-            if (ac.condition == .unconscious or ac.condition == .comatose) {
+            if (ac.condition == .incapacitated or
+                ac.condition == .unconscious or
+                ac.condition == .comatose)
+            {
                 return true;
             }
         }

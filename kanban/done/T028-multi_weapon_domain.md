@@ -244,46 +244,46 @@ Implemented the core weapon resolution pipeline:
 3. **Integration tests** (`weapon_resolution.zig`)
    - ✅ Technique resolves with equipped weapon (not hardcoded)
    - ✅ Dual-wield main hand attack uses primary weapon
-   - ⏳ Natural weapon when unarmed - skipped, needs investigation
+   - ✅ Unarmed attack uses natural weapon (fist)
 
-**Ready for handover. Remaining work:**
-- `move_play` command for repositioning plays on timeline
-- Validation for channel switch (weapon↔off_hand only)
-- Fix natural weapon integration test
+### 2026-01-09 - Natural weapon fix complete
 
-### Debug notes: unarmed integration test - ROOT CAUSE FOUND
-
-**The bug is at `resolver.zig:190`:**
+**Fixed `resolver.zig:190`** - replaced `getOffensiveMode()` with `action.weapon_template`:
 ```zig
-const weapon_mode = action.actor.weapons.getOffensiveMode(attack_mode);
-if (weapon_mode) |wm| {
-    // ... range check
-} else {
-    // No weapon for this attack mode - can't attack
-    continue;  // <-- SILENTLY SKIPS THE ATTACK
-}
+const wt = action.weapon_template orelse self.getWeaponTemplate(action.actor);
+const weapon_mode: ?weapon.Offensive = switch (attack_mode) {
+    .swing => wt.swing,
+    .thrust => wt.thrust,
+    else => null,
+};
 ```
 
-`Armament.getOffensiveMode()` only checks EQUIPPED weapons, not natural weapons. When unarmed:
-- `getOffensiveMode()` returns null
-- The attack is silently skipped (no event emitted)
+- Added `brawler` persona (unarmed dwarf) to `personas.zig`
+- Added integration test using slash (swing mode) at clinch range
+- All tests passing
 
-**Fix options:**
-1. Update `Armament.getOffensiveMode()` to fall back to natural weapons
-2. Or use `action.weapon_template` (already resolved during commit) instead of querying armament
-3. Emit an event when attack is skipped due to no weapon mode (for debugging)
+### 2026-01-09 - move_play command complete
 
-**Preferred fix:** Option 2 - we already resolved the weapon during commit, use it:
-```zig
-// In resolver.resolve(), replace getOffensiveMode call:
-const weapon_mode = if (action.weapon_template) |wt|
-    switch (attack_mode) {
-        .swing => wt.swing,
-        .thrust => wt.thrust,
-        else => null,
-    }
-else null;
-```
+**Implemented `move_play` command** - repositions plays on timeline:
 
-This aligns with T028's goal: weapon is resolved during commit, used during resolve.
+1. **Command** (`commands.zig:43`)
+   - `move_play: struct { card_id: ID, new_time_start: f32, new_channel: ?ChannelSet }`
+   - Local `ChannelSet` type to avoid module boundary issues
+
+2. **Handler** (`command_handler.zig:481-563`)
+   - Finds play by card_id
+   - Sets `channel_override` if new_channel provided
+   - Removes from current position, inserts at new position
+   - Rollback on conflict (restores original position)
+   - Emits `play_moved` event
+
+3. **Channel switch validation** (`isValidChannelSwitch`)
+   - Only weapon↔off_hand allowed
+   - Rejects footwork/concentration channel switches
+   - Unit tests for all validation cases
+
+4. **Event** (`events.zig:47`)
+   - `play_moved: struct { card_id, new_time_start, new_channel }`
+
+All tests passing. T028 domain layer complete - ready for T027 UI integration.
 

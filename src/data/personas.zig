@@ -265,6 +265,15 @@ pub const Agents = struct {
         .base_stats = stats.Block.splat(5),
         .armament = .{ .single = &weapon_list.dirk },
     };
+
+    /// Unarmed fighter - uses natural weapons (fists).
+    pub const brawler = AgentTemplate{
+        .name = "Brawler",
+        .director = .noop_ai,
+        .species = &species_mod.DWARF,
+        .base_stats = stats.Block.splat(5),
+        .armament = .unarmed,
+    };
 };
 
 // ============================================================================

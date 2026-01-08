@@ -44,6 +44,7 @@ pub const Event = union(enum) {
     card_moved: struct { instance: entity.ID, from: Zone, to: Zone, actor: AgentMeta },
     card_cloned: struct { clone_id: entity.ID, master_id: entity.ID, actor: AgentMeta },
     card_cancelled: struct { instance: entity.ID, actor: AgentMeta },
+    play_moved: struct { card_id: entity.ID, new_time_start: f32, new_channel: ?cards.ChannelSet },
 
     game_state_transitioned_to: world.GameState,
     turn_phase_transitioned_to: combat.TurnPhase,

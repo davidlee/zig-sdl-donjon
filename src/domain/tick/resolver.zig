@@ -187,7 +187,13 @@ pub const TickResolver = struct {
                 const attack_mode = action.technique.attack_mode;
                 if (attack_mode != .none) {
                     // Offensive technique - must have weapon reach >= engagement range
-                    const weapon_mode = action.actor.weapons.getOffensiveMode(attack_mode);
+                    // Use resolved weapon_template (includes natural weapons) not armament
+                    const wt = action.weapon_template orelse self.getWeaponTemplate(action.actor);
+                    const weapon_mode: ?weapon.Offensive = switch (attack_mode) {
+                        .swing => wt.swing,
+                        .thrust => wt.thrust,
+                        else => null,
+                    };
                     if (weapon_mode) |wm| {
                         if (@intFromEnum(wm.reach) < @intFromEnum(engagement.range)) {
                             // Out of range - emit event and skip this target

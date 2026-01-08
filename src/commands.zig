@@ -14,6 +14,15 @@
 const entity = @import("entity.zig");
 pub const ID = entity.ID;
 
+/// Channel set for command interface (mirrors cards.ChannelSet).
+/// Converted to/from domain ChannelSet in command handler.
+pub const ChannelSet = packed struct {
+    weapon: bool = false,
+    off_hand: bool = false,
+    footwork: bool = false,
+    concentration: bool = false,
+};
+
 pub const Command = union(enum) {
     // Game flow
     start_game: void,
@@ -31,6 +40,7 @@ pub const Command = union(enum) {
     commit_withdraw: ID, // 1F: remove card from play, refund stamina
     commit_add: struct { card_id: ID, target: ?ID = null }, // 1F: add card from hand as new play
     commit_stack: struct { card_id: ID, target_play_index: usize }, // 1F total: reinforce plays (first stack pays)
+    move_play: struct { card_id: ID, new_time_start: f32, new_channel: ?ChannelSet = null }, // reposition play on timeline
     commit_done: void, // finish commit phase
 
     // Combat - targeting

@@ -43,10 +43,32 @@ test "Technique resolves with equipped weapon (not hardcoded)" {
     try testing.expectEqualStrings("knight's sword", weapon_name);
 }
 
-// TODO: Test natural weapon resolution when unarmed
-// Currently skipped - needs investigation into why technique doesn't resolve
-// when player is set to unarmed. The unit tests for weaponForChannel verify
-// the natural weapon selection logic works correctly.
+test "Unarmed attack uses natural weapon (fist)" {
+    var harness = try Harness.init(testing.allocator);
+    defer harness.deinit();
+
+    // Setup: unarmed player (uses natural weapons)
+    try harness.setPlayerFromTemplate(&personas.Agents.brawler);
+    const enemy = try harness.addEnemyFromTemplate(&personas.Agents.ser_marcus);
+    harness.setRange(enemy.id, .clinch); // fist reach
+
+    try harness.beginSelection();
+
+    // Slash uses swing attack mode (compatible with fist's punch)
+    const slash_id = harness.findAlwaysAvailable("slash") orelse
+        return error.SlashNotFound;
+    try harness.playCard(slash_id, enemy.id);
+
+    try harness.commitPlays();
+    try harness.transitionTo(.tick_resolution);
+    harness.clearEvents();
+    try harness.resolveTick();
+
+    // Verify: attack used Fist (natural weapon from dwarf species)
+    const weapon_name = harness.getResolvedWeaponName() orelse
+        return error.NoTechniqueResolved;
+    try testing.expectEqualStrings("Fist", weapon_name);
+}
 
 test "Dual-wield main hand attack uses primary weapon" {
     var harness = try Harness.init(testing.allocator);

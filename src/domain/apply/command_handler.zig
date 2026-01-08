@@ -151,6 +151,14 @@ pub const CommandHandler = struct {
             .commit_stack => |data| {
                 try self.commitStack(data.card_id, data.target_play_index);
             },
+            .move_play => |data| {
+                // Convert command ChannelSet to domain ChannelSet
+                const domain_channel: ?cards.ChannelSet = if (data.new_channel) |nc|
+                    .{ .weapon = nc.weapon, .off_hand = nc.off_hand, .footwork = nc.footwork, .concentration = nc.concentration }
+                else
+                    null;
+                try self.movePlay(data.card_id, data.new_time_start, domain_channel);
+            },
             .commit_done => {
                 try self.world.transitionTurnTo(.tick_resolution);
             },
@@ -471,4 +479,139 @@ pub const CommandHandler = struct {
             enc_state.current.focus_spent += total_focus;
         }
     }
+
+    /// Move a play to a new time position and/or channel.
+    /// Valid during selection and commit phases.
+    /// Channel switch only allowed between weapon-type channels (weapon ↔ off_hand).
+    pub fn movePlay(
+        self: *CommandHandler,
+        card_id: entity.ID,
+        new_time_start: f32,
+        new_channel: ?cards.ChannelSet,
+    ) !void {
+        const player = self.world.player;
+
+        // Valid in selection or commit phase
+        if (!self.world.inTurnPhase(.player_card_selection) and
+            !self.world.inTurnPhase(.commit_phase))
+        {
+            return CommandError.InvalidGameState;
+        }
+
+        const enc = self.world.encounter orelse return CommandError.BadInvariant;
+        const enc_state = enc.stateFor(player.id) orelse return CommandError.BadInvariant;
+
+        // Find the play
+        const play_index = enc_state.current.findPlayByCard(card_id) orelse
+            return CommandError.CardNotInPlay;
+
+        // Get the play data and current channels
+        var play = enc_state.current.slots()[play_index].play;
+        const current_channels = combat.getPlayChannels(play, &self.world.card_registry);
+
+        // Validate and apply channel override
+        const target_channels = if (new_channel) |nc| blk: {
+            // Validate channel switch: only weapon ↔ off_hand allowed
+            if (!isValidChannelSwitch(current_channels, nc)) {
+                return CommandError.CommandInvalid;
+            }
+            play.channel_override = nc;
+            break :blk nc;
+        } else current_channels;
+
+        // Get duration for validation
+        const duration = combat.getPlayDuration(play, &self.world.card_registry);
+
+        // Remove from current position
+        enc_state.current.removePlay(play_index);
+
+        // Try to insert at new position
+        enc_state.current.timeline.insert(
+            new_time_start,
+            new_time_start + duration,
+            play,
+            target_channels,
+            &self.world.card_registry,
+        ) catch |err| {
+            // Restore play at original position on failure
+            // Reset channel_override if we changed it
+            if (new_channel != null) {
+                play.channel_override = null;
+            }
+            const old_slot = enc_state.current.slots()[play_index];
+            enc_state.current.timeline.insert(
+                old_slot.time_start,
+                old_slot.time_start + duration,
+                play,
+                current_channels,
+                &self.world.card_registry,
+            ) catch {
+                // This shouldn't fail since we just removed it from there
+                return CommandError.BadInvariant;
+            };
+            return switch (err) {
+                error.Conflict => CommandError.InsufficientTime,
+                error.Overflow => CommandError.CommandInvalid,
+            };
+        };
+
+        try self.sink(.{ .play_moved = .{
+            .card_id = card_id,
+            .new_time_start = new_time_start,
+            .new_channel = new_channel,
+        } });
+    }
 };
+
+/// Validate channel switch: only weapon ↔ off_hand allowed.
+/// Returns true if the switch is valid.
+fn isValidChannelSwitch(from: cards.ChannelSet, to: cards.ChannelSet) bool {
+    // Both must be weapon-type channels (weapon or off_hand only)
+    const from_is_weapon_type = (from.weapon or from.off_hand) and
+        !from.footwork and !from.concentration;
+    const to_is_weapon_type = (to.weapon or to.off_hand) and
+        !to.footwork and !to.concentration;
+
+    return from_is_weapon_type and to_is_weapon_type;
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+test "isValidChannelSwitch allows weapon to off_hand" {
+    const from = cards.ChannelSet{ .weapon = true };
+    const to = cards.ChannelSet{ .off_hand = true };
+    try std.testing.expect(isValidChannelSwitch(from, to));
+}
+
+test "isValidChannelSwitch allows off_hand to weapon" {
+    const from = cards.ChannelSet{ .off_hand = true };
+    const to = cards.ChannelSet{ .weapon = true };
+    try std.testing.expect(isValidChannelSwitch(from, to));
+}
+
+test "isValidChannelSwitch rejects footwork to weapon" {
+    const from = cards.ChannelSet{ .footwork = true };
+    const to = cards.ChannelSet{ .weapon = true };
+    try std.testing.expect(!isValidChannelSwitch(from, to));
+}
+
+test "isValidChannelSwitch rejects weapon to footwork" {
+    const from = cards.ChannelSet{ .weapon = true };
+    const to = cards.ChannelSet{ .footwork = true };
+    try std.testing.expect(!isValidChannelSwitch(from, to));
+}
+
+test "isValidChannelSwitch rejects concentration to off_hand" {
+    const from = cards.ChannelSet{ .concentration = true };
+    const to = cards.ChannelSet{ .off_hand = true };
+    try std.testing.expect(!isValidChannelSwitch(from, to));
+}
+
+test "isValidChannelSwitch rejects mixed channels" {
+    // If source has multiple channel types including non-weapon, reject
+    const from = cards.ChannelSet{ .weapon = true, .footwork = true };
+    const to = cards.ChannelSet{ .off_hand = true };
+    try std.testing.expect(!isValidChannelSwitch(from, to));
+}
