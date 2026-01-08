@@ -75,17 +75,34 @@ pub fn agentFromTemplate(
         alloc.destroy(agents_map);
     }
 
-    // Allocate weapons and build Armament
+    // Convert DirectorKind to combat.Director
+    const director: combat.Director = switch (template.director) {
+        .player => .player,
+        .noop_ai => ai.noop(),
+    };
+
+    // Create agent (body, resources, natural weapons derived from species)
+    const agent = try Agent.init(
+        alloc,
+        agents_map,
+        director,
+        template.draw_style,
+        template.species,
+        template.base_stats,
+    );
+    agent.name = .{ .static = template.name };
+
+    // Allocate and equip weapons if template specifies them
     var weapon_storage: AgentHandle.WeaponStorage = .none;
-    const equipped: Armament.Equipped = switch (template.armament) {
-        .unarmed => .unarmed,
-        .single => |tmpl| blk: {
+    switch (template.armament) {
+        .unarmed => {}, // Agent already starts unarmed with natural weapons
+        .single => |tmpl| {
             const w = try alloc.create(weapon.Instance);
             w.* = .{ .id = entity.ID{ .index = 0, .generation = 999 }, .template = tmpl };
             weapon_storage = .{ .single = w };
-            break :blk .{ .single = w };
+            agent.weapons = agent.weapons.withEquipped(.{ .single = w });
         },
-        .dual => |d| blk: {
+        .dual => |d| {
             const primary = try alloc.create(weapon.Instance);
             primary.* = .{ .id = entity.ID{ .index = 0, .generation = 998 }, .template = d.primary };
             errdefer alloc.destroy(primary);
@@ -94,42 +111,9 @@ pub fn agentFromTemplate(
             secondary.* = .{ .id = entity.ID{ .index = 1, .generation = 997 }, .template = d.secondary };
 
             weapon_storage = .{ .dual = .{ .primary = primary, .secondary = secondary } };
-            break :blk .{ .dual = .{ .primary = primary, .secondary = secondary } };
+            agent.weapons = agent.weapons.withEquipped(.{ .dual = .{ .primary = primary, .secondary = secondary } });
         },
-    };
-    const armament = Armament{ .equipped = equipped, .natural = &.{} };
-
-    // Convert DirectorKind to combat.Director
-    const director: combat.Director = switch (template.director) {
-        .player => .player,
-        .noop_ai => ai.noop(),
-    };
-
-    // Create body from species
-    const agent_body = try body.Body.fromPlan(alloc, template.species.body_plan);
-
-    // Derive resources from species with default recovery, or use template override
-    const sp = template.species;
-    const stamina_res = template.stamina orelse stats.Resource.init(sp.base_stamina, sp.base_stamina, 2.0);
-    const focus_res = template.focus orelse stats.Resource.init(sp.base_focus, sp.base_focus, 1.0);
-    const blood_res = template.blood orelse stats.Resource.init(sp.base_blood, sp.base_blood, 0.0);
-
-    // Create agent
-    const agent = try Agent.init(
-        alloc,
-        agents_map,
-        director,
-        template.draw_style,
-        template.base_stats,
-        agent_body,
-        stamina_res,
-        focus_res,
-        blood_res,
-        armament,
-    );
-
-    // Set name
-    agent.name = .{ .static = template.name };
+    }
 
     return AgentHandle{
         .alloc = alloc,
@@ -227,14 +211,19 @@ test "agentFromTemplate noop_ai director" {
     try std.testing.expect(handle.agent.director == .ai);
 }
 
-test "agentFromTemplate respects stats" {
+test "agentFromTemplate derives resources from species" {
     const alloc = std.testing.allocator;
+    const species_mod = @import("../domain/species.zig");
+
+    // Grunni is a DWARF - resources come from species
     var handle = try agentFromTemplate(alloc, &personas.Agents.grunni_the_desperate);
     defer handle.deinit();
 
-    // Grunni has stamina 8/8
-    try std.testing.expectEqual(@as(f32, 8.0), handle.agent.stamina.current);
-    try std.testing.expectEqual(@as(f32, 8.0), handle.agent.stamina.max);
+    // DWARF has base_stamina=12, base_focus=8, base_blood=4.5
+    try std.testing.expectEqual(species_mod.DWARF.base_stamina, handle.agent.stamina.current);
+    try std.testing.expectEqual(species_mod.DWARF.base_stamina, handle.agent.stamina.max);
+    try std.testing.expectEqual(species_mod.DWARF.base_focus, handle.agent.focus.max);
+    try std.testing.expectEqual(species_mod.DWARF.base_blood, handle.agent.blood.max);
 }
 
 test "setPartSeverity damages matching parts" {

@@ -2,7 +2,11 @@ default: format test build run
 
 up: build run
 
+# you probably want this. Fast, comprehensive.
 check: format test build
+
+# alias, create with correct ID from template.
+new-kanban: new-card
 
 build:
   zig build
@@ -14,17 +18,23 @@ run:
   ./zig-out/bin/cardigan
 
 # Test targets
+[group('test')]
 test-unit flags="":
   zig build test-unit {{flags}}
 
+[group('test')]
 test-integration flags="":
   zig build test-integration {{flags}}
 
+[group('test')]
 test-system flags="":
   zig build test-system {{flags}}
 
+[group('test')]
 test: test-unit test-integration test-system
 
+# the output is not interesting.
+[group('test')]
 test-verbose: (test-unit "--summary all") (test-integration "--summary all") (test-system "--summary-all")
 
 ## only shortcuts for humans below
@@ -37,38 +47,38 @@ wip: gkd
 # interactive: edit kanban/
 [group('shortcut')]
 ek:
-    $EDITOR $(fd 'T\d{3,3}-\w+.md' kanban | sort | fzf )
+    $EDITOR $(fd 'T\d{3,3}(-\w+)?.md' kanban | sort | fzf )
 
 # interactive: edit kanban/backlog
 [group('shortcut')]
 ekb:
-    $EDITOR $(fd 'T\d{3,3}-\w+.md' kanban/backlog | sort | fzf )
+    $EDITOR $(fd 'T\d{3,3}(-\w+)?.md' kanban/backlog | sort | fzf )
 
 # interactive: edit kanban/in-progress
 [group('shortcut')]
 ekd:
-    $EDITOR $(fd 'T\d{3,3}-\w+.md' kanban/doing | sort | fzf )
+    $EDITOR $(fd 'T\d{3,3}(-\w+)?.md' kanban/doing | sort | fzf )
 
 # interactive: view kanban/
 [group('shortcut')]
 gk:
-    glow -p $(fd 'T\d{3,3}-\w+.md' kanban | sort | fzf )
+    glow -p $(fd 'T\d{3,3}(-\w+)?.md' kanban | sort | fzf )
 
 # interactive: view kanban/backlog
 [group('shortcut')]
 gkb:
-    glow -p $(fd 'T\d{3,3}-\w+.md' kanban/backlog | sort | fzf )
+    glow -p $(fd 'T\d{3,3}(-\w+)?.md' kanban/backlog | sort | fzf )
 
 # interactive: view kanban/in-progress
 [group('shortcut')]
 gkd:
-    glow -p $(fd 'T\d{3,3}-\w+.md' kanban/doing | sort | fzf )
+    glow -p $(fd 'T\d{3,3}(-\w+)?.md' kanban/doing | sort | fzf )
 
 # interactive: move card
 [group('shortcut')]
 mvk:
     #/bin/sh
-    file=$(fd 'T\d{3,3}_\w+.md' kanban | sort | fzf)
+    file=$(fd 'T\d{3,3}(-\w+)?.md' kanban | sort | fzf)
     echo "git mv $file "
     folder=$(gum choose --header="Choose where:" $(fd -t d . kanban/ | sort))
     git mv $file $folder
@@ -83,6 +93,7 @@ tk:
 yk:
     yazi kanban
 
+# create kanban card in backlog with correct ID from template
 new-card:
     #!/usr/bin/env python3
     import shutil
@@ -114,11 +125,6 @@ new-card:
 
     shutil.copyfile(template_path, dest_path)
     print(f"Created {dest_path}")
-
-# create kanban task interactively
-[group('shortcut')]
-ck:
-    .script/create_new_task.sh
 
 ## doc
 

@@ -197,24 +197,17 @@ pub const Encounter = struct {
 
 const testing = std.testing;
 const stats = @import("../stats.zig");
-const body = @import("../body.zig");
+const species = @import("../species.zig");
 const ai = @import("../ai.zig");
 
 fn makeTestEncounter(alloc: std.mem.Allocator, agents: *SlotMap(*Agent)) !struct { enc: *Encounter, player: *Agent } {
-    const agent_stats = stats.Block.splat(5);
-    const agent_body = try body.Body.fromPlan(alloc, &body.HumanoidPlan);
-
     const player = try Agent.init(
         alloc,
         agents,
         .player,
         .shuffled_deck,
-        agent_stats,
-        agent_body,
-        stats.Resource.init(10.0, 10.0, 2.0),
-        stats.Resource.init(3.0, 5.0, 3.0),
-        stats.Resource.init(5.0, 5.0, 0.0),
-        undefined,
+        &species.DWARF,
+        stats.Block.splat(5),
     );
 
     const enc = try Encounter.init(alloc, player.id);
@@ -222,20 +215,13 @@ fn makeTestEncounter(alloc: std.mem.Allocator, agents: *SlotMap(*Agent)) !struct
 }
 
 fn makeTestEnemy(alloc: std.mem.Allocator, agents: *SlotMap(*Agent)) !*Agent {
-    const agent_stats = stats.Block.splat(5);
-    const agent_body = try body.Body.fromPlan(alloc, &body.HumanoidPlan);
-
     return Agent.init(
         alloc,
         agents,
         ai.noop(),
         .shuffled_deck,
-        agent_stats,
-        agent_body,
-        stats.Resource.init(10.0, 10.0, 2.0),
-        stats.Resource.init(3.0, 5.0, 3.0),
-        stats.Resource.init(5.0, 5.0, 0.0),
-        undefined,
+        &species.DWARF,
+        stats.Block.splat(5),
     );
 }
 

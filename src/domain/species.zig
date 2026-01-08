@@ -30,6 +30,20 @@ pub const Tag = enum {
 
 pub const TagSet = std.EnumSet(Tag);
 
+// ============================================================================
+// Global Resource Defaults
+// ============================================================================
+
+/// Default stamina recovery per turn (can be overridden per-species).
+pub const DEFAULT_STAMINA_RECOVERY: f32 = 2.0;
+
+/// Default focus recovery per turn (can be overridden per-species).
+pub const DEFAULT_FOCUS_RECOVERY: f32 = 1.0;
+
+/// Default blood recovery per turn (can be overridden per-species).
+/// Zero by default - blood doesn't regenerate without magic/healing.
+pub const DEFAULT_BLOOD_RECOVERY: f32 = 0.0;
+
 /// A natural weapon tied to a body part.
 /// Availability is gated by part integrity - no hand = no punch.
 pub const NaturalWeapon = struct {
@@ -38,6 +52,7 @@ pub const NaturalWeapon = struct {
 };
 
 /// Species definition - body plan, natural weapons, base resources, tags.
+/// Recovery rates default to global values if not specified.
 pub const Species = struct {
     name: []const u8,
     body_plan: []const body.PartDef,
@@ -45,7 +60,28 @@ pub const Species = struct {
     base_blood: f32,
     base_stamina: f32,
     base_focus: f32,
+    /// Override stamina recovery (null = use DEFAULT_STAMINA_RECOVERY).
+    stamina_recovery: ?f32 = null,
+    /// Override focus recovery (null = use DEFAULT_FOCUS_RECOVERY).
+    focus_recovery: ?f32 = null,
+    /// Override blood recovery (null = use DEFAULT_BLOOD_RECOVERY).
+    blood_recovery: ?f32 = null,
     tags: TagSet,
+
+    /// Get stamina recovery rate, using global default if not overridden.
+    pub fn getStaminaRecovery(self: *const Species) f32 {
+        return self.stamina_recovery orelse DEFAULT_STAMINA_RECOVERY;
+    }
+
+    /// Get focus recovery rate, using global default if not overridden.
+    pub fn getFocusRecovery(self: *const Species) f32 {
+        return self.focus_recovery orelse DEFAULT_FOCUS_RECOVERY;
+    }
+
+    /// Get blood recovery rate, using global default if not overridden.
+    pub fn getBloodRecovery(self: *const Species) f32 {
+        return self.blood_recovery orelse DEFAULT_BLOOD_RECOVERY;
+    }
 };
 
 // ============================================================================
@@ -212,4 +248,27 @@ test "Goblin has different natural weapons" {
 test "Species base resources differ" {
     try testing.expect(DWARF.base_blood > GOBLIN.base_blood);
     try testing.expect(DWARF.base_stamina > GOBLIN.base_stamina);
+}
+
+test "Species recovery rates use global defaults" {
+    // DWARF and GOBLIN don't override, so get global defaults
+    try testing.expectEqual(DEFAULT_STAMINA_RECOVERY, DWARF.getStaminaRecovery());
+    try testing.expectEqual(DEFAULT_FOCUS_RECOVERY, DWARF.getFocusRecovery());
+    try testing.expectEqual(DEFAULT_BLOOD_RECOVERY, DWARF.getBloodRecovery());
+}
+
+test "Species can override recovery rates" {
+    const dragon = Species{
+        .name = "Dragon",
+        .body_plan = &body.HumanoidPlan, // placeholder
+        .natural_weapons = &.{},
+        .base_blood = 20.0,
+        .base_stamina = 30.0,
+        .base_focus = 25.0,
+        .blood_recovery = 1.0, // dragons regenerate blood
+        .tags = TagSet.initMany(&.{.reptile}),
+    };
+    try testing.expectEqual(@as(f32, 1.0), dragon.getBloodRecovery());
+    // Non-overridden still use defaults
+    try testing.expectEqual(DEFAULT_STAMINA_RECOVERY, dragon.getStaminaRecovery());
 }

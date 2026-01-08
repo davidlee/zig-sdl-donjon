@@ -330,7 +330,7 @@ fn applyContestOutcome(
 
 const testing = std.testing;
 const SlotMap = @import("../../slot_map.zig").SlotMap;
-const body = @import("../../body.zig");
+const species = @import("../../species.zig");
 const weapon_list = @import("../../weapon_list.zig");
 
 fn testId(index: u32) entity.ID {
@@ -362,19 +362,18 @@ fn makeTestAgent(alloc: std.mem.Allocator, speed: f32) !TestAgent {
     sword.* = .{ .id = testId(999), .template = &weapon_list.knights_sword };
     errdefer alloc.destroy(sword);
 
+    const agent = try combat.Agent.init(
+        alloc,
+        agents,
+        .player,
+        .shuffled_deck,
+        &species.DWARF,
+        stats.Block.splat(speed),
+    );
+    agent.weapons = agent.weapons.withEquipped(.{ .single = sword });
+
     return .{
-        .agent = try combat.Agent.init(
-            alloc,
-            agents,
-            .player,
-            .shuffled_deck,
-            stats.Block.splat(speed),
-            try body.Body.fromPlan(alloc, &body.HumanoidPlan),
-            stats.Resource.init(10, 10, 2),
-            stats.Resource.init(3, 5, 3),
-            stats.Resource.init(5, 5, 0),
-            combat.Armament{ .equipped = .{ .single = sword }, .natural = &.{} },
-        ),
+        .agent = agent,
         .sword = sword,
         .agents = agents,
     };

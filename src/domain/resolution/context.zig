@@ -230,7 +230,7 @@ pub fn getOverlayBonuses(
 const testing = std.testing;
 const ai = @import("../ai.zig");
 const stats = @import("../stats.zig");
-const body = @import("../body.zig");
+const species = @import("../species.zig");
 const slot_map = @import("../slot_map.zig");
 const card_list = @import("../card_list.zig");
 
@@ -243,20 +243,13 @@ fn makeTestAgent(
     agents: *slot_map.SlotMap(*Agent),
     director: combat.Director,
 ) !*Agent {
-    const agent_stats = stats.Block.splat(5);
-    const agent_body = try body.Body.fromPlan(alloc, &body.HumanoidPlan);
-
     return Agent.init(
         alloc,
         agents,
         director,
         .shuffled_deck,
-        agent_stats,
-        agent_body,
-        stats.Resource.init(10.0, 10.0, 2.0),
-        stats.Resource.init(3.0, 5.0, 3.0),
-        stats.Resource.init(5.0, 5.0, 0.0),
-        undefined,
+        &species.DWARF,
+        stats.Block.splat(5),
     );
 }
 

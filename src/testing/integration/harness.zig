@@ -79,29 +79,8 @@ pub const Harness = struct {
     /// Add an enemy from a persona template. Returns the enemy agent.
     /// Creates the agent using world's entity system to avoid ID conflicts.
     pub fn addEnemyFromTemplate(self: *Harness, template: *const personas.AgentTemplate) !*Agent {
-        const body_mod = @import("integration_root").domain.body;
         const ai = @import("../../domain/ai.zig");
         const weapon = @import("integration_root").domain.weapon;
-
-        // Build Armament from template (using world's allocator)
-        const equipped: combat.Armament.Equipped = switch (template.armament) {
-            .unarmed => .unarmed,
-            .single => |tmpl| blk: {
-                const w = try self.alloc.create(weapon.Instance);
-                w.* = .{ .id = try self.world.entities.weapons.insert(w), .template = tmpl };
-                break :blk .{ .single = w };
-            },
-            .dual => |d| blk: {
-                const primary = try self.alloc.create(weapon.Instance);
-                primary.* = .{ .id = try self.world.entities.weapons.insert(primary), .template = d.primary };
-
-                const secondary = try self.alloc.create(weapon.Instance);
-                secondary.* = .{ .id = try self.world.entities.weapons.insert(secondary), .template = d.secondary };
-
-                break :blk .{ .dual = .{ .primary = primary, .secondary = secondary } };
-            },
-        };
-        const armament = combat.Armament{ .equipped = equipped, .natural = &.{} };
 
         // Convert DirectorKind to combat.Director
         const director: combat.Director = switch (template.director) {
@@ -109,31 +88,35 @@ pub const Harness = struct {
             .noop_ai => ai.noop(),
         };
 
-        // Create body from species
-        const agent_body = try body_mod.Body.fromPlan(self.alloc, template.species.body_plan);
-
-        // Derive resources from species with default recovery, or use template override
-        const stats = @import("integration_root").domain.stats;
-        const sp = template.species;
-        const stamina_res = template.stamina orelse stats.Resource.init(sp.base_stamina, sp.base_stamina, 2.0);
-        const focus_res = template.focus orelse stats.Resource.init(sp.base_focus, sp.base_focus, 1.0);
-        const blood_res = template.blood orelse stats.Resource.init(sp.base_blood, sp.base_blood, 0.0);
-
-        // Create agent using world's agents map
+        // Create agent (body, resources, natural weapons derived from species)
         const enemy = try Agent.init(
             self.alloc,
             self.world.entities.agents,
             director,
             template.draw_style,
+            template.species,
             template.base_stats,
-            agent_body,
-            stamina_res,
-            focus_res,
-            blood_res,
-            armament,
         );
-
         enemy.name = .{ .static = template.name };
+
+        // Equip weapons from template
+        switch (template.armament) {
+            .unarmed => {}, // Agent already starts unarmed with natural weapons
+            .single => |tmpl| {
+                const w = try self.alloc.create(weapon.Instance);
+                w.* = .{ .id = try self.world.entities.weapons.insert(w), .template = tmpl };
+                enemy.weapons = enemy.weapons.withEquipped(.{ .single = w });
+            },
+            .dual => |d| {
+                const primary = try self.alloc.create(weapon.Instance);
+                primary.* = .{ .id = try self.world.entities.weapons.insert(primary), .template = d.primary };
+
+                const secondary = try self.alloc.create(weapon.Instance);
+                secondary.* = .{ .id = try self.world.entities.weapons.insert(secondary), .template = d.secondary };
+
+                enemy.weapons = enemy.weapons.withEquipped(.{ .dual = .{ .primary = primary, .secondary = secondary } });
+            },
+        }
 
         // Add to encounter
         try self.encounter().addEnemy(enemy);
@@ -328,19 +311,21 @@ pub const Harness = struct {
     }
 
     /// Configure the player from an AgentTemplate (persona).
-    /// Applies name, stats, resources, and armament from the template.
+    /// Applies name, stats, and armament from the template.
+    /// Resources are derived from template's species.
     /// Does not change body or director.
     pub fn setPlayerFromTemplate(self: *Harness, template: *const personas.AgentTemplate) !void {
         const stats = @import("integration_root").domain.stats;
         const p = self.player();
         p.name = .{ .static = template.name };
         p.stats = template.base_stats;
+        p.species = template.species;
 
-        // Apply resource overrides from template, or derive from species
+        // Derive resources from template's species
         const sp = template.species;
-        p.stamina = template.stamina orelse stats.Resource.init(sp.base_stamina, sp.base_stamina, 2.0);
-        p.focus = template.focus orelse stats.Resource.init(sp.base_focus, sp.base_focus, 1.0);
-        p.blood = template.blood orelse stats.Resource.init(sp.base_blood, sp.base_blood, 0.0);
+        p.stamina = stats.Resource.init(sp.base_stamina, sp.base_stamina, sp.getStaminaRecovery());
+        p.focus = stats.Resource.init(sp.base_focus, sp.base_focus, sp.getFocusRecovery());
+        p.blood = stats.Resource.init(sp.base_blood, sp.base_blood, sp.getBloodRecovery());
 
         // Apply armament (preserves natural weapons from agent's species)
         const equipped: domain.combat.Armament.Equipped = switch (template.armament) {

@@ -199,27 +199,28 @@ Natural weapons are stored as `[]const NaturalWeapon` (immutable slice from spec
 
 1. [x] **Add `Body.hasFunctionalPart(tag, side?)`** + unit tests
 2. [x] **Add fixture utility for body damage** (setPartSeverity, severPart)
-3. [ ] **Restructure Armament** → struct with `equipped: Equipped` + `natural: []const NaturalWeapon`
+3. [x] **Restructure Armament** → struct with `equipped: Equipped` + `natural: []const NaturalWeapon`
    - Add `.unarmed` variant to Equipped union
    - Add `fromSpecies()` constructor
    - Add `withEquipped()` convenience
    - Update existing helpers (hasCategory, getOffensiveMode) to use `.equipped`
-4. [ ] **Refactor AgentTemplate** → hold `*const Species` instead of `body_plan`
-5. [ ] **Refactor Agent.init** → simplified signature (species + stat_block)
+4. [x] **Refactor AgentTemplate** → hold `*const Species` instead of `body_plan`
+5. [x] **Refactor Agent.init** → simplified signature (species + stat_block)
    - Remove: body, stamina, focus, blood, armament params
    - Derive body from species.body_plan
-   - Derive resources from species bases (with default recovery)
+   - Derive resources from species bases (with recovery from species or global defaults)
    - Derive weapons via Armament.fromSpecies(species.natural_weapons)
-6. [ ] **Update all Agent.init call sites**
+6. [x] **Update all Agent.init call sites**
    - fixtures.agentFromTemplate → use withEquipped() for weapons
-   - player.newPlayer
-   - harness.setupEncounter
-   - encounter tests
-   - resolution tests (context.zig, damage.zig, outcome.zig)
-7. [ ] **Add `Agent.availableNaturalWeapons()`** iterator with body gating
-8. [ ] **Add `Agent.allAvailableWeapons()`** unified iterator
-9. [ ] **Integration tests** for natural weapon availability + body gating
-10. [ ] **Performance check** - benchmark if weapon iteration is on hot path
+   - player.newPlayer → takes species instead of body
+   - harness.setupEncounter → uses GOBLIN species
+   - encounter tests, resolution tests (context.zig, damage.zig, outcome.zig)
+   - integration/harness.zig - addEnemyFromTemplate, setPlayerFromTemplate
+   - positioning.zig tests
+7. [x] **Add `Agent.availableNaturalWeapons()`** iterator with body gating
+8. [x] **Add `Agent.allAvailableWeapons()`** unified iterator
+9. [~] **Integration tests** - unit tests cover body gating thoroughly; integration deferred
+10. [~] **Performance check** - not on hot path currently; deferred
 
 ## Test / Verification Strategy
 
@@ -309,3 +310,60 @@ Requires new fixture utility to damage parts to specific severity.
 - Default resource recovery rates hardcoded in fixtures (stamina 2.0, focus 1.0, blood 0.0) - move to Species or keep as constants?
 - Agent.species field currently defaults to `&DWARF` in struct definition - should be set explicitly in init
 - When Agent.init takes species, should it also set `agent.species = species`? (currently not set)
+
+### Session 2 Progress (2026-01-08)
+
+**Resolved open questions:**
+- Recovery rates: Global defaults in `species.zig` (DEFAULT_STAMINA_RECOVERY, etc.), Species can optionally override via `?f32` fields, individual variation applied post-init
+- Agent.species: Now set explicitly in Agent.init from the species parameter
+
+**Completed:**
+1. ✅ Added optional recovery fields to Species (`stamina_recovery`, `focus_recovery`, `blood_recovery`)
+   - Global defaults: stamina 2.0, focus 1.0, blood 0.0
+   - Species can override; accessor methods use `orelse` for defaults
+   - Unit tests for default and override behavior
+2. ✅ Refactored Agent.init to simplified signature: `(alloc, slot_map, director, draw_style, species, stat_block)`
+   - Derives body from species.body_plan
+   - Derives resources from species bases + recovery rates
+   - Derives armament via Armament.fromSpecies(species.natural_weapons)
+   - Sets agent.species field
+3. ✅ Updated all Agent.init call sites (~12 across 9 files)
+   - fixtures.zig, player.zig, harness.zig, integration/harness.zig
+   - encounter.zig, context.zig, damage.zig, outcome.zig, positioning.zig
+4. ✅ Removed optional resource fields from AgentTemplate
+   - All personas simplified (just species + base_stats + armament)
+   - Updated test to verify resources derive from species
+5. ✅ Added `Agent.availableNaturalWeapons()` iterator
+   - Filters by body part availability via `hasFunctionalPart()`
+   - 4 unit tests covering healthy, damaged, all destroyed cases
+6. ✅ Added `Agent.allAvailableWeapons()` unified iterator
+   - `WeaponRef` union distinguishes equipped vs natural
+   - Yields equipped first (single/dual), then filtered natural
+   - 4 unit tests covering unarmed, single, dual wield, WeaponRef.template()
+7. ✅ Created `doc/issues/multi_weapon_combat.md` documenting technical debt around dual wielding, natural weapons in combat, ranged weapons, etc.
+
+**Key decisions:**
+- Recovery rates hierarchy: global defaults → species override → post-init individual variation
+- `WeaponRef` union allows callers to distinguish equipped (has Instance state) from natural
+- Skipped integration tests - unit tests thoroughly cover body gating logic
+- Skipped performance check - weapon iteration not currently on hot path
+
+**All acceptance criteria met:**
+- ✅ Natural weapons appear in available weapons when body parts functional
+- ✅ Natural weapons disappear when required part destroyed
+- ✅ Combat resolution can iterate all weapons uniformly (via `allAvailableWeapons()`)
+- ✅ `just check` passes
+
+**Key files touched this session:**
+- `src/domain/species.zig` - recovery rate fields + global defaults
+- `src/domain/combat/agent.zig` - init refactor + weapon iterators
+- `src/domain/player.zig` - signature change (species instead of body)
+- `src/domain/world.zig` - player creation uses species
+- `src/data/personas.zig` - removed resource fields from AgentTemplate + personas
+- `src/testing/fixtures.zig` - simplified agentFromTemplate
+- `src/testing/integration/harness.zig` - simplified addEnemyFromTemplate, setPlayerFromTemplate
+- `src/harness.zig` - mobs use GOBLIN species
+- `src/domain/combat/encounter.zig` - test helpers
+- `src/domain/resolution/*.zig` - test helpers
+- `src/domain/apply/effects/positioning.zig` - test helpers
+- `doc/issues/multi_weapon_combat.md` - NEW: technical debt tracking

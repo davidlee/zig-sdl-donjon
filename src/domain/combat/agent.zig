@@ -95,26 +95,37 @@ pub const Agent = struct {
     resistances: std.ArrayList(damage.Resistance),
     vulnerabilities: std.ArrayList(damage.Vulnerability),
 
+    /// Create a new Agent from species.
+    /// Body, resources, and natural weapons are derived from species.
+    /// Equipped weapons start as .unarmed - use withEquipped() after init.
     pub fn init(
         alloc: std.mem.Allocator,
         slot_map: *SlotMap(*Agent),
         dr: Director,
         ds: DrawStyle,
+        sp: *const species_mod.Species,
         sb: stats.Block,
-        bd: body.Body,
-        stamina_res: stats.Resource,
-        focus_res: stats.Resource,
-        blood_res: stats.Resource,
-        armament: Armament,
     ) !*Agent {
+        // Derive body from species
+        const agent_body = try body.Body.fromPlan(alloc, sp.body_plan);
+
+        // Derive resources from species (base values + recovery rates)
+        const stamina_res = stats.Resource.init(sp.base_stamina, sp.base_stamina, sp.getStaminaRecovery());
+        const focus_res = stats.Resource.init(sp.base_focus, sp.base_focus, sp.getFocusRecovery());
+        const blood_res = stats.Resource.init(sp.base_blood, sp.base_blood, sp.getBloodRecovery());
+
+        // Start with natural weapons only (unarmed)
+        const armament = Armament.fromSpecies(sp.natural_weapons);
+
         const agent = try alloc.create(combat.Agent);
         agent.* = .{
             .id = undefined,
             .alloc = alloc,
             .director = dr,
             .draw_style = ds,
+            .species = sp,
             .stats = sb,
-            .body = bd,
+            .body = agent_body,
             .armour = armour.Stack.init(alloc),
             .weapons = armament,
             .stamina = stamina_res,
@@ -404,6 +415,144 @@ pub const Agent = struct {
             emitConditionDiff(old, new, self.id, actor, es);
         }
     }
+
+    // =========================================================================
+    // Natural Weapon Iteration
+    // =========================================================================
+
+    /// Iterator over natural weapons filtered by body part availability.
+    /// Only yields weapons whose required body part is functional.
+    pub const AvailableNaturalWeaponIterator = struct {
+        natural: []const species_mod.NaturalWeapon,
+        body_ref: *const body.Body,
+        index: usize = 0,
+
+        pub fn next(self: *AvailableNaturalWeaponIterator) ?*const species_mod.NaturalWeapon {
+            while (self.index < self.natural.len) {
+                const nw = &self.natural[self.index];
+                self.index += 1;
+                // Check if required body part is functional (any side)
+                if (self.body_ref.hasFunctionalPart(nw.required_part, null)) {
+                    return nw;
+                }
+            }
+            return null;
+        }
+
+        pub fn reset(self: *AvailableNaturalWeaponIterator) void {
+            self.index = 0;
+        }
+    };
+
+    /// Returns an iterator over natural weapons that are currently available.
+    /// Filters out natural weapons whose required body part is missing/severed.
+    pub fn availableNaturalWeapons(self: *const Agent) AvailableNaturalWeaponIterator {
+        return .{
+            .natural = self.weapons.natural,
+            .body_ref = &self.body,
+        };
+    }
+
+    /// Count of currently available natural weapons.
+    pub fn availableNaturalWeaponCount(self: *const Agent) usize {
+        var count: usize = 0;
+        var iter = self.availableNaturalWeapons();
+        while (iter.next()) |_| {
+            count += 1;
+        }
+        return count;
+    }
+
+    /// Check if a specific natural weapon is available (body part functional).
+    pub fn isNaturalWeaponAvailable(self: *const Agent, nw: *const species_mod.NaturalWeapon) bool {
+        return self.body.hasFunctionalPart(nw.required_part, null);
+    }
+
+    /// Reference to any weapon available to the agent.
+    /// Distinguishes equipped weapons (have Instance state) from natural weapons.
+    pub const WeaponRef = union(enum) {
+        equipped: *weapon.Instance,
+        natural: *const species_mod.NaturalWeapon,
+
+        pub fn template(self: WeaponRef) *const weapon.Template {
+            return switch (self) {
+                .equipped => |inst| inst.template,
+                .natural => |nw| nw.template,
+            };
+        }
+
+        pub fn name(self: WeaponRef) []const u8 {
+            return self.template().name;
+        }
+    };
+
+    /// Iterator over all weapons available to the agent (equipped + natural).
+    /// Yields equipped weapons first, then natural weapons filtered by body state.
+    pub const AllWeaponsIterator = struct {
+        agent: *const Agent,
+        phase: Phase = .equipped_single,
+        natural_iter: ?AvailableNaturalWeaponIterator = null,
+
+        const Phase = enum { equipped_single, equipped_dual_primary, equipped_dual_secondary, natural };
+
+        pub fn next(self: *AllWeaponsIterator) ?WeaponRef {
+            switch (self.phase) {
+                .equipped_single => {
+                    self.phase = .natural;
+                    switch (self.agent.weapons.equipped) {
+                        .unarmed => {}, // skip to natural
+                        .single => |inst| return .{ .equipped = inst },
+                        .dual => |d| {
+                            self.phase = .equipped_dual_secondary;
+                            return .{ .equipped = d.primary };
+                        },
+                        .compound => {
+                            // TODO: compound weapon iteration
+                            self.phase = .natural;
+                        },
+                    }
+                    return self.nextNatural();
+                },
+                .equipped_dual_secondary => {
+                    self.phase = .natural;
+                    return .{ .equipped = self.agent.weapons.equipped.dual.secondary };
+                },
+                .equipped_dual_primary => unreachable,
+                .natural => return self.nextNatural(),
+            }
+        }
+
+        fn nextNatural(self: *AllWeaponsIterator) ?WeaponRef {
+            if (self.natural_iter == null) {
+                self.natural_iter = self.agent.availableNaturalWeapons();
+            }
+            if (self.natural_iter.?.next()) |nw| {
+                return .{ .natural = nw };
+            }
+            return null;
+        }
+
+        pub fn reset(self: *AllWeaponsIterator) void {
+            self.phase = .equipped_single;
+            self.natural_iter = null;
+        }
+    };
+
+    /// Returns an iterator over all weapons available to the agent.
+    /// Includes equipped weapons and natural weapons (filtered by body state).
+    pub fn allAvailableWeapons(self: *const Agent) AllWeaponsIterator {
+        return .{ .agent = self };
+    }
+
+    /// Count of all available weapons (equipped + available natural).
+    pub fn allAvailableWeaponCount(self: *const Agent) usize {
+        var count: usize = 0;
+        var iter = self.allAvailableWeapons();
+        while (iter.next()) |_| {
+            count += 1;
+        }
+        return count;
+    }
 };
 
 /// Emit condition_applied/expired events for differences between old and new bitsets.
@@ -575,19 +724,19 @@ fn makeTestAgent(alloc: std.mem.Allocator, agents: *SlotMap(*Agent)) !TestAgent 
     const sword = try alloc.create(weapon.Instance);
     sword.* = .{ .id = testId(999), .template = &weapon_list.knights_sword };
 
+    const agent = try Agent.init(
+        alloc,
+        agents,
+        .player,
+        .shuffled_deck,
+        &species_mod.DWARF,
+        stats.Block.splat(5),
+    );
+    // Equip sword (agent starts unarmed with natural weapons)
+    agent.weapons = agent.weapons.withEquipped(.{ .single = sword });
+
     return .{
-        .agent = try Agent.init(
-            alloc,
-            agents,
-            .player,
-            .shuffled_deck,
-            stats.Block.splat(5),
-            try body.Body.fromPlan(alloc, &body.HumanoidPlan),
-            stats.Resource.init(10.0, 10.0, 2.0),
-            stats.Resource.init(3.0, 5.0, 3.0),
-            stats.Resource.init(5.0, 5.0, 0.0),
-            Armament{ .equipped = .{ .single = sword }, .natural = &.{} },
-        ),
+        .agent = agent,
         .sword = sword,
     };
 }
@@ -936,4 +1085,208 @@ test "adrenaline surge suppresses pain conditions" {
         }
     }
     try testing.expect(!found_distracted2);
+}
+
+test "availableNaturalWeapons yields all when body healthy" {
+    const alloc = testing.allocator;
+    var agents = try SlotMap(*Agent).init(alloc);
+    defer agents.deinit();
+
+    // DWARF has fist (hand) and headbutt (head)
+    const agent = try Agent.init(alloc, &agents, .player, .shuffled_deck, &species_mod.DWARF, stats.Block.splat(5));
+    defer agent.deinit();
+
+    // With healthy body, should have 2 natural weapons
+    try testing.expectEqual(@as(usize, 2), agent.availableNaturalWeaponCount());
+
+    // Verify iterator returns both
+    var iter = agent.availableNaturalWeapons();
+    var count: usize = 0;
+    while (iter.next()) |_| {
+        count += 1;
+    }
+    try testing.expectEqual(@as(usize, 2), count);
+}
+
+test "availableNaturalWeapons filters by body part" {
+    const alloc = testing.allocator;
+    var agents = try SlotMap(*Agent).init(alloc);
+    defer agents.deinit();
+
+    // DWARF has fist (hand) and headbutt (head)
+    const agent = try Agent.init(alloc, &agents, .player, .shuffled_deck, &species_mod.DWARF, stats.Block.splat(5));
+    defer agent.deinit();
+
+    // Damage both hands to missing
+    const fixtures = @import("../../testing/fixtures.zig");
+    _ = fixtures.setPartSeverity(&agent.body, .hand, .left, .missing);
+    _ = fixtures.setPartSeverity(&agent.body, .hand, .right, .missing);
+
+    // Now only headbutt should be available (head still functional)
+    try testing.expectEqual(@as(usize, 1), agent.availableNaturalWeaponCount());
+
+    var iter = agent.availableNaturalWeapons();
+    const nw = iter.next().?;
+    try testing.expectEqualStrings("Headbutt", nw.template.name);
+    try testing.expect(iter.next() == null);
+}
+
+test "availableNaturalWeapons empty when all parts destroyed" {
+    const alloc = testing.allocator;
+    var agents = try SlotMap(*Agent).init(alloc);
+    defer agents.deinit();
+
+    const agent = try Agent.init(alloc, &agents, .player, .shuffled_deck, &species_mod.DWARF, stats.Block.splat(5));
+    defer agent.deinit();
+
+    // Damage hands and head
+    const fixtures = @import("../../testing/fixtures.zig");
+    _ = fixtures.setPartSeverity(&agent.body, .hand, null, .missing);
+    _ = fixtures.setPartSeverity(&agent.body, .head, null, .missing);
+
+    // No natural weapons available
+    try testing.expectEqual(@as(usize, 0), agent.availableNaturalWeaponCount());
+}
+
+test "isNaturalWeaponAvailable checks body part" {
+    const alloc = testing.allocator;
+    var agents = try SlotMap(*Agent).init(alloc);
+    defer agents.deinit();
+
+    const agent = try Agent.init(alloc, &agents, .player, .shuffled_deck, &species_mod.DWARF, stats.Block.splat(5));
+    defer agent.deinit();
+
+    const fist = &agent.weapons.natural[0]; // Fist requires hand
+    const headbutt = &agent.weapons.natural[1]; // Headbutt requires head
+
+    // Initially both available
+    try testing.expect(agent.isNaturalWeaponAvailable(fist));
+    try testing.expect(agent.isNaturalWeaponAvailable(headbutt));
+
+    // Damage hands
+    const fixtures = @import("../../testing/fixtures.zig");
+    _ = fixtures.setPartSeverity(&agent.body, .hand, null, .missing);
+
+    // Fist no longer available, headbutt still available
+    try testing.expect(!agent.isNaturalWeaponAvailable(fist));
+    try testing.expect(agent.isNaturalWeaponAvailable(headbutt));
+}
+
+test "allAvailableWeapons unarmed yields only natural" {
+    const alloc = testing.allocator;
+    var agents = try SlotMap(*Agent).init(alloc);
+    defer agents.deinit();
+
+    // Unarmed DWARF - no equipped weapon, 2 natural weapons
+    const agent = try Agent.init(alloc, &agents, .player, .shuffled_deck, &species_mod.DWARF, stats.Block.splat(5));
+    defer agent.deinit();
+
+    try testing.expectEqual(@as(usize, 2), agent.allAvailableWeaponCount());
+
+    var iter = agent.allAvailableWeapons();
+    const first = iter.next().?;
+    try testing.expect(first == .natural);
+    const second = iter.next().?;
+    try testing.expect(second == .natural);
+    try testing.expect(iter.next() == null);
+}
+
+test "allAvailableWeapons single weapon yields equipped then natural" {
+    const alloc = testing.allocator;
+    var agents = try SlotMap(*Agent).init(alloc);
+    defer agents.deinit();
+
+    const agent = try Agent.init(alloc, &agents, .player, .shuffled_deck, &species_mod.DWARF, stats.Block.splat(5));
+    defer agent.deinit();
+
+    // Equip a sword
+    const weapon_list = @import("../weapon_list.zig");
+    const sword = try alloc.create(weapon.Instance);
+    defer alloc.destroy(sword);
+    sword.* = .{ .id = testId(999), .template = &weapon_list.knights_sword };
+    agent.weapons = agent.weapons.withEquipped(.{ .single = sword });
+
+    // 1 equipped + 2 natural = 3 total
+    try testing.expectEqual(@as(usize, 3), agent.allAvailableWeaponCount());
+
+    var iter = agent.allAvailableWeapons();
+
+    // First should be equipped sword
+    const first = iter.next().?;
+    try testing.expect(first == .equipped);
+    try testing.expectEqualStrings("knight's sword", first.name());
+
+    // Then natural weapons
+    const second = iter.next().?;
+    try testing.expect(second == .natural);
+    const third = iter.next().?;
+    try testing.expect(third == .natural);
+    try testing.expect(iter.next() == null);
+}
+
+test "allAvailableWeapons dual wield yields both equipped then natural" {
+    const alloc = testing.allocator;
+    var agents = try SlotMap(*Agent).init(alloc);
+    defer agents.deinit();
+
+    const agent = try Agent.init(alloc, &agents, .player, .shuffled_deck, &species_mod.DWARF, stats.Block.splat(5));
+    defer agent.deinit();
+
+    // Equip dual weapons
+    const weapon_list = @import("../weapon_list.zig");
+    const sword = try alloc.create(weapon.Instance);
+    defer alloc.destroy(sword);
+    sword.* = .{ .id = testId(998), .template = &weapon_list.knights_sword };
+
+    const buckler = try alloc.create(weapon.Instance);
+    defer alloc.destroy(buckler);
+    buckler.* = .{ .id = testId(999), .template = &weapon_list.buckler };
+
+    agent.weapons = agent.weapons.withEquipped(.{ .dual = .{ .primary = sword, .secondary = buckler } });
+
+    // 2 equipped + 2 natural = 4 total
+    try testing.expectEqual(@as(usize, 4), agent.allAvailableWeaponCount());
+
+    var iter = agent.allAvailableWeapons();
+
+    // First two should be equipped
+    const first = iter.next().?;
+    try testing.expect(first == .equipped);
+    try testing.expectEqualStrings("knight's sword", first.name());
+
+    const second = iter.next().?;
+    try testing.expect(second == .equipped);
+    try testing.expectEqualStrings("buckler", second.name());
+
+    // Then natural weapons
+    const third = iter.next().?;
+    try testing.expect(third == .natural);
+    const fourth = iter.next().?;
+    try testing.expect(fourth == .natural);
+    try testing.expect(iter.next() == null);
+}
+
+test "WeaponRef.template works for both types" {
+    const alloc = testing.allocator;
+    var agents = try SlotMap(*Agent).init(alloc);
+    defer agents.deinit();
+
+    const agent = try Agent.init(alloc, &agents, .player, .shuffled_deck, &species_mod.DWARF, stats.Block.splat(5));
+    defer agent.deinit();
+
+    const weapon_list = @import("../weapon_list.zig");
+    const sword = try alloc.create(weapon.Instance);
+    defer alloc.destroy(sword);
+    sword.* = .{ .id = testId(999), .template = &weapon_list.knights_sword };
+    agent.weapons = agent.weapons.withEquipped(.{ .single = sword });
+
+    var iter = agent.allAvailableWeapons();
+
+    // Equipped weapon
+    const equipped_ref = iter.next().?;
+    try testing.expectEqualStrings("knight's sword", equipped_ref.template().name);
+
+    // Natural weapon
+    const natural_ref = iter.next().?;
+    try testing.expect(natural_ref.template().categories.len > 0);
 }

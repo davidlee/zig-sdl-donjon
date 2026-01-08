@@ -12,9 +12,9 @@ const events = @import("events.zig");
 const apply = @import("apply.zig");
 const cards = @import("cards.zig");
 const card_list = @import("card_list.zig");
+const species = @import("species.zig");
 const stats = @import("stats.zig");
 const combat = @import("combat.zig");
-const body = @import("body.zig");
 const tick = @import("tick.zig");
 const weapon = @import("weapon.zig");
 
@@ -224,7 +224,6 @@ pub const World = struct {
         try fsm.addEventAndTransition(.loot_collected, .encounter_summary, .world_map);
 
         const playerStats = stats.Block.splat(5);
-        const playerBody = try body.Body.fromPlan(alloc, &body.HumanoidPlan);
 
         const self = try alloc.create(World);
 
@@ -242,8 +241,8 @@ pub const World = struct {
             .commandHandler = undefined,
         };
 
-        // Create player
-        self.player = try player.newPlayer(alloc, self, playerStats, playerBody);
+        // Create player (body, resources, natural weapons derived from species)
+        self.player = try player.newPlayer(alloc, self, &species.DWARF, playerStats);
 
         // Populate always_available with techniques (1 copy each)
         var technique_ids = try self.card_registry.createFromTemplatePtrs(&BaseTechniques, 1);

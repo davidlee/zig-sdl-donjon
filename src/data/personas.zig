@@ -41,17 +41,13 @@ pub const ArmamentTemplate = union(enum) {
 
 /// Blueprint for creating an Agent. All fields are comptime-safe.
 /// Species provides body_plan, natural_weapons, and base resources.
-/// Resource fields here are optional overrides (null = use species default).
+/// Individual resource variation (if needed) is applied post-init.
 pub const AgentTemplate = struct {
     name: []const u8,
     director: DirectorKind = .noop_ai,
     draw_style: combat.DrawStyle = .shuffled_deck,
     species: *const species_mod.Species = &species_mod.DWARF,
     base_stats: stats.Block = stats.Block.splat(5),
-    // Resource overrides (null = derive from species)
-    stamina: ?stats.Resource = null,
-    focus: ?stats.Resource = null,
-    blood: ?stats.Resource = null,
     armament: ArmamentTemplate = .unarmed,
 };
 
@@ -201,9 +197,6 @@ pub const Agents = struct {
         .director = .noop_ai,
         .species = &species_mod.DWARF,
         .base_stats = stats.Block.splat(4),
-        .stamina = stats.Resource.init(8.0, 8.0, 1.0),
-        .focus = stats.Resource.init(2.0, 3.0, 1.0),
-        .blood = stats.Resource.init(4.0, 4.0, 0.0),
         .armament = .{ .single = &Weapons.thrown_rock },
     };
 
@@ -213,9 +206,6 @@ pub const Agents = struct {
         .director = .noop_ai,
         .species = &species_mod.GOBLIN,
         .base_stats = stats.Block.splat(3),
-        .stamina = stats.Resource.init(5.0, 5.0, 1.0),
-        .focus = stats.Resource.init(2.0, 2.0, 0.5),
-        .blood = stats.Resource.init(3.0, 3.0, 0.0),
         .armament = .{ .single = &Weapons.shortbow },
     };
 
@@ -225,9 +215,6 @@ pub const Agents = struct {
         .director = .noop_ai,
         .species = &species_mod.DWARF, // human when available
         .base_stats = stats.Block.splat(6),
-        .stamina = stats.Resource.init(12.0, 12.0, 2.0),
-        .focus = stats.Resource.init(4.0, 5.0, 2.0),
-        .blood = stats.Resource.init(5.0, 5.0, 0.0),
         .armament = .{ .single = &weapon_list.knights_sword },
     };
 
@@ -237,9 +224,6 @@ pub const Agents = struct {
         .director = .noop_ai,
         .species = &species_mod.DWARF,
         .base_stats = stats.Block.splat(5),
-        .stamina = stats.Resource.init(10.0, 10.0, 2.0),
-        .focus = stats.Resource.init(3.0, 4.0, 1.0),
-        .blood = stats.Resource.init(5.0, 5.0, 0.0),
         .armament = .{ .single = &weapon_list.buckler },
     };
 
@@ -249,9 +233,6 @@ pub const Agents = struct {
         .director = .noop_ai,
         .species = &species_mod.DWARF,
         .base_stats = stats.Block.splat(5),
-        .stamina = stats.Resource.init(10.0, 10.0, 2.0),
-        .focus = stats.Resource.init(3.0, 4.0, 1.0),
-        .blood = stats.Resource.init(5.0, 5.0, 0.0),
         .armament = .{ .dual = .{
             .primary = &weapon_list.knights_sword,
             .secondary = &weapon_list.buckler,
@@ -264,9 +245,6 @@ pub const Agents = struct {
         .director = .player,
         .species = &species_mod.DWARF,
         .base_stats = stats.Block.splat(5),
-        .stamina = stats.Resource.init(10.0, 10.0, 2.0),
-        .focus = stats.Resource.init(3.0, 5.0, 3.0),
-        .blood = stats.Resource.init(5.0, 5.0, 0.0),
         .armament = .{ .single = &weapon_list.knights_sword },
     };
 
@@ -276,9 +254,6 @@ pub const Agents = struct {
         .director = .noop_ai,
         .species = &species_mod.DWARF,
         .base_stats = stats.Block.splat(5),
-        .stamina = stats.Resource.init(10.0, 10.0, 2.0),
-        .focus = stats.Resource.init(3.0, 4.0, 1.0),
-        .blood = stats.Resource.init(5.0, 5.0, 0.0),
         .armament = .{ .single = &weapon_list.spear },
     };
 
@@ -288,9 +263,6 @@ pub const Agents = struct {
         .director = .noop_ai,
         .species = &species_mod.DWARF,
         .base_stats = stats.Block.splat(5),
-        .stamina = stats.Resource.init(10.0, 10.0, 2.0),
-        .focus = stats.Resource.init(3.0, 4.0, 1.0),
-        .blood = stats.Resource.init(5.0, 5.0, 0.0),
         .armament = .{ .single = &weapon_list.dirk },
     };
 };
