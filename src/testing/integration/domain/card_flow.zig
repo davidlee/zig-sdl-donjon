@@ -201,3 +201,140 @@ test "Cancel hand card: card returned to hand, time returned" {
     // Verify: card_moved event emitted (not card_cancelled - that's for clones)
     try harness.expectEvent(.card_moved);
 }
+
+// ============================================================================
+// Commit Phase Workflow
+// ============================================================================
+
+test "Withdraw play in commit phase: card returned, focus spent" {
+    var harness = try Harness.init(testing.allocator);
+    defer harness.deinit();
+
+    // Setup
+    const enemy = try harness.addEnemyFromTemplate(&personas.Agents.ser_marcus);
+    try harness.beginSelection();
+
+    // Give a hand card for withdraw test (hand cards can be withdrawn)
+    const card_id = try harness.giveCard(harness.player(), "breath work");
+    const initial_focus = harness.playerFocus();
+
+    // Play the card
+    try harness.playCard(card_id, null);
+    try testing.expectEqual(@as(usize, 1), harness.getPlays().len);
+
+    // Transition to commit phase
+    try harness.commitPlays();
+    try testing.expectEqual(.commit_phase, harness.turnPhase().?);
+
+    harness.clearEvents();
+
+    // Withdraw the play (costs 1 focus)
+    try harness.withdrawCard(card_id);
+
+    // Verify: play removed
+    try testing.expectEqual(@as(usize, 0), harness.getPlays().len);
+
+    // Verify: card returned to hand
+    try testing.expect(harness.isInHand(card_id));
+
+    // Verify: focus spent (1 focus for withdraw)
+    try testing.expectEqual(initial_focus - 1.0, harness.playerFocus());
+
+    // Verify: card_moved event emitted
+    try harness.expectEvent(.card_moved);
+
+    _ = enemy; // silence unused warning
+}
+
+test "Stack modifier in commit phase: modifier added to play" {
+    var harness = try Harness.init(testing.allocator);
+    defer harness.deinit();
+
+    // Setup
+    const enemy = try harness.addEnemyFromTemplate(&personas.Agents.ser_marcus);
+    try harness.beginSelection();
+
+    // Play thrust (offensive action for modifier target)
+    const thrust_id = harness.findAlwaysAvailable("thrust") orelse
+        return error.ThrustNotFound;
+    try harness.playCard(thrust_id, enemy.id);
+
+    // Give a modifier card (high - targets offensive plays)
+    const high_id = try harness.giveCard(harness.player(), "high");
+
+    // Transition to commit phase
+    try harness.commitPlays();
+
+    const initial_focus = harness.playerFocus();
+    harness.clearEvents();
+
+    // Stack the modifier on the play (index 0)
+    try harness.stackModifier(high_id, 0);
+
+    // Verify: modifier added to play
+    const plays = harness.getPlays();
+    try testing.expectEqual(@as(usize, 1), plays.len);
+    try testing.expectEqual(@as(usize, 1), plays[0].play.modifier_stack_len);
+
+    // Verify: focus spent (1 focus for first stack)
+    try testing.expectEqual(initial_focus - 1.0, harness.playerFocus());
+}
+
+// ============================================================================
+// Turn Lifecycle / Event Processor
+// ============================================================================
+
+test "Full turn cycle: selection -> commit -> resolve -> cleanup" {
+    var harness = try Harness.init(testing.allocator);
+    defer harness.deinit();
+
+    // Setup
+    const enemy = try harness.addEnemyFromTemplate(&personas.Agents.ser_marcus);
+    try harness.beginSelection();
+
+    // Play a card
+    const thrust_id = harness.findAlwaysAvailable("thrust") orelse
+        return error.ThrustNotFound;
+    try harness.playCard(thrust_id, enemy.id);
+
+    // Verify: in selection phase with one play
+    try testing.expectEqual(.player_card_selection, harness.turnPhase().?);
+    try testing.expectEqual(@as(usize, 1), harness.getPlays().len);
+
+    // Commit
+    try harness.commitPlays();
+    try testing.expectEqual(.commit_phase, harness.turnPhase().?);
+
+    // Resolve all ticks
+    try harness.resolveAllTicks();
+
+    // After resolution, timeline should be cleared
+    try testing.expectEqual(@as(usize, 0), harness.getPlays().len);
+
+    // Verify tick events were emitted
+    try harness.expectEvent(.tick_ended);
+}
+
+test "Tick resolution emits technique_resolved event" {
+    var harness = try Harness.init(testing.allocator);
+    defer harness.deinit();
+
+    // Setup
+    const enemy = try harness.addEnemyFromTemplate(&personas.Agents.ser_marcus);
+    try harness.beginSelection();
+
+    // Play thrust
+    const thrust_id = harness.findAlwaysAvailable("thrust") orelse
+        return error.ThrustNotFound;
+    try harness.playCard(thrust_id, enemy.id);
+
+    // Commit and resolve
+    try harness.commitPlays();
+    harness.clearEvents();
+
+    try harness.transitionTo(.tick_resolution);
+    try harness.resolveTick();
+
+    // Verify technique was resolved
+    try harness.expectEvent(.technique_resolved);
+}

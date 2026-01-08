@@ -209,6 +209,16 @@ pub const Harness = struct {
         try self.world.commandHandler.cancelActionCard(card_id);
     }
 
+    /// Withdraw a card during commit phase. Costs 1 focus.
+    pub fn withdrawCard(self: *Harness, card_id: entity.ID) !void {
+        try self.world.commandHandler.commitWithdraw(card_id);
+    }
+
+    /// Stack a modifier onto a play during commit phase.
+    pub fn stackModifier(self: *Harness, modifier_id: entity.ID, play_index: usize) !void {
+        try self.world.commandHandler.commitStack(modifier_id, play_index);
+    }
+
     /// Transition to commit phase, triggering commit effects.
     pub fn commitPlays(self: *Harness) !void {
         try self.transitionTo(.commit_phase);
@@ -259,6 +269,11 @@ pub const Harness = struct {
     /// Get player's available stamina (current minus committed).
     pub fn playerAvailableStamina(self: *Harness) f32 {
         return self.player().stamina.available;
+    }
+
+    /// Get player's current focus.
+    pub fn playerFocus(self: *Harness) f32 {
+        return self.player().focus.current;
     }
 
     /// Get player's hand card IDs.
