@@ -25,6 +25,10 @@ const ModifierPlayKey = struct {
 pub const CardStatus = struct {
     card_id: entity.ID,
     playable: bool,
+    /// True if card has at least one valid target currently.
+    /// For melee attacks: any enemy in weapon reach.
+    /// For non-targeting cards: always true.
+    has_valid_targets: bool,
 };
 
 /// Play status with resolved target information.
@@ -64,6 +68,14 @@ pub const CombatSnapshot = struct {
             return status.playable;
         }
         return false;
+    }
+
+    /// Query if a card has valid targets currently.
+    pub fn cardHasValidTargets(self: *const CombatSnapshot, card_id: entity.ID) bool {
+        if (self.card_statuses.get(card_id)) |status| {
+            return status.has_valid_targets;
+        }
+        return true; // Unknown cards assumed to have valid targets
     }
 
     /// Query the resolved target for a play by index.
@@ -126,7 +138,12 @@ fn validateCards(
         for (cs.hand.items) |card_id| {
             const inst = world.card_registry.getConst(card_id) orelse continue;
             const playable = validation.validateCardSelection(player, inst, phase, encounter) catch false;
-            try snapshot.card_statuses.put(card_id, .{ .card_id = card_id, .playable = playable });
+            const has_targets = targeting.hasAnyTargetInRange(inst.template, player, encounter);
+            try snapshot.card_statuses.put(card_id, .{
+                .card_id = card_id,
+                .playable = playable,
+                .has_valid_targets = has_targets,
+            });
         }
 
         // In-play cards from timeline (for modifier stacking validation)
@@ -135,13 +152,23 @@ fn validateCards(
                 // Action card
                 const action_inst = world.card_registry.getConst(slot.play.action) orelse continue;
                 const action_playable = validation.validateCardSelection(player, action_inst, phase, encounter) catch false;
-                try snapshot.card_statuses.put(slot.play.action, .{ .card_id = slot.play.action, .playable = action_playable });
+                const action_has_targets = targeting.hasAnyTargetInRange(action_inst.template, player, encounter);
+                try snapshot.card_statuses.put(slot.play.action, .{
+                    .card_id = slot.play.action,
+                    .playable = action_playable,
+                    .has_valid_targets = action_has_targets,
+                });
 
                 // Modifier cards
                 for (slot.play.modifiers()) |mod| {
                     const mod_inst = world.card_registry.getConst(mod.card_id) orelse continue;
                     const mod_playable = validation.validateCardSelection(player, mod_inst, phase, encounter) catch false;
-                    try snapshot.card_statuses.put(mod.card_id, .{ .card_id = mod.card_id, .playable = mod_playable });
+                    // Modifiers don't have range requirements themselves
+                    try snapshot.card_statuses.put(mod.card_id, .{
+                        .card_id = mod.card_id,
+                        .playable = mod_playable,
+                        .has_valid_targets = true,
+                    });
                 }
             }
         }
@@ -151,14 +178,24 @@ fn validateCards(
     for (player.always_available.items) |card_id| {
         const inst = world.card_registry.getConst(card_id) orelse continue;
         const playable = validation.validateCardSelection(player, inst, phase, encounter) catch false;
-        try snapshot.card_statuses.put(card_id, .{ .card_id = card_id, .playable = playable });
+        const has_targets = targeting.hasAnyTargetInRange(inst.template, player, encounter);
+        try snapshot.card_statuses.put(card_id, .{
+            .card_id = card_id,
+            .playable = playable,
+            .has_valid_targets = has_targets,
+        });
     }
 
     // Spells known
     for (player.spells_known.items) |card_id| {
         const inst = world.card_registry.getConst(card_id) orelse continue;
         const playable = validation.validateCardSelection(player, inst, phase, encounter) catch false;
-        try snapshot.card_statuses.put(card_id, .{ .card_id = card_id, .playable = playable });
+        const has_targets = targeting.hasAnyTargetInRange(inst.template, player, encounter);
+        try snapshot.card_statuses.put(card_id, .{
+            .card_id = card_id,
+            .playable = playable,
+            .has_valid_targets = has_targets,
+        });
     }
 }
 

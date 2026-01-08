@@ -152,3 +152,56 @@ test "Attack at dagger range with sabre weapon hits" {
     try harness.expectEvent(.technique_resolved);
     try harness.expectNoEvent(.attack_out_of_range);
 }
+
+// ============================================================================
+// UI Warning State (CardStatus.has_valid_targets)
+// ============================================================================
+
+test "Card status shows warning when attack has no valid targets in range" {
+    var harness = try Harness.init(testing.allocator);
+    defer harness.deinit();
+
+    try harness.setPlayerFromTemplate(&personas.Agents.player_swordsman);
+    _ = try harness.addEnemyFromTemplate(&personas.Agents.ser_marcus);
+    // Default engagement range is .far
+
+    try harness.beginSelection();
+
+    const thrust_id = harness.findAlwaysAvailable("thrust") orelse
+        return error.ThrustNotFound;
+
+    // Get card status from snapshot
+    const status = try harness.getCardStatus(thrust_id) orelse
+        return error.CardNotInSnapshot;
+
+    // Card should be playable (no hard validation failures)
+    try testing.expect(status.playable);
+
+    // But has_valid_targets should be false (enemy is at far range, weapon is sabre)
+    try testing.expect(!status.has_valid_targets);
+}
+
+test "Card status shows no warning when attack has valid targets in range" {
+    var harness = try Harness.init(testing.allocator);
+    defer harness.deinit();
+
+    try harness.setPlayerFromTemplate(&personas.Agents.player_swordsman);
+    const enemy = try harness.addEnemyFromTemplate(&personas.Agents.ser_marcus);
+
+    // Set range to sabre (matching weapon reach)
+    harness.setRange(enemy.id, .sabre);
+
+    try harness.beginSelection();
+
+    const thrust_id = harness.findAlwaysAvailable("thrust") orelse
+        return error.ThrustNotFound;
+
+    const status = try harness.getCardStatus(thrust_id) orelse
+        return error.CardNotInSnapshot;
+
+    // Card should be playable
+    try testing.expect(status.playable);
+
+    // And has_valid_targets should be true (enemy is in range)
+    try testing.expect(status.has_valid_targets);
+}

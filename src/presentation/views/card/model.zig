@@ -36,6 +36,7 @@ pub const State = packed struct {
     disabled: bool = false, // !playable by player - potentially expensive to compute
     played: bool = false,
     target: bool = false, // drag & drop target
+    warning: bool = false, // playable but no valid targets currently (e.g. out of range)
 };
 
 /// All data the renderer needs to draw a card

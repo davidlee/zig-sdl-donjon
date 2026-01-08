@@ -255,6 +255,39 @@ fn filterTargetsByMeleeRange(
     return filtered;
 }
 
+/// Check if an offensive card has any enemy target within weapon reach.
+/// Returns true for:
+/// - Non-technique cards (no range requirement)
+/// - Defensive techniques (attack_mode == .none)
+/// - Offensive techniques with at least one enemy in range
+/// Returns false only for offensive techniques where no enemy is in weapon reach.
+pub fn hasAnyTargetInRange(
+    template: *const cards.Template,
+    actor: *const Agent,
+    encounter: *const combat.Encounter,
+) bool {
+    // Get technique - if no technique, no range requirement
+    const technique = template.getTechnique() orelse return true;
+    const attack_mode = technique.attack_mode;
+
+    // Defensive techniques have no reach requirement
+    if (attack_mode == .none) return true;
+
+    // Get weapon's reach for this attack type
+    const weapon_mode = actor.weapons.getOffensiveMode(attack_mode) orelse return false;
+    const weapon_reach = @intFromEnum(weapon_mode.reach);
+
+    // Check if any enemy is in range
+    for (encounter.enemies.items) |enemy| {
+        const engagement = encounter.getEngagementConst(actor.id, enemy.id) orelse continue;
+        if (weapon_reach >= @intFromEnum(engagement.range)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 /// Get the target predicate from a modifier card template.
 pub fn getModifierTargetPredicate(template: *const cards.Template) !?cards.Predicate {
     if (template.kind != .modifier) return null;

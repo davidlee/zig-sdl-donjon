@@ -18,6 +18,7 @@ const World = domain.World;
 const combat = domain.combat;
 const cards = domain.cards;
 const card_list = domain.card_list;
+const query = domain.query;
 const personas = root.data.personas;
 const fixtures = root.testing_utils.fixtures;
 
@@ -373,6 +374,18 @@ pub const Harness = struct {
     /// Clear all pending events (useful between test phases).
     pub fn clearEvents(self: *Harness) void {
         self.world.events.next_events.clearRetainingCapacity();
+    }
+
+    // ========================================================================
+    // Snapshot queries
+    // ========================================================================
+
+    /// Get card status from a fresh snapshot. Useful for testing UI state
+    /// derivation (playable, has_valid_targets).
+    pub fn getCardStatus(self: *Harness, card_id: entity.ID) !?query.CardStatus {
+        var snapshot = try query.buildSnapshot(self.alloc, self.world);
+        defer snapshot.deinit();
+        return snapshot.card_statuses.get(card_id);
     }
 };
 

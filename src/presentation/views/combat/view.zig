@@ -129,6 +129,7 @@ const CardZoneView = struct {
                 .played = (self.zone == .in_play),
                 .disabled = (!card.playable and self.zone != .in_play),
                 .highlighted = state == .hover,
+                .warning = (card.playable and !card.has_valid_targets and self.zone != .in_play),
             });
             const item: Renderable = .{ .card = .{ .model = card_vm, .dst = rect } };
             if (state == .normal or state == .target) {
@@ -470,6 +471,7 @@ const CarouselView = struct {
                 .played = false,
                 .disabled = !card.playable,
                 .highlighted = state == .hover,
+                .warning = (card.playable and !card.has_valid_targets),
             });
             const item: Renderable = .{ .card = .{
                 .model = card_vm,
@@ -497,6 +499,7 @@ const CarouselView = struct {
                 .played = false,
                 .disabled = !card.playable,
                 .highlighted = true,
+                .warning = (card.playable and !card.has_valid_targets),
             });
             last.* = .{ .card = .{
                 .model = card_vm,
@@ -589,7 +592,7 @@ pub const View = struct {
         var pvd = PlayViewData{
             .owner_id = owner.id,
             .owner_is_player = owner.director == .player,
-            .action = CardViewData.fromInstance(action_inst, .in_play, true),
+            .action = CardViewData.fromInstance(action_inst, .in_play, true, true),
             .stakes = play.effectiveStakes(),
             .time_start = slot.time_start,
             .time_end = slot.timeEnd(&self.world.card_registry),
@@ -599,7 +602,7 @@ pub const View = struct {
         // Add modifiers
         for (play.modifiers()) |entry| {
             const mod_inst = self.world.card_registry.getConst(entry.card_id) orelse continue;
-            pvd.modifier_stack_buf[pvd.modifier_stack_len] = CardViewData.fromInstance(mod_inst, .in_play, true);
+            pvd.modifier_stack_buf[pvd.modifier_stack_len] = CardViewData.fromInstance(mod_inst, .in_play, true, true);
             pvd.modifier_stack_len += 1;
         }
 
@@ -664,7 +667,8 @@ pub const View = struct {
         for (ids) |id| {
             const inst = self.world.card_registry.getConst(id) orelse continue;
             const playable = self.isCardPlayable(id);
-            result[count] = CardViewData.fromInstance(inst, source, playable);
+            const has_targets = self.cardHasValidTargets(id);
+            result[count] = CardViewData.fromInstance(inst, source, playable, has_targets);
             count += 1;
         }
 
@@ -676,6 +680,12 @@ pub const View = struct {
         const snap = self.snapshot orelse
             std.debug.panic("isCardPlayable called without snapshot - coordinator must provide snapshot for combat view", .{});
         return snap.isCardPlayable(card_id);
+    }
+
+    /// Check if a card has valid targets using snapshot.
+    fn cardHasValidTargets(self: *const View, card_id: entity.ID) bool {
+        const snap = self.snapshot orelse return true;
+        return snap.cardHasValidTargets(card_id);
     }
 
     // Input handling - returns optional command and/or view state update
@@ -1100,6 +1110,7 @@ pub const View = struct {
                     .played = false,
                     .disabled = false,
                     .highlighted = false,
+                    .warning = false,
                 });
                 try list.append(alloc, .{ .card = .{ .model = card_vm, .dst = current_rect } });
             }

@@ -12,6 +12,7 @@ pub const Data = struct {
     id: entity.ID,
     template: *const cards.Template,
     playable: bool,
+    has_valid_targets: bool,
     source: Source,
 
     /// Card sources - where the card originated from.
@@ -26,11 +27,12 @@ pub const Data = struct {
         environment, // future
     };
 
-    pub fn fromInstance(inst: *const cards.Instance, source: Source, playable: bool) Data {
+    pub fn fromInstance(inst: *const cards.Instance, source: Source, playable: bool, has_valid_targets: bool) Data {
         return .{
             .id = inst.id,
             .template = inst.template,
             .playable = playable,
+            .has_valid_targets = has_valid_targets,
             .source = source,
         };
     }

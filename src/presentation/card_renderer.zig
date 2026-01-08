@@ -78,6 +78,7 @@ fn stateBorderColor(state: CardState) ?Color {
     if (state.selected) return .{ .r = 255, .g = 255, .b = 100, .a = 255 };
     if (state.highlighted) return .{ .r = 200, .g = 200, .b = 255, .a = 255 };
     if (state.target) return .{ .r = 0, .g = 125, .b = 255, .a = 255 };
+    if (state.warning) return .{ .r = 255, .g = 165, .b = 0, .a = 255 }; // Orange - playable but no valid targets
     if (state.played) return .{ .r = 200, .g = 200, .b = 200, .a = 255 };
     return null;
 }
@@ -166,7 +167,7 @@ pub const CardRenderer = struct {
     }
 
     fn stateToHash(state: CardState) u8 {
-        const bits: u6 = @bitCast(state);
+        const bits: u7 = @bitCast(state);
         return bits;
     }
 
