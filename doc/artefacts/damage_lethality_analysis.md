@@ -2,6 +2,17 @@
 
 **Related**: `doc/issues/lethality.md`
 
+---
+
+## Progress
+
+- [x] **Phase 1**: Natural weapons fixed (T030, 2026-01-09)
+- [x] **Phase 2**: Foundation work complete - stat constants, ×10 rescale (T030, 2026-01-09)
+- [x] **Phase 3a**: Additive stat scaling (T031, 2026-01-09)
+- [ ] **Phase 3b**: Stakes rebalance (pending)
+
+---
+
 ## Summary
 
 Combat damage is tuned for instant lethality. A single hit from even improvised weapons can produce catastrophic wounds (disabled/broken/missing tissue layers). This leaves no headroom for armour mitigation and prevents the gradual attrition that historical combat exhibits.
@@ -57,7 +68,9 @@ body.applyDamage() → Wound with LayerDamage[]
 
 ---
 
-## Current Values
+## Current Values (Post-T030)
+
+> **Note**: Values below updated to reflect T030 changes. See git history for pre-fix values.
 
 ### Technique Damage (card_list.zig)
 
@@ -74,21 +87,21 @@ All offensive techniques use `amount = 1.0`:
 
 | Weapon | Profile | Damage | Penetration |
 |--------|---------|--------|-------------|
-| fist_stone_swing | bludgeon | 0.4 | 0.1 |
-| fist_stone_throw | bludgeon | 0.6 | 0.2 |
-| knights_sword_swing | slash | 1.0 | 0.5 + 4.0×0.5 |
-| knights_sword_thrust | pierce | 0.8 | 1.0 + 6.0×0.5 |
-| dirk_thrust | pierce | 0.7 | 1.2 + 5.0×0.5 |
+| fist_stone_swing | bludgeon | 4.0 | 0.1 |
+| fist_stone_throw | bludgeon | 6.0 | 0.2 |
+| knights_sword_swing | slash | 10.0 | 0.5 + 4.0×0.5 |
+| knights_sword_thrust | pierce | 8.0 | 1.0 + 6.0×0.5 |
+| dirk_thrust | pierce | 7.0 | 1.2 + 5.0×0.5 |
 
-### Natural Weapons (species.zig) - INVERTED
+### Natural Weapons (species.zig)
 
-| Weapon | Damage | Problem |
-|--------|--------|---------|
-| FIST | 2.0 | 2× sword |
-| BITE | 3.0 | 3× sword |
-| HEADBUTT | 4.0 | 4× sword |
+| Weapon | Damage | Notes |
+|--------|--------|-------|
+| FIST | 2.0 | ~20% of sword |
+| BITE | 4.0 | ~40% of sword |
+| HEADBUTT | 3.0 | ~30% of sword |
 
-Natural weapons should be weaker than steel, not stronger.
+Natural weapons are now appropriately weaker than steel.
 
 ### Stats
 
@@ -103,16 +116,16 @@ Agents typically use `stats.Block.splat(5)` - all stats at 5.0.
 | committed | 1.4 |
 | reckless | 2.0 |
 
-### Severity Thresholds (body.zig:800-807)
+### Severity Thresholds (body.zig)
 
 ```zig
 fn severityFromDamage(amount: f32) Severity {
-    if (amount < 0.05) return .none;
-    if (amount < 0.15) return .minor;
-    if (amount < 0.30) return .inhibited;
-    if (amount < 0.50) return .disabled;
-    if (amount < 0.80) return .broken;
-    return .missing;  // >= 0.80
+    if (amount < 0.5) return .none;
+    if (amount < 1.5) return .minor;
+    if (amount < 3.0) return .inhibited;
+    if (amount < 5.0) return .disabled;
+    if (amount < 8.0) return .broken;
+    return .missing;  // >= 8.0
 }
 ```
 
@@ -139,6 +152,10 @@ Each layer absorbs a fraction of remaining damage:
 ---
 
 ## Worked Examples
+
+> **Note (historical)**: These examples show the pre-T031 multiplicative scaling that caused instant lethality. Post-T031, baseline stats produce ×1.0 multiplier instead of ×4-6×. Actual damage is now:
+> - Thrown rock: 6.0 (was 24.0) → minor wounds
+> - Sword swing: 10.0 (was 60.0) → disabled skin, survivable
 
 ### Example 1: Thrown Rock (guarded stakes, stats=5)
 
@@ -444,27 +461,31 @@ pub const HEADBUTT = weapon.Template{
 
 ## Recommended Approach
 
-### Phase 1: Immediate Fixes
+### Phase 1: Immediate Fixes ✓
 
-1. **Fix natural weapon damage** - clearly wrong, no design debate needed
-   - FIST: 2.0 → 0.2
-   - BITE: 3.0 → 0.4
-   - HEADBUTT: 4.0 → 0.3
+> Completed in T030 (2026-01-09)
 
-### Phase 2: Foundation Work
+1. ~~**Fix natural weapon damage** - clearly wrong, no design debate needed~~
+   - FIST: 2.0 → 0.2 → 2.0 (after ×10)
+   - BITE: 3.0 → 0.4 → 4.0 (after ×10)
+   - HEADBUTT: 4.0 → 0.3 → 3.0 (after ×10)
 
-1. **Define stat constants in stats.zig**
+### Phase 2: Foundation Work ✓
+
+> Completed in T030 (2026-01-09)
+
+1. ~~**Define stat constants in stats.zig**~~
    ```zig
    pub const STAT_BASELINE: f32 = 5.0;
    pub const STAT_MAX: f32 = 10.0;
    ```
 
-2. **Rescale weapon damage ×10** for clarity
+2. ~~**Rescale weapon damage ×10** for clarity~~
    - Rock: 0.6 → 6.0
    - Sword: 1.0 → 10.0
-   - Natural: 0.2-0.4 → 2-4
+   - Natural: 2.0-4.0
 
-3. **Adjust severity thresholds ×10** to match
+3. ~~**Adjust severity thresholds ×10** to match~~
    ```zig
    if (amount < 0.5) return .none;
    if (amount < 1.5) return .minor;
@@ -474,14 +495,21 @@ pub const HEADBUTT = weapon.Template{
    return .missing;
    ```
 
-### Phase 3: Formula Rebalance
+### Phase 3a: Additive Stat Scaling ✓
 
-1. **Switch to additive stat scaling**
+> Completed in T031 (2026-01-09)
+
+1. ~~**Switch to additive stat scaling**~~
    ```zig
-   const norm_stat = Block.normalize(stat_value);  // 0.5 at baseline
-   const stat_bonus = (norm_stat - 0.5) * 2.0 * ratio;  // ±ratio at extremes
-   damage *= (1.0 + stat_bonus);
+   // stats.zig
+   pub fn scalingMultiplier(stat_value: f32, ratio: f32) f32 {
+       const baseline_norm = STAT_BASELINE / STAT_MAX;
+       const stat_norm = Block.normalize(stat_value);
+       return 1.0 + (stat_norm - baseline_norm) * ratio;
+   }
    ```
+
+### Phase 3b: Stakes Rebalance
 
 2. **Rebalance stakes** - more hit/targeting, less raw damage
    ```zig

@@ -7,6 +7,7 @@ const combat = @import("../combat.zig");
 const cards = @import("../cards.zig");
 const weapon = @import("../weapon.zig");
 const damage = @import("../damage.zig");
+const stats = @import("../stats.zig");
 
 const Agent = combat.Agent;
 const Technique = cards.Technique;
@@ -46,8 +47,8 @@ pub fn createDamagePacket(
         amount += inst.amount;
     }
 
-    // Scale by attacker stats
-    const stat_mult: f32 = switch (technique.damage.scaling.stats) {
+    // Scale by attacker stats (additive bonus from baseline)
+    const stat_value: f32 = switch (technique.damage.scaling.stats) {
         .stat => |accessor| attacker.stats.get(accessor),
         .average => |arr| blk: {
             const a = attacker.stats.get(arr[0]);
@@ -55,7 +56,7 @@ pub fn createDamagePacket(
             break :blk (a + b) / 2.0;
         },
     };
-    amount *= stat_mult * technique.damage.scaling.ratio;
+    amount *= stats.scalingMultiplier(stat_value, technique.damage.scaling.ratio);
 
     // Weapon damage modifier
     if (weapon_off) |off| {
@@ -90,7 +91,6 @@ pub fn createDamagePacket(
 // ============================================================================
 
 const weapon_list = @import("../weapon_list.zig");
-const stats = @import("../stats.zig");
 const species = @import("../species.zig");
 const slot_map = @import("../slot_map.zig");
 

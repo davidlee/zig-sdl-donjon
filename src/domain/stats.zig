@@ -228,6 +228,31 @@ test "Resource ratio returns current/max" {
 pub const STAT_BASELINE: f32 = 5.0; // average/default stat value
 pub const STAT_MAX: f32 = 10.0; // maximum stat value for normalization
 
+/// Compute additive scaling multiplier from stat value.
+/// Returns 1.0 at baseline (STAT_BASELINE), with ratio determining sensitivity.
+/// Example: stat=7, ratio=1.2 → 1.0 + (0.7 - 0.5) * 1.2 = 1.24
+pub fn scalingMultiplier(stat_value: f32, ratio: f32) f32 {
+    const baseline_norm = STAT_BASELINE / STAT_MAX;
+    const stat_norm = Block.normalize(stat_value);
+    return 1.0 + (stat_norm - baseline_norm) * ratio;
+}
+
+test "scalingMultiplier returns 1.0 at baseline" {
+    try testing.expectApproxEqAbs(@as(f32, 1.0), scalingMultiplier(5.0, 1.2), 0.001);
+    try testing.expectApproxEqAbs(@as(f32, 1.0), scalingMultiplier(5.0, 0.5), 0.001);
+}
+
+test "scalingMultiplier scales by ratio" {
+    // stat 7 with ratio 1.2: 1.0 + (0.7 - 0.5) * 1.2 = 1.24
+    try testing.expectApproxEqAbs(@as(f32, 1.24), scalingMultiplier(7.0, 1.2), 0.001);
+    // stat 3 with ratio 1.2: 1.0 + (0.3 - 0.5) * 1.2 = 0.76
+    try testing.expectApproxEqAbs(@as(f32, 0.76), scalingMultiplier(3.0, 1.2), 0.001);
+    // stat 10 with ratio 1.2: 1.0 + (1.0 - 0.5) * 1.2 = 1.6
+    try testing.expectApproxEqAbs(@as(f32, 1.6), scalingMultiplier(10.0, 1.2), 0.001);
+    // stat 1 with ratio 1.2: 1.0 + (0.1 - 0.5) * 1.2 = 0.52
+    try testing.expectApproxEqAbs(@as(f32, 0.52), scalingMultiplier(1.0, 1.2), 0.001);
+}
+
 pub const Block = packed struct {
     // physical
     power: f32,
