@@ -183,32 +183,52 @@ pub const TickResolver = struct {
                     }
                 }
 
-                // Check weapon reach vs engagement range (resolution-time range validation)
+                // Check weapon reach/range vs engagement range (resolution-time validation)
                 const attack_mode = action.technique.attack_mode;
                 if (attack_mode != .none) {
-                    // Offensive technique - must have weapon reach >= engagement range
-                    // Use resolved weapon_template (includes natural weapons) not armament
                     const wt = action.weapon_template orelse self.getWeaponTemplate(action.actor);
-                    const weapon_mode: ?weapon.Offensive = switch (attack_mode) {
-                        .swing => wt.swing,
-                        .thrust => wt.thrust,
-                        else => null,
-                    };
-                    if (weapon_mode) |wm| {
-                        if (@intFromEnum(wm.reach) < @intFromEnum(engagement.range)) {
-                            // Out of range - emit event and skip this target
+
+                    if (attack_mode == .ranged) {
+                        // Ranged attack: check if target is within throw/projectile range
+                        const ranged_profile = wt.ranged orelse continue; // No ranged capability
+                        const max_range = switch (ranged_profile) {
+                            .thrown => |t| t.range,
+                            .projectile => |p| p.range,
+                        };
+                        if (@intFromEnum(engagement.range) > @intFromEnum(max_range)) {
+                            // Out of range for ranged attack
                             try w.events.push(.{ .attack_out_of_range = .{
                                 .attacker_id = action.actor.id,
                                 .defender_id = defender.id,
                                 .technique_id = action.technique.id,
-                                .weapon_reach = wm.reach,
+                                .weapon_reach = max_range,
                                 .engagement_range = engagement.range,
                             } });
                             continue;
                         }
                     } else {
-                        // No weapon for this attack mode - can't attack
-                        continue;
+                        // Melee attack: weapon reach must be >= engagement range
+                        const weapon_mode: ?weapon.Offensive = switch (attack_mode) {
+                            .swing => wt.swing,
+                            .thrust => wt.thrust,
+                            else => null,
+                        };
+                        if (weapon_mode) |wm| {
+                            if (@intFromEnum(wm.reach) < @intFromEnum(engagement.range)) {
+                                // Out of range - emit event and skip this target
+                                try w.events.push(.{ .attack_out_of_range = .{
+                                    .attacker_id = action.actor.id,
+                                    .defender_id = defender.id,
+                                    .technique_id = action.technique.id,
+                                    .weapon_reach = wm.reach,
+                                    .engagement_range = engagement.range,
+                                } });
+                                continue;
+                            }
+                        } else {
+                            // No weapon for this attack mode - can't attack
+                            continue;
+                        }
                     }
                 }
 

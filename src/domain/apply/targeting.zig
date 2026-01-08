@@ -305,15 +305,26 @@ fn isValidTargetForExpression(
 
     const engagement_opt = encounter.getEngagementConst(actor.id, target.id);
 
-    // For technique effects, check weapon reach
+    // For technique effects, check weapon reach/range
     if (expr.effect == .combat_technique) {
         const technique = expr.effect.combat_technique;
         const attack_mode = technique.attack_mode;
         // Defensive techniques have no reach requirement
         if (attack_mode != .none) {
             const engagement = engagement_opt orelse return false; // No engagement = can't target
-            const weapon_mode = actor.weapons.getOffensiveMode(attack_mode) orelse return false;
-            if (@intFromEnum(weapon_mode.reach) < @intFromEnum(engagement.range)) return false;
+            if (attack_mode == .ranged) {
+                // Ranged attacks: check if target is within throw/projectile range
+                const ranged_mode = actor.weapons.getRangedMode() orelse return false;
+                const max_range = switch (ranged_mode) {
+                    .thrown => |t| t.range,
+                    .projectile => |p| p.range,
+                };
+                if (@intFromEnum(engagement.range) > @intFromEnum(max_range)) return false;
+            } else {
+                // Melee attacks: weapon reach must be >= engagement range
+                const weapon_mode = actor.weapons.getOffensiveMode(attack_mode) orelse return false;
+                if (@intFromEnum(weapon_mode.reach) < @intFromEnum(engagement.range)) return false;
+            }
         }
     }
 
