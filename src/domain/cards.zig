@@ -124,6 +124,16 @@ pub const Comparator = enum {
     eq,
     gte,
     gt,
+
+    pub fn compare(self: Comparator, lhs: f32, rhs: f32) bool {
+        return switch (self) {
+            .lt => lhs < rhs,
+            .lte => lhs <= rhs,
+            .eq => lhs == rhs,
+            .gte => lhs >= rhs,
+            .gt => lhs > rhs,
+        };
+    }
 };
 
 pub const Cost = struct {

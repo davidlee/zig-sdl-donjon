@@ -1,5 +1,26 @@
 # Damage & Conditions Overview
+
+## Damage System
 - `src/domain/damage.zig` defines the shared damage taxonomy. `Kind`/`Category` enumerate physical/magical/elemental/biological families, while `Instance` and `Packet` describe concrete attacks (amount, type mix, penetration). Scaling metadata and helper functions (`afterLayer`, `penaltiesFor`) keep math reusable.
-- Armour/body resistance is encoded via `Resistance`, `Vulnerability`, `Susceptibility`, and `Immunity` structs so mitigation tweaks remain data-driven. Condition susceptibility hooks allow armour/weapons to tag agents with specific condition risks.
-- Conditions live in the `Condition` enum, with runtime `ActiveCondition { condition, expiration }`. A centralized `condition_penalties` table maps every condition to a `CombatPenalties` record (hit chance modifier, damage multiplier, defense multiplier, dodge/footwork adjustments). Combining penalties is handled through data (`CombatPenalties.combine`) so context/resolution code just folds the table outputs.
-- Resource-based or computed conditions (blood loss, sensory impairment, pain/trauma, adrenaline phases, etc.) and explicit conditions added by effects all converge on the same enum/table. Cards reference conditions declaratively through `Predicate.has_condition` / `.lacks_condition`, and effects can add/remove via `Effect.add_condition`/`remove_condition`, aligning with the “logic as data” goal.
+- Armour/body resistance is encoded via `Resistance`, `Vulnerability`, `Susceptibility`, and `Immunity` structs so mitigation tweaks remain data-driven.
+
+## Condition Framework (T018)
+- `src/domain/condition.zig` provides a declarative, data-driven condition framework:
+  - `ConditionDefinition` describes each condition's computation type and category
+  - `ComputationType` union: `.stored`, `.resource_threshold`, `.balance_threshold`, `.sensory_threshold`, `.engagement_threshold`, `.positional`, `.any`
+  - `Category` enum: `.stored`, `.internal`, `.relational`, `.positional`
+  - `condition_definitions` table drives the `ConditionIterator` - adding conditions = adding rows
+  - Comptime validation ensures resource thresholds are ordered worst-first
+
+## Condition Caching & Querying
+- `Agent.condition_cache` caches internal computed conditions (blood, pain, trauma, balance, sensory)
+- `Agent.invalidateConditionCache()` recomputes cache and emits `condition_applied`/`condition_expired` events
+- `Agent.hasCondition()` checks stored conditions + cache
+- `Agent.hasConditionWithContext()` additionally checks relational conditions (requires engagement)
+- `ConditionIterator` walks stored conditions then computed conditions from the definitions table
+
+## Penalty System
+- `Condition` enum in `damage.zig` enumerates all conditions
+- `condition_penalties` table maps conditions to `CombatPenalties` (hit chance, damage mult, defense mult, dodge mod)
+- `CombatModifiers.forAttacker/forDefender` iterates conditions and applies penalties
+- Cards reference conditions via `Predicate.has_condition`/`.lacks_condition`, effects via `Effect.add_condition`/`remove_condition`

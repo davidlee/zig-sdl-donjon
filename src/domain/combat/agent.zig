@@ -10,6 +10,8 @@ const SlotMap = @import("../slot_map.zig").SlotMap;
 
 const armour = @import("../armour.zig");
 const body = @import("../body.zig");
+const cards = @import("../cards.zig");
+const cond = @import("../condition.zig");
 const damage = @import("../damage.zig");
 const events = @import("../events.zig");
 const stats = @import("../stats.zig");
@@ -62,6 +64,9 @@ pub const Agent = struct {
     trauma: stats.Resource, // neurological stress, starts empty
     morale: stats.Resource, // psychological state, starts full (stub for future)
     time_available: f32 = 1.0,
+
+    // Condition cache for internal computed conditions
+    condition_cache: cond.ConditionCache = .{},
 
     conditions: std.ArrayList(damage.ActiveCondition),
     immunities: std.ArrayList(damage.Immunity),
@@ -221,8 +226,8 @@ pub const Agent = struct {
 
         // Unconscious or comatose condition
         var iter = self.activeConditions(null);
-        while (iter.next()) |cond| {
-            if (cond.condition == .unconscious or cond.condition == .comatose) {
+        while (iter.next()) |ac| {
+            if (ac.condition == .unconscious or ac.condition == .comatose) {
                 return true;
             }
         }
@@ -237,12 +242,47 @@ pub const Agent = struct {
         return ConditionIterator.init(self, engagement);
     }
 
-    /// Check if agent has a specific stored condition.
-    /// Note: Does not check computed/relational conditions (pressured, etc.)
+    /// Check if agent has a specific condition (stored or computed).
+    /// Checks stored conditions, then internal computed conditions via cache.
+    /// For relational conditions (pressured, weapon_bound), use hasConditionWithContext.
     pub fn hasCondition(self: *const Agent, condition: damage.Condition) bool {
-        for (self.conditions.items) |cond| {
-            if (cond.condition == condition) return true;
+        // Check stored conditions
+        for (self.conditions.items) |ac| {
+            if (ac.condition == condition) return true;
         }
+
+        // Check internal computed conditions via cache
+        if (self.condition_cache.conditions.isSet(@intFromEnum(condition))) return true;
+
+        return false;
+    }
+
+    /// Context for condition queries requiring engagement/encounter.
+    pub const ConditionQueryContext = struct {
+        engagement: ?*const Engagement = null,
+    };
+
+    /// Check if agent has a specific condition with additional context.
+    /// Supports relational conditions when engagement is provided.
+    pub fn hasConditionWithContext(
+        self: *const Agent,
+        condition: damage.Condition,
+        ctx: ConditionQueryContext,
+    ) bool {
+        // First check stored and internal cached conditions
+        if (self.hasCondition(condition)) return true;
+
+        // Check relational conditions if engagement provided
+        if (ctx.engagement) |eng| {
+            if (cond.getDefinitionFor(condition)) |def| {
+                if (def.category == .relational) {
+                    // Evaluate relational condition on-demand
+                    const iter = ConditionIterator.init(self, eng);
+                    return iter.evaluate(def.computation);
+                }
+            }
+        }
+
         return false;
     }
 
@@ -286,23 +326,105 @@ pub const Agent = struct {
         }
         return total;
     }
+
+    /// Get resource ratio by accessor type (for condition framework).
+    pub fn getResourceRatio(self: *const Agent, accessor: cond.ResourceAccessor) f32 {
+        return switch (accessor) {
+            .blood => self.blood.ratio(),
+            .pain => self.pain.ratio(),
+            .trauma => self.trauma.ratio(),
+            .morale => self.morale.ratio(),
+        };
+    }
+
+    /// Get sensory score by type (for condition framework).
+    pub fn getSensoryScore(self: *const Agent, sense: cond.SensoryType) f32 {
+        return switch (sense) {
+            .vision => self.body.visionScore(),
+            .hearing => self.body.hearingScore(),
+        };
+    }
+
+    /// Build EvalContext from current agent state.
+    pub fn buildEvalContext(self: *const Agent) cond.ConditionCache.EvalContext {
+        return .{
+            .balance = self.balance,
+            .blood_ratio = self.blood.ratio(),
+            .pain_ratio = self.pain.ratio(),
+            .trauma_ratio = self.trauma.ratio(),
+            .morale_ratio = self.morale.ratio(),
+            .vision_score = self.body.visionScore(),
+            .hearing_score = self.body.hearingScore(),
+        };
+    }
+
+    /// Recompute condition cache and emit events for changes.
+    /// Call after blood/pain/trauma/balance/sensory metric changes.
+    pub fn invalidateConditionCache(
+        self: *Agent,
+        event_sink: ?*events.EventSystem,
+        is_player: bool,
+    ) void {
+        const old = self.condition_cache.conditions;
+        self.condition_cache.recompute(self.buildEvalContext());
+        const new = self.condition_cache.conditions;
+
+        // Emit events for condition changes
+        if (event_sink) |es| {
+            const actor = events.AgentMeta{ .id = self.id, .player = is_player };
+            emitConditionDiff(old, new, self.id, actor, es);
+        }
+    }
 };
+
+/// Emit condition_applied/expired events for differences between old and new bitsets.
+fn emitConditionDiff(
+    old: cond.ConditionBitSet,
+    new: cond.ConditionBitSet,
+    agent_id: entity.ID,
+    actor: events.AgentMeta,
+    es: *events.EventSystem,
+) void {
+    // New conditions (in new but not old)
+    var gained = new;
+    gained.setIntersection(old.complement());
+    var gained_iter = gained.iterator(.{});
+    while (gained_iter.next()) |cond_int| {
+        es.push(.{ .condition_applied = .{
+            .agent_id = agent_id,
+            .condition = @enumFromInt(cond_int),
+            .actor = actor,
+        } }) catch {};
+    }
+
+    // Expired conditions (in old but not new)
+    var lost = old;
+    lost.setIntersection(new.complement());
+    var lost_iter = lost.iterator(.{});
+    while (lost_iter.next()) |cond_int| {
+        es.push(.{ .condition_expired = .{
+            .agent_id = agent_id,
+            .condition = @enumFromInt(cond_int),
+            .actor = actor,
+        } }) catch {};
+    }
+}
 
 // ============================================================================
 // Condition Iterator
 // ============================================================================
 
-/// Iterates stored conditions, then yields computed conditions based on thresholds.
+/// Iterates stored conditions, then yields computed conditions from definitions table.
 /// Computed conditions include:
-/// - Physiology: unbalanced (balance), blood loss (lightheaded, bleeding_out, hypovolemic_shock)
-/// - Combat: pressured, weapon_bound (require engagement context)
+/// - Internal: balance, blood loss, pain, trauma, sensory impairment
+/// - Relational: pressured, weapon_bound (require engagement context)
+/// - Positional: flanked, surrounded (require encounter context, NYI)
 pub const ConditionIterator = struct {
     agent: *const Agent,
     engagement: ?*const Engagement,
     stored_index: usize = 0,
-    computed_phase: u4 = 0,
-
-    const Expiration = damage.ActiveCondition.Expiration;
+    def_index: usize = 0,
+    yielded_resources: std.EnumSet(cond.ResourceAccessor) = .{},
 
     pub fn init(agent: *const Agent, engagement: ?*const Engagement) ConditionIterator {
         return .{ .agent = agent, .engagement = engagement };
@@ -311,65 +433,77 @@ pub const ConditionIterator = struct {
     pub fn next(self: *ConditionIterator) ?damage.ActiveCondition {
         // Phase 1: yield stored conditions
         if (self.stored_index < self.agent.conditions.items.len) {
-            const cond = self.agent.conditions.items[self.stored_index];
+            const stored = self.agent.conditions.items[self.stored_index];
             self.stored_index += 1;
-            return cond;
+            return stored;
         }
 
-        // Phase 2: yield computed conditions
-        // Physiology conditions (no engagement needed)
-        // Blood loss conditions checked worst-first
-        while (self.computed_phase < 8) {
-            const phase = self.computed_phase;
-            self.computed_phase += 1;
+        // Phase 2: yield computed conditions from definitions table
+        while (self.def_index < cond.condition_definitions.len) {
+            const def = cond.condition_definitions[self.def_index];
+            self.def_index += 1;
 
-            switch (phase) {
-                // Physiology: balance
-                0 => if (self.agent.balance < 0.2) {
-                    return .{ .condition = .unbalanced, .expiration = .dynamic };
-                },
-                // Physiology: blood loss (worst first)
-                1 => {
-                    const ratio = self.agent.blood.current / self.agent.blood.max;
-                    if (ratio < 0.4) {
-                        return .{ .condition = .hypovolemic_shock, .expiration = .dynamic };
-                    }
-                },
-                2 => {
-                    const ratio = self.agent.blood.current / self.agent.blood.max;
-                    if (ratio < 0.6) {
-                        return .{ .condition = .bleeding_out, .expiration = .dynamic };
-                    }
-                },
-                3 => {
-                    const ratio = self.agent.blood.current / self.agent.blood.max;
-                    if (ratio < 0.8) {
-                        return .{ .condition = .lightheaded, .expiration = .dynamic };
-                    }
-                },
-                // Physiology: sensory impairment
-                4 => if (self.agent.body.visionScore() < 0.3) {
-                    return .{ .condition = .blinded, .expiration = .dynamic };
-                },
-                5 => if (self.agent.body.hearingScore() < 0.3) {
-                    return .{ .condition = .deafened, .expiration = .dynamic };
-                },
-                // Combat: engagement-dependent
-                6 => if (self.engagement) |eng| {
-                    if (eng.pressure > 0.8) {
-                        return .{ .condition = .pressured, .expiration = .dynamic };
-                    }
-                },
-                7 => if (self.engagement) |eng| {
-                    if (eng.control > 0.8) {
-                        return .{ .condition = .weapon_bound, .expiration = .dynamic };
-                    }
-                },
-                else => {},
+            // Skip stored conditions (already yielded from agent.conditions)
+            if (def.computation == .stored) continue;
+
+            // Skip relational conditions if no engagement context
+            if (def.category == .relational and self.engagement == null) continue;
+
+            // Skip positional conditions (encounter context NYI)
+            if (def.category == .positional) continue;
+
+            // For resource thresholds: only yield worst per resource
+            // (table is ordered worst-first within each resource)
+            if (def.computation == .resource_threshold) {
+                const rt = def.computation.resource_threshold;
+                if (self.yielded_resources.contains(rt.resource)) continue;
+            }
+
+            if (self.evaluate(def.computation)) {
+                // Mark resource as yielded if this was a resource threshold
+                if (def.computation == .resource_threshold) {
+                    const rt = def.computation.resource_threshold;
+                    self.yielded_resources.insert(rt.resource);
+                }
+
+                return .{
+                    .condition = def.condition,
+                    .expiration = .dynamic,
+                };
             }
         }
 
         return null;
+    }
+
+    /// Evaluate whether a computation is active for the current context.
+    fn evaluate(self: *const ConditionIterator, comp: cond.ComputationType) bool {
+        return switch (comp) {
+            .stored => false,
+            .resource_threshold => |rt| rt.op.compare(
+                self.agent.getResourceRatio(rt.resource),
+                rt.value,
+            ),
+            .balance_threshold => |bt| bt.op.compare(self.agent.balance, bt.value),
+            .sensory_threshold => |st| st.op.compare(
+                self.agent.getSensoryScore(st.sense),
+                st.value,
+            ),
+            .engagement_threshold => |et| if (self.engagement) |eng| blk: {
+                const metric_value = switch (et.metric) {
+                    .pressure => eng.pressure,
+                    .control => eng.control,
+                };
+                break :blk et.op.compare(metric_value, et.value);
+            } else false,
+            .positional => false, // Encounter context NYI
+            .any => |alternatives| {
+                for (alternatives) |alt| {
+                    if (self.evaluate(alt)) return true;
+                }
+                return false;
+            },
+        };
     }
 };
 
@@ -458,8 +592,8 @@ test "ConditionIterator yields blinded when eyes damaged" {
     // Check that .blinded is yielded
     var found_blinded = false;
     var iter = test_agent.agent.activeConditions(null);
-    while (iter.next()) |cond| {
-        if (cond.condition == .blinded) {
+    while (iter.next()) |ac| {
+        if (ac.condition == .blinded) {
             found_blinded = true;
             break;
         }
@@ -486,8 +620,8 @@ test "ConditionIterator yields deafened when ears damaged" {
     // Check that .deafened is yielded
     var found_deafened = false;
     var iter = test_agent.agent.activeConditions(null);
-    while (iter.next()) |cond| {
-        if (cond.condition == .deafened) {
+    while (iter.next()) |ac| {
+        if (ac.condition == .deafened) {
             found_deafened = true;
             break;
         }
@@ -649,4 +783,72 @@ test "Agent pain/trauma accumulate via inflict" {
     // Capped at max
     agent.trauma.inflict(100.0);
     try testing.expectApproxEqAbs(@as(f32, 1.0), agent.trauma.ratio(), 0.001);
+}
+
+test "hasCondition detects computed conditions via cache" {
+    var agents = try SlotMap(*Agent).init(testing.allocator);
+    defer agents.deinit();
+
+    const test_agent = try makeTestAgent(testing.allocator, &agents);
+    defer test_agent.destroy(&agents);
+
+    var agent = test_agent.agent;
+
+    // Initially no lightheaded (blood is full)
+    try testing.expect(!agent.hasCondition(.lightheaded));
+
+    // Drain blood below 80% threshold
+    agent.blood.current = agent.blood.max * 0.7;
+
+    // Invalidate cache to pick up the change
+    agent.invalidateConditionCache(null, false);
+
+    // Now hasCondition should detect lightheaded via cache
+    try testing.expect(agent.hasCondition(.lightheaded));
+
+    // But not hypovolemic_shock (needs < 40%)
+    try testing.expect(!agent.hasCondition(.hypovolemic_shock));
+}
+
+test "condition cache emits events on threshold crossing" {
+    var agents = try SlotMap(*Agent).init(testing.allocator);
+    defer agents.deinit();
+
+    const test_agent = try makeTestAgent(testing.allocator, &agents);
+    defer test_agent.destroy(&agents);
+
+    var agent = test_agent.agent;
+
+    // Create event system
+    var es = events.EventSystem.init(testing.allocator) catch unreachable;
+    defer es.deinit();
+
+    // Initial state: full blood, no conditions
+    agent.invalidateConditionCache(&es, true);
+
+    // No events yet (no change) - events go to next_events buffer
+    try testing.expectEqual(@as(usize, 0), es.next_events.items.len);
+
+    // Drain blood below threshold
+    agent.blood.current = agent.blood.max * 0.5; // below 0.6, triggers bleeding_out
+
+    // Invalidate - should emit condition_applied for bleeding_out
+    agent.invalidateConditionCache(&es, true);
+
+    // Should have emitted at least one event
+    try testing.expect(es.next_events.items.len > 0);
+
+    // Check that bleeding_out was applied
+    var found_bleeding_out = false;
+    for (es.next_events.items) |ev| {
+        switch (ev) {
+            .condition_applied => |ca| {
+                if (ca.condition == .bleeding_out) {
+                    found_bleeding_out = true;
+                }
+            },
+            else => {},
+        }
+    }
+    try testing.expect(found_bleeding_out);
 }

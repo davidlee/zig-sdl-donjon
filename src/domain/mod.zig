@@ -17,6 +17,7 @@ pub const card_list = @import("card_list.zig");
 pub const combat = @import("combat.zig");
 pub const body = @import("body.zig");
 pub const damage = @import("damage.zig");
+pub const condition = @import("condition.zig");
 pub const armour = @import("armour.zig");
 pub const weapon = @import("weapon.zig");
 pub const weapon_list = @import("weapon_list.zig");
