@@ -10,8 +10,10 @@ const s = @import("sdl3");
 const World = @import("../../domain/world.zig").World;
 const CombatLog = @import("../combat_log.zig").CombatLog;
 const combat = @import("../../domain/combat.zig");
+const conditions_mod = @import("combat/conditions.zig");
 
 const Renderable = view.Renderable;
+const types = view.types;
 const ViewState = view.ViewState;
 const InputResult = view.InputResult;
 const Rect = s.rect.FRect;
@@ -205,6 +207,7 @@ const StatusBars = struct {
     focus_available: f32,
     blood: f32,
     blood_max: f32,
+    player: *const combat.Agent,
 
     fn init(player: *const combat.Agent) StatusBars {
         return .{
@@ -214,6 +217,7 @@ const StatusBars = struct {
             .focus_available = player.focus.available,
             .blood = player.blood.current,
             .blood_max = player.blood.max,
+            .player = player,
         };
     }
 
@@ -275,6 +279,49 @@ const StatusBars = struct {
             },
         };
         try blood_bar.render(alloc, list);
+
+        // Player conditions (below blood bar)
+        try self.renderConditions(alloc, list);
+    }
+
+    fn renderConditions(self: StatusBars, alloc: std.mem.Allocator, list: *std.ArrayList(Renderable)) !void {
+        // Get player conditions (no engagement context - shows internal conditions only)
+        const conds = conditions_mod.getDisplayConditions(self.player, null);
+        if (conds.len == 0) return;
+
+        // Position below blood bar
+        const conditions_y = status_chrome.start_y + (status_chrome.bar_height + status_chrome.bar_gap) * 3 + 2;
+        const line_height: f32 = 14;
+
+        // Render horizontally with spacing
+        var x_offset: f32 = 0;
+        const spacing: f32 = 8;
+        for (conds.constSlice()) |cond| {
+            try list.append(alloc, .{ .text = .{
+                .content = cond.label,
+                .pos = .{
+                    .x = status_chrome.start_x + x_offset,
+                    .y = conditions_y,
+                },
+                .font_size = .small,
+                .color = cond.color,
+            } });
+            // Estimate label width: ~7px per character at small font
+            x_offset += @as(f32, @floatFromInt(cond.label.len)) * 7 + spacing;
+        }
+
+        // Add incapacitated warning if player is incapacitated
+        if (conditions_mod.isIncapacitated(self.player)) {
+            try list.append(alloc, .{ .text = .{
+                .content = "!! INCAPACITATED !!",
+                .pos = .{
+                    .x = status_chrome.start_x,
+                    .y = conditions_y + line_height,
+                },
+                .font_size = .small,
+                .color = Color{ .r = 255, .g = 50, .b = 50, .a = 255 },
+            } });
+        }
     }
 };
 

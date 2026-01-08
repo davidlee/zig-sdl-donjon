@@ -7,9 +7,11 @@ const std = @import("std");
 const view = @import("../view.zig");
 const infra = @import("infra");
 const combat = @import("../../../domain/combat.zig");
+const conditions_mod = @import("conditions.zig");
 
 const entity = infra.entity;
 const Renderable = view.Renderable;
+const types = view.types;
 const AssetId = view.AssetId;
 const Point = view.Point;
 const Rect = view.Rect;
@@ -105,12 +107,74 @@ pub const Opposition = struct {
             const sprite = Enemy.init(e.id, i);
             try list.append(alloc, sprite.renderable());
 
-            // Engagement bars and label
+            // Incapacitated overlay - big white X
+            if (conditions_mod.isIncapacitated(e)) {
+                try appendIncapacitatedOverlay(alloc, list, sprite.rect);
+            }
+
+            // Engagement bars, label, and conditions
             if (encounter) |enc| {
                 const is_primary = if (primary_target) |pt| pt.eql(e.id) else false;
                 const blood_ratio = e.blood.current / e.blood.max;
-                try appendEngagementInfo(alloc, list, sprite.rect, enc.getPlayerEngagementConst(e.id), e.balance, blood_ratio, is_primary);
+                const engagement = enc.getPlayerEngagementConst(e.id);
+                try appendEngagementInfo(alloc, list, sprite.rect, engagement, e.balance, blood_ratio, is_primary);
+                try appendConditions(alloc, list, sprite.rect, e, engagement);
             }
+        }
+    }
+
+    /// Render incapacitated overlay - white X over sprite
+    fn appendIncapacitatedOverlay(
+        alloc: std.mem.Allocator,
+        list: *std.ArrayList(Renderable),
+        sprite_rect: Rect,
+    ) !void {
+        // Semi-transparent dark background
+        try list.append(alloc, .{ .filled_rect = .{
+            .rect = sprite_rect,
+            .color = .{ .r = 0, .g = 0, .b = 0, .a = 180 },
+        } });
+        // White X centered on sprite
+        const x_size: f32 = 24;
+        const center_x = sprite_rect.x + sprite_rect.w / 2;
+        const center_y = sprite_rect.y + sprite_rect.h / 2;
+        try list.append(alloc, .{ .text = .{
+            .content = "X",
+            .pos = .{ .x = center_x - x_size / 2, .y = center_y - x_size / 2 },
+            .font_size = .normal,
+            .color = .{ .r = 255, .g = 255, .b = 255, .a = 255 },
+        } });
+    }
+
+    /// Render compact condition chips below engagement info
+    fn appendConditions(
+        alloc: std.mem.Allocator,
+        list: *std.ArrayList(Renderable),
+        sprite_rect: Rect,
+        agent: *const combat.Agent,
+        engagement: ?combat.Engagement,
+    ) !void {
+        const conds = conditions_mod.getDisplayConditions(agent, engagement);
+        if (conds.len == 0) return;
+
+        // Position below engagement info (5 bars + range label)
+        // bar_start_y + 5*(2+1) + 2 + 14 (label height) = bar_start_y + 31
+        const bar_start_y = sprite_rect.y + sprite_rect.h + 2;
+        const conditions_start_y = bar_start_y + 31;
+        const line_height: f32 = 12;
+
+        // Show up to 3 conditions to avoid clutter
+        const max_display = @min(conds.len, 3);
+        for (conds.constSlice()[0..max_display], 0..) |cond, idx| {
+            try list.append(alloc, .{ .text = .{
+                .content = cond.label,
+                .pos = .{
+                    .x = sprite_rect.x,
+                    .y = conditions_start_y + @as(f32, @floatFromInt(idx)) * line_height,
+                },
+                .font_size = .small,
+                .color = cond.color,
+            } });
         }
     }
 

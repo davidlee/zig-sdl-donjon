@@ -20,6 +20,7 @@ const card_mod = @import("../card/mod.zig");
 const combat_mod = @import("mod.zig");
 const hit_mod = combat_mod.hit;
 const play_mod = combat_mod.play;
+const conditions_mod = @import("conditions.zig");
 
 const Renderable = views.Renderable;
 const AssetId = views.AssetId;
@@ -1110,22 +1111,63 @@ pub const View = struct {
         // Note: End Turn button and status bars are now rendered by chrome layer
 
         switch (cs.hover) {
-            .enemy => |_| {
-                const xw = 240;
-                const yh = 440;
+            .enemy => |enemy_id| {
+                // Find the enemy agent
+                var enemy_agent: ?*const Agent = null;
+                for (self.opposition.enemies) |e| {
+                    if (e.id.eql(enemy_id)) {
+                        enemy_agent = e;
+                        break;
+                    }
+                }
 
-                // tooltip
-                try list.append(alloc, .{
-                    .filled_rect = .{
-                        .rect = .{ .x = vs.mouse_vp.x - xw / 2, .y = vs.mouse_vp.y + 15, .w = xw, .h = yh },
-                        .color = .{
-                            .r = 100,
-                            .g = 100,
-                            .b = 100,
-                            .a = 255,
+                if (enemy_agent) |agent| {
+                    // Get conditions for display
+                    const engagement = if (self.world.encounter) |encounter|
+                        encounter.getPlayerEngagementConst(enemy_id)
+                    else
+                        null;
+                    const conds = conditions_mod.getDisplayConditions(agent, engagement);
+
+                    // Calculate tooltip size based on conditions
+                    const line_height: f32 = 18;
+                    const padding: f32 = 8;
+                    const xw: f32 = 160;
+                    const yh: f32 = padding * 2 + @as(f32, @floatFromInt(@max(conds.len, 1))) * line_height;
+
+                    const tooltip_x = vs.mouse_vp.x - xw / 2;
+                    const tooltip_y = vs.mouse_vp.y + 15;
+
+                    // Tooltip background
+                    try list.append(alloc, .{
+                        .filled_rect = .{
+                            .rect = .{ .x = tooltip_x, .y = tooltip_y, .w = xw, .h = yh },
+                            .color = .{ .r = 40, .g = 40, .b = 40, .a = 230 },
                         },
-                    },
-                });
+                    });
+
+                    // Render conditions
+                    if (conds.len == 0) {
+                        try list.append(alloc, .{ .text = .{
+                            .content = "(no conditions)",
+                            .pos = .{ .x = tooltip_x + padding, .y = tooltip_y + padding },
+                            .font_size = .small,
+                            .color = .{ .r = 120, .g = 120, .b = 120, .a = 255 },
+                        } });
+                    } else {
+                        for (conds.constSlice(), 0..) |cond, i| {
+                            try list.append(alloc, .{ .text = .{
+                                .content = cond.label,
+                                .pos = .{
+                                    .x = tooltip_x + padding,
+                                    .y = tooltip_y + padding + @as(f32, @floatFromInt(i)) * line_height,
+                                },
+                                .font_size = .small,
+                                .color = cond.color,
+                            } });
+                        }
+                    }
+                }
             },
             else => {},
         }
