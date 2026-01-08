@@ -519,8 +519,9 @@ pub const CommandHandler = struct {
             break :blk nc;
         } else current_channels;
 
-        // Get duration for validation
+        // Get duration and original time BEFORE removing
         const duration = combat.getPlayDuration(play, &self.world.card_registry);
+        const old_time_start = enc_state.current.slots()[play_index].time_start;
 
         // Remove from current position
         enc_state.current.removePlay(play_index);
@@ -538,10 +539,9 @@ pub const CommandHandler = struct {
             if (new_channel != null) {
                 play.channel_override = null;
             }
-            const old_slot = enc_state.current.slots()[play_index];
             enc_state.current.timeline.insert(
-                old_slot.time_start,
-                old_slot.time_start + duration,
+                old_time_start,
+                old_time_start + duration,
                 play,
                 current_channels,
                 &self.world.card_registry,

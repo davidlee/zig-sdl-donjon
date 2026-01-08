@@ -7,6 +7,7 @@ const std = @import("std");
 const s = @import("sdl3");
 const lib = @import("infra");
 const view = @import("views/view.zig");
+const cards = @import("../domain/cards.zig");
 const entity = lib.entity;
 
 pub const Point = s.rect.FPoint;
@@ -23,6 +24,7 @@ pub const ViewState = struct {
     combat: ?CombatUIState = null,
     menu: ?MenuState = null,
     clicked: ?Point = null,
+    click_time: ?u64 = null, // timestamp (ns) when clicked - for click vs drag detection
 
     /// Update just the combat UI state, preserving system state
     pub fn withCombat(self: ViewState, combat_state: ?CombatUIState) ViewState {
@@ -158,8 +160,21 @@ pub const MenuState = struct {
 /// Drag operation state
 pub const DragState = struct {
     id: entity.ID,
-    // grab_offset: Point, // click position relative to item's origin
     original_pos: Point,
+    start_time: u64, // timestamp (ns) when drag started
+    source: DragSource,
+
+    // Drop target indicators (updated during drag)
+    target_time: ?f32 = null, // timeline position under cursor (0.0-1.0)
+    target_channel: ?cards.ChannelSet = null, // lane under cursor
+    is_valid_drop: bool = false, // can drop at current position?
+
+    // Existing (for modifier stacking in commit phase)
     target: ?entity.ID = null, // highlight valid drop target (card ID)
-    target_play_index: ?usize = null, // highlight valid drop target (play index for modifiers)
+    target_play_index: ?usize = null, // highlight valid drop target (play index)
+
+    pub const DragSource = enum {
+        hand, // dragging from hand/carousel
+        timeline, // dragging from timeline (reorder/lane switch)
+    };
 };

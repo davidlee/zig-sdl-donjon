@@ -300,6 +300,14 @@ pub const timeline_axis = struct {
     pub fn timeToX(t: f32) f32 {
         return start_x + t * (slot_width / 0.1);
     }
+
+    /// Convert X position to time (0.0-1.0), clamped and snapped to 0.1 increments
+    pub fn xToTime(x: f32) f32 {
+        const raw_time = (x - start_x) / (slot_width / 0.1);
+        const clamped = @max(0.0, @min(1.0, raw_time));
+        // Snap to 0.1 increments (floor so cursor must be past slot start)
+        return @floor(clamped * 10.0) / 10.0;
+    }
 };
 
 /// Timeline view: renders plays positioned by channel × time.
@@ -330,6 +338,43 @@ pub const TimelineView = struct {
 
     pub fn init(play_data: []const Data) TimelineView {
         return .{ .plays = play_data };
+    }
+
+    /// Result of timeline position hit test
+    pub const DropPosition = struct {
+        time: f32, // 0.0-1.0, snapped to 0.1
+        channel: domain_cards.ChannelSet,
+    };
+
+    /// Convert Y position to lane index (0-3), or null if outside timeline
+    pub fn yToLane(y: f32) ?usize {
+        if (y < start_y or y >= start_y + timeline_height) return null;
+        const lane_f = (y - start_y) / lane_height;
+        const lane = @as(usize, @intFromFloat(lane_f));
+        return if (lane < num_lanes) lane else null;
+    }
+
+    /// Convert lane index to ChannelSet
+    pub fn laneToChannel(lane: usize) domain_cards.ChannelSet {
+        return switch (lane) {
+            0 => .{ .weapon = true },
+            1 => .{ .off_hand = true },
+            2 => .{ .footwork = true },
+            3 => .{ .concentration = true },
+            else => .{}, // empty for invalid lane
+        };
+    }
+
+    /// Hit test for drop position: returns (time, channel) if point is within timeline area
+    pub fn hitTestDrop(pt: Point) ?DropPosition {
+        // Check if within timeline bounds
+        if (pt.x < start_x or pt.x > start_x + timeline_width) return null;
+        const lane = yToLane(pt.y) orelse return null;
+
+        return .{
+            .time = timeline_axis.xToTime(pt.x),
+            .channel = laneToChannel(lane),
+        };
     }
 
     /// Compute duration bar rect (shows occupied time slots)
@@ -460,6 +505,7 @@ pub const TimelineView = struct {
 
         // Render plays: duration bars first (behind), then cards (in front)
         const ui = vs.combat orelse CombatUIState{};
+
         const hover_id: ?entity.ID = switch (ui.hover) {
             .card => |id| id,
             else => null,
@@ -468,17 +514,49 @@ pub const TimelineView = struct {
         const duration_bar_color = Color{ .r = 30, .g = 50, .b = 80, .a = 255 }; // dark blue
 
         // First pass: duration bars (skip animating cards)
+        // For dragged play, show at target position instead of current
         for (self.plays) |play| {
             if (ui.isAnimating(play.action.id)) continue;
+
+            const is_being_dragged = if (ui.drag) |drag|
+                drag.id.eql(play.action.id) and drag.target_time != null
+            else
+                false;
+
+            const rect = if (is_being_dragged) blk: {
+                // Render at target position
+                const target_time = ui.drag.?.target_time.?;
+                const duration = play.time_end - play.time_start;
+                const inset: f32 = 4;
+                const time_x = start_x + target_time * (slot_width / 0.1);
+                const channel_y = play.channelY();
+                const span = play.channelSpan();
+                const y = start_y + channel_y * lane_height;
+                const h = span * lane_height;
+                break :blk Rect{
+                    .x = time_x + inset,
+                    .y = y + inset,
+                    .w = duration * (slot_width / 0.1) - inset * 2,
+                    .h = h - inset * 2,
+                };
+            } else durationRect(&play);
+
             try list.append(alloc, .{ .filled_rect = .{
-                .rect = durationRect(&play),
+                .rect = rect,
                 .color = duration_bar_color,
             } });
         }
 
-        // Second pass: cards (skip animating cards - they're rendered by animation system)
+        // Second pass: cards (skip animating and dragged cards)
         for (self.plays, 0..) |play, i| {
             if (ui.isAnimating(play.action.id)) continue;
+
+            // Skip card being dragged - it's rendered following cursor
+            const is_being_dragged = if (ui.drag) |drag|
+                drag.id.eql(play.action.id)
+            else
+                false;
+            if (is_being_dragged) continue;
 
             const is_drop_target = if (ui.drag) |drag|
                 drag.target_play_index == i
@@ -507,6 +585,9 @@ pub const TimelineView = struct {
         const decal_spacing: f32 = 4;
         for (self.plays) |play| {
             if (ui.isAnimating(play.action.id)) continue;
+            // Skip dragged card
+            const is_being_dragged = if (ui.drag) |drag| drag.id.eql(play.action.id) else false;
+            if (is_being_dragged) continue;
             const mods = play.modifiers();
             if (mods.len == 0) continue;
 

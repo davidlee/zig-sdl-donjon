@@ -773,29 +773,64 @@ pub const View = struct {
         const cs = vs.combat orelse CombatUIState{};
 
         switch (event) {
-            .mouse_button_down => {
+            .mouse_button_down => |data| {
                 if (self.hitTestPlayerCards(vs)) |hit| {
-                    const card_id = hit.cardId();
-                    if (self.isCardDraggable(card_id)) {
+                    // Only start immediate drag for drag-only cards (modifiers in commit phase)
+                    if (self.shouldStartImmediateDrag(hit)) {
+                        const source: DragState.DragSource = switch (hit) {
+                            .card => .hand,
+                            .play => .timeline,
+                        };
                         var new_cs = cs;
                         new_cs.drag = .{
                             .original_pos = vs.mouse_vp,
-                            .id = card_id,
+                            .id = hit.cardId(),
+                            .start_time = data.common.timestamp,
+                            .source = source,
                         };
                         return .{ .vs = vs.withCombat(new_cs) };
                     }
                 }
+                // For all other cards: record click, timing determines click vs drag later
                 var new_vs = vs;
                 new_vs.clicked = vs.mouse_vp;
+                new_vs.click_time = data.common.timestamp;
                 return .{ .vs = new_vs };
             },
-            .mouse_button_up => {
-                return self.handleRelease(vs);
+            .mouse_button_up => |data| {
+                return self.handleRelease(vs, data.common.timestamp);
             },
-            .mouse_motion => {
+            .mouse_motion => |data| {
                 if (cs.drag) |drag| {
                     return self.handleDragging(vs, drag);
-                } else return self.handleHover(vs);
+                }
+                // Check if we should start a delayed drag (held > 250ms without drag state)
+                if (vs.clicked != null and vs.click_time != null) {
+                    const hold_duration = data.common.timestamp -| vs.click_time.?;
+                    if (hold_duration >= click_threshold_ns) {
+                        // Held long enough - start drag if card is draggable
+                        if (self.hitTestPlayerCards(vs)) |hit| {
+                            if (self.isCardDraggable(hit)) {
+                                const source: DragState.DragSource = switch (hit) {
+                                    .card => .hand,
+                                    .play => .timeline,
+                                };
+                                var new_cs = cs;
+                                new_cs.drag = .{
+                                    .original_pos = vs.clicked.?,
+                                    .id = hit.cardId(),
+                                    .start_time = vs.click_time.?,
+                                    .source = source,
+                                };
+                                var new_vs = vs;
+                                new_vs.clicked = null;
+                                new_vs.click_time = null;
+                                return .{ .vs = new_vs.withCombat(new_cs) };
+                            }
+                        }
+                    }
+                }
+                return self.handleHover(vs);
             },
             .key_down => |data| {
                 if (data.key) |key| {
@@ -823,40 +858,48 @@ pub const View = struct {
         const cs = vs.combat orelse CombatUIState{};
         var new_cs = cs;
 
-        // Clear any previous target
+        // Clear any previous targets
         new_cs.drag.?.target = null;
         new_cs.drag.?.target_play_index = null;
+        new_cs.drag.?.target_time = null;
+        new_cs.drag.?.target_channel = null;
+        new_cs.drag.?.is_valid_drop = false;
 
         // Get the dragged card
         const card = self.world.card_registry.getConst(drag.id) orelse
             return .{ .vs = vs.withCombat(new_cs) };
 
-        // Only modifiers can be dropped on plays
-        if (card.template.kind != .modifier)
-            return .{ .vs = vs.withCombat(new_cs) };
-
-        // Hit test against timeline plays for modifier attachment
-        const tl = self.timeline(self.arena);
-        if (tl.hitTestPlay(vs, vs.mouse_vp)) |play_index| {
-            // Check predicate match via pre-computed snapshot
-            const snapshot = self.snapshot orelse return .{ .vs = vs.withCombat(new_cs) };
-            if (!snapshot.canModifierAttachToPlay(drag.id, play_index))
+        if (self.inPhase(.commit_phase)) {
+            // Commit phase: modifier attachment to plays
+            if (card.template.kind != .modifier)
                 return .{ .vs = vs.withCombat(new_cs) };
 
-            // Check for conflicts (needs actual play)
-            const enc = self.world.encounter orelse return .{ .vs = vs.withCombat(new_cs) };
-            const enc_state = enc.stateForConst(self.world.player.id) orelse
-                return .{ .vs = vs.withCombat(new_cs) };
-            const slots = enc_state.current.slots();
-            if (play_index >= slots.len)
-                return .{ .vs = vs.withCombat(new_cs) };
+            const tl = self.timeline(self.arena);
+            if (tl.hitTestPlay(vs, vs.mouse_vp)) |play_index| {
+                const snapshot = self.snapshot orelse return .{ .vs = vs.withCombat(new_cs) };
+                if (!snapshot.canModifierAttachToPlay(drag.id, play_index))
+                    return .{ .vs = vs.withCombat(new_cs) };
 
-            const play = &slots[play_index].play;
-            if (play.wouldConflict(card.template, &self.world.card_registry))
-                return .{ .vs = vs.withCombat(new_cs) };
+                const enc = self.world.encounter orelse return .{ .vs = vs.withCombat(new_cs) };
+                const enc_state = enc.stateForConst(self.world.player.id) orelse
+                    return .{ .vs = vs.withCombat(new_cs) };
+                const slots = enc_state.current.slots();
+                if (play_index >= slots.len)
+                    return .{ .vs = vs.withCombat(new_cs) };
 
-            // Valid target!
-            new_cs.drag.?.target_play_index = play_index;
+                const play = &slots[play_index].play;
+                if (play.wouldConflict(card.template, &self.world.card_registry))
+                    return .{ .vs = vs.withCombat(new_cs) };
+
+                new_cs.drag.?.target_play_index = play_index;
+            }
+        } else if (self.inPhase(.player_card_selection)) {
+            // Selection phase: track timeline drop position
+            if (play_mod.TimelineView.hitTestDrop(vs.mouse_vp)) |drop| {
+                new_cs.drag.?.target_time = drop.time;
+                new_cs.drag.?.target_channel = drop.channel;
+                new_cs.drag.?.is_valid_drop = true; // TODO: validate conflicts
+            }
         }
 
         return .{ .vs = vs.withCombat(new_cs) };
@@ -882,10 +925,35 @@ pub const View = struct {
         } else return .{};
     }
 
-    fn isCardDraggable(self: *const View, id: entity.ID) bool {
+    /// Returns true if card should start drag immediately on mouse_down.
+    /// Only for cards that can ONLY be dragged (no click action) - i.e. modifiers in commit phase.
+    /// Selection phase cards use click-or-drag timing instead.
+    fn shouldStartImmediateDrag(self: *const View, hit: HitResult) bool {
+        const id = hit.cardId();
         const card = self.world.card_registry.getConst(id) orelse return false;
-        if (self.isCardPlayable(id)) {
-            return card.template.kind == .modifier;
+
+        // Only commit phase modifiers start drag immediately
+        if (self.inPhase(.commit_phase)) {
+            return self.isCardPlayable(id) and card.template.kind == .modifier;
+        }
+        return false;
+    }
+
+    /// Returns true if card can be dragged (used for visual feedback, not drag initiation).
+    fn isCardDraggable(self: *const View, hit: HitResult) bool {
+        const id = hit.cardId();
+        const card = self.world.card_registry.getConst(id) orelse return false;
+        _ = card;
+
+        if (self.inPhase(.commit_phase)) {
+            // Commit phase: only modifiers
+            return self.isCardPlayable(id) and self.world.card_registry.getConst(id).?.template.kind == .modifier;
+        } else if (self.inPhase(.player_card_selection)) {
+            // Selection phase: playable hand cards or timeline cards
+            return switch (hit) {
+                .card => self.isCardPlayable(id),
+                .play => true,
+            };
         }
         return false;
     }
@@ -915,11 +983,8 @@ pub const View = struct {
         // CAROUSEL (hand + always-available cards)
         if (self.carousel(self.arena).hitTest(vs, pos, self.arena)) |hit| {
             const id = hit.cardId();
-            if (self.isCardDraggable(id)) {
-                var new_cs = cs;
-                new_cs.drag = .{ .original_pos = pos, .id = id };
-                return .{ .vs = vs.withCombat(new_cs) };
-            }
+            // Click on card: play (selection) or add (commit)
+            // Note: drag is initiated on mouse_down in handleInput, not here
             if (in_commit) {
                 return self.commitAddCard(vs, id);
             } else {
@@ -953,17 +1018,36 @@ pub const View = struct {
         return .{};
     }
 
-    fn handleRelease(self: *View, vs: ViewState) InputResult {
+    const click_threshold_ns: u64 = 250_000_000; // 250ms in nanoseconds
+
+    fn handleRelease(self: *View, vs: ViewState, release_time: u64) InputResult {
         const cs = vs.combat orelse CombatUIState{};
+
+        // Clear click state for next interaction
+        var new_vs = vs;
+        new_vs.clicked = null;
+        new_vs.click_time = null;
+
         if (cs.drag) |drag| {
             // Clear drag state
             var new_cs = cs;
             new_cs.drag = null;
 
-            // If valid play target, dispatch commit_stack command
+            // Check if this was a quick drag (< 250ms) - treat as click
+            const drag_duration = release_time -| drag.start_time;
+            const is_quick = drag_duration < click_threshold_ns;
+
+            if (is_quick) {
+                // Quick drag = click: delegate to onClick at original position
+                var result = self.onClick(new_vs.withCombat(new_cs), drag.original_pos);
+                if (result.vs == null) result.vs = new_vs.withCombat(new_cs);
+                return result;
+            }
+
+            // Commit phase: modifier stacking (existing behavior)
             if (drag.target_play_index) |target_index| {
                 return .{
-                    .vs = vs.withCombat(new_cs),
+                    .vs = new_vs.withCombat(new_cs),
                     .command = .{ .commit_stack = .{
                         .card_id = drag.id,
                         .target_play_index = target_index,
@@ -971,16 +1055,42 @@ pub const View = struct {
                 };
             }
 
-            return .{ .vs = vs.withCombat(new_cs) };
+            // Selection phase: reorder within timeline (time repositioning only for now)
+            // Lane switching requires more validation - cards can only switch weapon ↔ off_hand
+            if (drag.source == .timeline and drag.is_valid_drop) {
+                if (drag.target_time) |time| {
+                    return .{
+                        .vs = new_vs.withCombat(new_cs),
+                        .command = .{
+                            .move_play = .{
+                                .card_id = drag.id,
+                                .new_time_start = time,
+                                .new_channel = null, // keep current channel for now
+                            },
+                        },
+                    };
+                }
+            }
+
+            // No valid drop target - just clear drag
+            return .{ .vs = new_vs.withCombat(new_cs) };
         } else {
-            // Mouse released: fire event, unless rolled off target since click
+            // Non-drag release: check if quick click (<250ms)
             if (vs.clicked) |pos| {
-                const click_res = self.onClick(vs, pos);
-                const release_res = self.onClick(vs, vs.mouse_vp);
-                if (std.meta.eql(click_res, release_res)) return release_res;
+                const is_click = if (vs.click_time) |start_time|
+                    (release_time -| start_time) < click_threshold_ns
+                else
+                    // Fallback: position-based (same pos = click)
+                    std.meta.eql(pos, vs.mouse_vp);
+
+                if (is_click) {
+                    var result = self.onClick(new_vs, pos);
+                    if (result.vs == null) result.vs = new_vs;
+                    return result;
+                }
             }
         }
-        return .{};
+        return .{ .vs = new_vs };
     }
 
     fn handleKey(self: *View, keycode: Keycode, vs: ViewState) InputResult {
@@ -1231,6 +1341,28 @@ pub const View = struct {
 
         // Render hovered/dragged card last (on top)
         if (last) |item| try list.append(alloc, item);
+
+        // Render dragged card following cursor
+        if (cs.drag) |drag| {
+            if (self.world.card_registry.getConst(drag.id)) |card| {
+                const dims = card_mod.Layout.defaultDimensions();
+                // Center card on cursor
+                const card_rect = Rect{
+                    .x = vs.mouse_vp.x - dims.w / 2,
+                    .y = vs.mouse_vp.y - dims.h / 2,
+                    .w = dims.w,
+                    .h = dims.h,
+                };
+                const card_vm = CardViewModel.fromTemplate(drag.id, card.template, .{
+                    .target = false,
+                    .played = true,
+                    .disabled = false,
+                    .highlighted = true,
+                    .warning = false,
+                });
+                try list.append(alloc, .{ .card = .{ .model = card_vm, .dst = card_rect } });
+            }
+        }
 
         // Note: End Turn button and status bars are now rendered by chrome layer
 

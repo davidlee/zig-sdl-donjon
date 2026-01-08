@@ -120,3 +120,69 @@ Created detailed design doc at `doc/artefacts/draggable_plays_design.md`.
 - Channel override validation - can only switch lanes between weapon/off_hand if both have weapons equipped
 - Range validation - natural weapons (fists) have different range than equipped weapons. Orange border = "can drop but no valid targets in range"
 
+### 2026-01-09 - Core Implementation (Timeline Reordering)
+
+**Implemented**:
+
+1. **Click vs drag timing** (`view_state.zig`, `combat/view.zig`)
+   - Added `click_time: ?u64` to `ViewState` (nanosecond timestamp from SDL)
+   - 250ms threshold (`click_threshold_ns`) distinguishes click from drag
+   - Quick release (<250ms) = click, long hold + move = drag
+
+2. **Extended DragState** (`view_state.zig`)
+   - Added `start_time: u64`, `source: DragSource` (hand/timeline)
+   - Added `target_time: ?f32`, `target_channel: ?ChannelSet`, `is_valid_drop: bool`
+   - Kept existing `target_play_index` for commit phase modifier stacking
+
+3. **Selection phase dragging** (`combat/view.zig`)
+   - `shouldStartImmediateDrag()`: only commit phase modifiers start drag on mouse_down
+   - Other cards record click time; drag starts in `mouse_motion` after 250ms hold
+   - `isCardDraggable()`: selection phase allows all playable cards + timeline cards
+   - `handleDragging()`: tracks drop position via `TimelineView.hitTestDrop()`
+   - `handleRelease()`: dispatches `move_play` for timeline drags with valid drop
+
+4. **Timeline hit detection** (`combat/play.zig`)
+   - `timeline_axis.xToTime()`: converts X position to time (0.0-1.0), floors to 0.1 slots
+   - `TimelineView.yToLane()`: converts Y to lane index (0-3)
+   - `TimelineView.hitTestDrop()`: returns `DropPosition { time, channel }` or null
+
+5. **Visual feedback during drag** (`combat/play.zig`, `combat/view.zig`)
+   - Duration bar renders at target position (not current) when dragging
+   - Card at old position hidden while dragging
+   - Dragged card follows cursor (rendered in `render()` at mouse position)
+
+6. **Bug fix in movePlay** (`command_handler.zig`)
+   - Fixed index-out-of-bounds panic: was accessing `slots()[play_index]` after removal
+   - Now saves `old_time_start` before `removePlay()` for rollback on conflict
+
+**Key files changed**:
+- `src/presentation/view_state.zig` - DragState, ViewState.click_time
+- `src/presentation/views/combat/view.zig` - input handling, drag logic, render
+- `src/presentation/views/combat/play.zig` - timeline hit detection, visual feedback
+- `src/domain/apply/command_handler.zig` - movePlay bug fix
+
+**What works**:
+- [x] Quick click (<250ms) toggles card as before
+- [x] Hold + drag on timeline card shows card following cursor
+- [x] Duration bar preview at drop position
+- [x] Can reorder cards on timeline via drag (time repositioning)
+- [x] Invalid drops (conflict) restore card to original position
+
+**Not yet implemented**:
+- [ ] Drag from hand to specific timeline position (currently click-to-play only)
+- [ ] Lane switching (weapon ↔ off_hand) - validation exists in domain (`isValidChannelSwitch`) but UI doesn't use it yet
+- [ ] Visual feedback for invalid drop zones (red/orange indicators)
+- [ ] Tests for new drag functionality
+
+**Design decisions made**:
+- Commit phase modifiers: immediate drag on mouse_down (existing UX preserved)
+- Selection phase cards: delayed drag (250ms hold) to avoid carousel visual glitch on quick clicks
+- Lane switching disabled for now: `move_play` called with `new_channel = null`
+- Floor (not round) for time slot detection: cursor must be past slot start to select it
+
+**Next steps**:
+1. Drag from hand to specific position (extend `play_card` or use `play_card` + `move_play`)
+2. Lane switching UI (only weapon ↔ off_hand, requires equipped weapon check)
+3. Invalid drop visualization
+4. Unit tests for timing logic, hit detection, command dispatch
+
