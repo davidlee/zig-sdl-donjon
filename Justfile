@@ -94,12 +94,17 @@ yk:
     yazi kanban
 
 # create kanban card in backlog with correct ID from template
-new-card:
+new-card desc="":
     #!/usr/bin/env python3
     import shutil
     import sys
     import re
     from pathlib import Path
+
+    raw_desc = r"""{{desc}}""".strip()
+    slug = ""
+    if raw_desc:
+        slug = re.sub(r"[^a-z0-9]+", "_", raw_desc.lower()).strip("_")
 
     repo_root = Path.cwd()
     kanban_dir = repo_root / "kanban"
@@ -109,7 +114,7 @@ new-card:
     if not template_path.exists():
         sys.exit(f"Template not found: {template_path}")
 
-    pattern = re.compile(r"T(\d{3,})\.md$", re.IGNORECASE)
+    pattern = re.compile(r"T(\d{3,})(?:-[\w]+)?\.md$", re.IGNORECASE)
     max_id = 0
     for path in kanban_dir.rglob("T*.md"):
         match = pattern.match(path.name)
@@ -117,7 +122,8 @@ new-card:
             max_id = max(max_id, int(match.group(1)))
 
     next_id = max_id + 1
-    dest_name = f"T{next_id:03d}.md"
+    suffix = f"-{slug}" if slug else ""
+    dest_name = f"T{next_id:03d}{suffix}.md"
     dest_path = backlog_dir / dest_name
 
     if dest_path.exists():
