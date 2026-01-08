@@ -67,6 +67,18 @@ pub const Resource = struct {
         self.current = self.default;
         self.available = self.default;
     }
+
+    /// Inflict damage that accumulates (for pain/trauma which increase toward max).
+    /// Inverse of spend - adds to current, capped at max.
+    pub fn inflict(self: *Resource, amount: f32) void {
+        self.current = @min(self.current + amount, self.max);
+        self.available = self.current;
+    }
+
+    /// Current as ratio of max (0.0 to 1.0).
+    pub fn ratio(self: *const Resource) f32 {
+        return if (self.max > 0) self.current / self.max else 0;
+    }
 };
 
 pub const Scaling = struct {
@@ -180,6 +192,36 @@ test "Resource reset returns to default" {
     res.reset();
     try testing.expectEqual(@as(f32, 5.0), res.current);
     try testing.expectEqual(@as(f32, 5.0), res.available);
+}
+
+test "Resource inflict accumulates toward max" {
+    // Pain/trauma pattern: starts empty, accumulates
+    var pain = Resource.init(0.0, 10.0, 0.0);
+
+    try testing.expectEqual(@as(f32, 0.0), pain.current);
+
+    pain.inflict(3.0);
+    try testing.expectEqual(@as(f32, 3.0), pain.current);
+    try testing.expectEqual(@as(f32, 3.0), pain.available);
+
+    pain.inflict(5.0);
+    try testing.expectEqual(@as(f32, 8.0), pain.current);
+
+    // Capped at max
+    pain.inflict(10.0);
+    try testing.expectEqual(@as(f32, 10.0), pain.current);
+}
+
+test "Resource ratio returns current/max" {
+    var res = Resource.init(5.0, 10.0, 0.0);
+    try testing.expectApproxEqAbs(@as(f32, 0.5), res.ratio(), 0.001);
+
+    res.inflict(3.0);
+    try testing.expectApproxEqAbs(@as(f32, 0.8), res.ratio(), 0.001);
+
+    // Edge case: max of 0
+    var zero_max = Resource.init(0.0, 0.0, 0.0);
+    try testing.expectEqual(@as(f32, 0.0), zero_max.ratio());
 }
 
 pub const Block = packed struct {

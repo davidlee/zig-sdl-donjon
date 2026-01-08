@@ -57,6 +57,10 @@ pub const Agent = struct {
     stamina: stats.Resource,
     focus: stats.Resource,
     blood: stats.Resource,
+    // Trauma system resources - see doc/trauma_wounds_conditions_ph2.md
+    pain: stats.Resource, // sensory overload, starts empty
+    trauma: stats.Resource, // neurological stress, starts empty
+    morale: stats.Resource, // psychological state, starts full (stub for future)
     time_available: f32 = 1.0,
 
     conditions: std.ArrayList(damage.ActiveCondition),
@@ -89,6 +93,9 @@ pub const Agent = struct {
             .stamina = stamina_res,
             .focus = focus_res,
             .blood = blood_res,
+            .pain = stats.Resource.init(0.0, 10.0, 0.0), // starts empty, no recovery
+            .trauma = stats.Resource.init(0.0, 10.0, 0.0), // starts empty, no recovery
+            .morale = stats.Resource.init(10.0, 10.0, 0.0), // starts full, no recovery (future)
 
             // Card containers (empty by default)
             .always_available = try std.ArrayList(entity.ID).initCapacity(alloc, 10),
@@ -591,4 +598,55 @@ test "Agent.isPoolCardAvailable respects cooldowns" {
 
     // Now unavailable
     try testing.expect(!test_agent.agent.isPoolCardAvailable(card_id));
+}
+
+test "Agent pain/trauma/morale resources initialize correctly" {
+    var agents = try SlotMap(*Agent).init(testing.allocator);
+    defer agents.deinit();
+
+    const test_agent = try makeTestAgent(testing.allocator, &agents);
+    defer test_agent.destroy(&agents);
+
+    const agent = test_agent.agent;
+
+    // Pain starts empty (0/10)
+    try testing.expectEqual(@as(f32, 0.0), agent.pain.current);
+    try testing.expectEqual(@as(f32, 10.0), agent.pain.max);
+    try testing.expectApproxEqAbs(@as(f32, 0.0), agent.pain.ratio(), 0.001);
+
+    // Trauma starts empty (0/10)
+    try testing.expectEqual(@as(f32, 0.0), agent.trauma.current);
+    try testing.expectEqual(@as(f32, 10.0), agent.trauma.max);
+    try testing.expectApproxEqAbs(@as(f32, 0.0), agent.trauma.ratio(), 0.001);
+
+    // Morale starts full (10/10)
+    try testing.expectEqual(@as(f32, 10.0), agent.morale.current);
+    try testing.expectEqual(@as(f32, 10.0), agent.morale.max);
+    try testing.expectApproxEqAbs(@as(f32, 1.0), agent.morale.ratio(), 0.001);
+}
+
+test "Agent pain/trauma accumulate via inflict" {
+    var agents = try SlotMap(*Agent).init(testing.allocator);
+    defer agents.deinit();
+
+    const test_agent = try makeTestAgent(testing.allocator, &agents);
+    defer test_agent.destroy(&agents);
+
+    var agent = test_agent.agent;
+
+    // Inflict pain
+    agent.pain.inflict(3.5);
+    try testing.expectApproxEqAbs(@as(f32, 0.35), agent.pain.ratio(), 0.001);
+
+    // Inflict trauma
+    agent.trauma.inflict(5.0);
+    try testing.expectApproxEqAbs(@as(f32, 0.5), agent.trauma.ratio(), 0.001);
+
+    // Accumulates
+    agent.pain.inflict(2.0);
+    try testing.expectApproxEqAbs(@as(f32, 0.55), agent.pain.ratio(), 0.001);
+
+    // Capped at max
+    agent.trauma.inflict(100.0);
+    try testing.expectApproxEqAbs(@as(f32, 1.0), agent.trauma.ratio(), 0.001);
 }

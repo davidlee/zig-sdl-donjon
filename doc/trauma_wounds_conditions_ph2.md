@@ -636,3 +636,73 @@ T014 (dud foundation) → T015 (dud cards)
 
 T012 + T015 can be integrated once both complete
 ```
+
+## Architectural Alignment Review
+
+cards.zig already gives you a clean, data-first pipeline: a Template owns rules: []const
+  Rule; each Rule couples a Trigger with a Predicate and one or more Expression { effect,
+  filter, target }, and every gameplay mutation is supposed to flow through an Effect
+  variant (combat_technique, move_card, add_condition, emit_event, etc.) (src/domain/
+  cards.zig:71-420). With that in mind, here’s how the current phase‑2 plan and kanban
+  tickets line up with the architecture goal of “logic as data”:
+
+  - Keep the rule graph composable. Increment 4’s cards work (T014–T015) currently sketches
+    new Trigger values and a bespoke blocks_tags array on your Card struct (doc/
+    trauma_wounds_conditions_ph2.md, Dud Cards Addendum). The implementation needs to stay
+    compatible with the existing Trigger union that can carry payload (on_event: EventTag)
+    so rules can still subscribe to arbitrary combat events (src/domain/cards.zig:71-78).
+    Add new cases like .while_in_hand or .forced, but don’t collapse the type to a plain
+    enum as suggested in T014, or you’ll lose the ability to express future data-driven
+    reactions to events. Likewise, instead of introducing a []const Tag member (which
+    ignores the packed TagSet bitmask already in cards.zig:80-118 and even references tags
+    such as .precision/.finesse that do not exist), prefer to model “this card blocks
+    finesse attacks while held” using more of the existing data language: e.g. a Rule that
+    fires .while_in_hand → Expression { effect = .cancel_play, target = .my_play, filter =
+    Predicate.has_tag(...) } or a new Effect variant that marks restricted tags. That keeps
+    the mechanic declarative and lets future cards reuse the same building blocks.
+  - Push resource thresholds into data tables. The plan for pain/trauma conditions (doc
+    Increment 4.3, T012) relies on hard-coded if chains inside ConditionIterator for each
+    threshold, and adds more bespoke branches for adrenaline suppression (T013). That
+    mirrors today’s sensory checks but scales poorly. Consider a small table of
+    { resource_accessor, threshold, condition } rows and loop over it so the iterator stays
+    data driven; the penalties already live in damage.condition_penalties, so hoist the
+    thresholds too. You can also reuse Predicate.has_condition (src/domain/cards.zig:141-
+    159) to expose these computed states to cards without writing one-off hooks later.
+  - Let effects do the work. The Dud Cards plan injects special behavior directly into hand
+    management (forced play ordering, blocking checks) and wires injections in
+    Agent.addCondition. Those can be expressed via existing Effects so other systems can
+    reuse them: e.g. condition gain emits an Event, and cards subscribe via a Rule with
+    Trigger.on_event to Effect.move_card (inject), Effect.exhaust_card, or
+    Effect.cancel_play to enforce forced sequencing. That keeps “conditions inject dud
+    cards” in declarative card definitions rather than imperative if condition
+    == .distracted ladders. Where a capability is missing (e.g. a true “forced priority” or
+    “hand-level aura”), add a general-purpose effect and predicate so any future mechanic—
+    not just pain—can reuse it.
+  - Mind composability when extending stats/resources. T010/T011 correctly piggyback on
+    stats.Resource (src/domain/stats.zig:10-69), but you’ll want helpers that match the
+    existing API style instead of bespoke ratio math per caller (consider Resource.ratio()
+    instead of adding three Agent methods). When you wire wounds to resources, prefer
+    pluggable functions or data describing severity → delta rather than embedding exact
+    switch tables inline; that way a future wound type or condition can reuse the same
+    resource hooks without copy/paste.
+  - Integrate with existing tags and targeting plans. T009 is already redefining targeting/
+    primary focus. When Dud Cards plan to “block .precision cards,” make sure those tags
+    exist (they currently don’t) or extend TagSet consistently so validators, predicates,
+    and card templates all understand the new categories (src/domain/cards.zig:80-118).
+    Otherwise you end up with another parallel tagging scheme living only in the hand
+    validator.
+  - Event/UX tickets (T016–T017) should consume the data graph, not reopen cases. Once pain/
+    trauma/adrenaline are emitted as events through Effect.emit_event (src/domain/
+    cards.zig:326) or equivalent, both the combat log and UI can stay thin layers that
+    subscribe to events and query ConditionIterator. Avoid duplicating condition logic in
+    presentation code; instead expose descriptive data (condition name, duration, associated
+    card injections) so the UI doesn’t have to guess.
+
+  If you reshape the Increment 4 work so that new behaviors are described via Rule/
+  Predicate/Effect nodes (with small, reusable extensions where absolutely necessary) rather
+  than bespoke if blocks, the whole trauma/pain/dud pipeline will plug straight into the
+  existing composable architecture and keep the “logic as data” promise. Natural next steps:
+  1) revise T014/T015 acceptance criteria so they explicitly require using the rule/effect
+  pipeline (and update the doc snippets accordingly), and 2) sketch a table-driven structure
+  for computed conditions before implementing T012/T013 so future resources (morale,
+  fatigue, etc.) can hook in by just adding rows.
