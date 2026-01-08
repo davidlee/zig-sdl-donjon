@@ -175,7 +175,8 @@ pub fn getAgentFootwork(
 /// Get the primary weapon's reach for an agent.
 /// Returns sabre as fallback if no weapon equipped.
 fn getPrimaryWeaponReach(agent: *const combat.Agent) combat.Reach {
-    const template = switch (agent.weapons) {
+    const template = switch (agent.weapons.equipped) {
+        .unarmed => return .sabre, // natural weapons default to sabre reach
         .single => |w| w.template,
         .dual => |d| d.primary.template,
         .compound => return .sabre, // fallback for complex setups
@@ -372,7 +373,7 @@ fn makeTestAgent(alloc: std.mem.Allocator, speed: f32) !TestAgent {
             stats.Resource.init(10, 10, 2),
             stats.Resource.init(3, 5, 3),
             stats.Resource.init(5, 5, 0),
-            .{ .single = sword },
+            combat.Armament{ .equipped = .{ .single = sword }, .natural = &.{} },
         ),
         .sword = sword,
         .agents = agents,

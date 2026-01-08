@@ -508,6 +508,21 @@ pub const Body = struct {
         return null;
     }
 
+    /// Check if any part with the given tag (and optionally side) is functional.
+    /// A part is functional if it's not effectively severed and severity != .missing.
+    /// Pass null for side to match any part with the tag ("any functional" semantics).
+    pub fn hasFunctionalPart(self: *const Body, tag: PartTag, side: ?Side) bool {
+        for (self.parts.items, 0..) |p, i| {
+            if (p.tag != tag) continue;
+            if (side) |s| if (p.side != s) continue;
+            const idx: PartIndex = @intCast(i);
+            if (!self.isEffectivelySevered(idx) and p.severity != .missing) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /// Result of applying damage to a part
     pub const DamageResult = struct {
         wound: Wound,
@@ -1715,4 +1730,87 @@ test "grasping part by side" {
     // Central parts should return null (no grasping parts are centered)
     const center_grasp = body.graspingPartBySide(.center);
     try std.testing.expect(center_grasp == null);
+}
+
+test "hasFunctionalPart with healthy body" {
+    const alloc = std.testing.allocator;
+    var b = try Body.fromPlan(alloc, &HumanoidPlan);
+    defer b.deinit();
+
+    // Both hands functional
+    try std.testing.expect(b.hasFunctionalPart(.hand, null));
+    try std.testing.expect(b.hasFunctionalPart(.hand, .left));
+    try std.testing.expect(b.hasFunctionalPart(.hand, .right));
+
+    // Head parts functional
+    try std.testing.expect(b.hasFunctionalPart(.head, null));
+    try std.testing.expect(b.hasFunctionalPart(.eye, .left));
+    try std.testing.expect(b.hasFunctionalPart(.eye, .right));
+}
+
+test "hasFunctionalPart with missing part" {
+    const alloc = std.testing.allocator;
+    var b = try Body.fromPlan(alloc, &HumanoidPlan);
+    defer b.deinit();
+
+    // Set left hand to missing
+    const left_hand_idx = b.indexOf("left_hand").?;
+    b.parts.items[left_hand_idx].severity = .missing;
+
+    // Still have a functional hand (right)
+    try std.testing.expect(b.hasFunctionalPart(.hand, null));
+    // But not on the left side
+    try std.testing.expect(!b.hasFunctionalPart(.hand, .left));
+    try std.testing.expect(b.hasFunctionalPart(.hand, .right));
+
+    // Set right hand to missing too
+    const right_hand_idx = b.indexOf("right_hand").?;
+    b.parts.items[right_hand_idx].severity = .missing;
+
+    // No functional hands at all
+    try std.testing.expect(!b.hasFunctionalPart(.hand, null));
+    try std.testing.expect(!b.hasFunctionalPart(.hand, .left));
+    try std.testing.expect(!b.hasFunctionalPart(.hand, .right));
+}
+
+test "hasFunctionalPart with severed limb" {
+    const alloc = std.testing.allocator;
+    var b = try Body.fromPlan(alloc, &HumanoidPlan);
+    defer b.deinit();
+
+    // Sever left arm - hand becomes effectively severed
+    const left_arm_idx = b.indexOf("left_arm").?;
+    b.parts.items[left_arm_idx].is_severed = true;
+
+    // Left hand no longer functional (parent severed)
+    try std.testing.expect(!b.hasFunctionalPart(.hand, .left));
+    // Right hand still functional
+    try std.testing.expect(b.hasFunctionalPart(.hand, .right));
+    // "Any hand" still functional (right)
+    try std.testing.expect(b.hasFunctionalPart(.hand, null));
+}
+
+test "hasFunctionalPart damaged but not missing" {
+    const alloc = std.testing.allocator;
+    var b = try Body.fromPlan(alloc, &HumanoidPlan);
+    defer b.deinit();
+
+    // Set hand to various damage levels - still functional
+    const left_hand_idx = b.indexOf("left_hand").?;
+
+    b.parts.items[left_hand_idx].severity = .minor;
+    try std.testing.expect(b.hasFunctionalPart(.hand, .left));
+
+    b.parts.items[left_hand_idx].severity = .inhibited;
+    try std.testing.expect(b.hasFunctionalPart(.hand, .left));
+
+    b.parts.items[left_hand_idx].severity = .disabled;
+    try std.testing.expect(b.hasFunctionalPart(.hand, .left));
+
+    b.parts.items[left_hand_idx].severity = .broken;
+    try std.testing.expect(b.hasFunctionalPart(.hand, .left));
+
+    // Only .missing makes it non-functional
+    b.parts.items[left_hand_idx].severity = .missing;
+    try std.testing.expect(!b.hasFunctionalPart(.hand, .left));
 }

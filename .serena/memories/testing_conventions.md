@@ -117,9 +117,26 @@ If a unit test requires:
 
 → It's probably an integration test. Use T020 harness or defer to integration suite.
 
+## Wiring New Test Modules
+
+**Gotcha**: Tests in new modules won't run unless explicitly imported in `src/main.zig`'s test block:
+
+```zig
+// src/main.zig
+test {
+    @import("std").testing.refAllDecls(@This());
+    _ = @import("domain/body.zig");
+    // ... other modules ...
+    _ = @import("testing/mod.zig");  // Add new test modules here
+}
+```
+
+The `testing/mod.zig` re-exports `fixtures.zig`, so fixture tests are picked up transitively.
+
 ## Key Files
 
-- `src/testing/fixtures.zig` - AgentHandle, agentFromTemplate
+- `src/testing/fixtures.zig` - AgentHandle, agentFromTemplate, body damage utilities
 - `src/testing/integration/harness.zig` - (T020) world/encounter setup
 - `src/data/personas.zig` - shared test personas
+- `src/main.zig` - test block (wire new modules here)
 - `Justfile` - test commands

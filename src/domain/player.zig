@@ -31,6 +31,6 @@ pub fn newPlayer(
         stats.Resource.init(12.0, 12.0, 4.0), // stamina
         stats.Resource.init(3.0, 5.0, 3.0), // focus
         stats.Resource.init(5.0, 5.0, 0.0), // blood
-        combat.Armament{ .single = weapn },
+        combat.Armament{ .equipped = .{ .single = weapn }, .natural = &.{} },
     );
 }

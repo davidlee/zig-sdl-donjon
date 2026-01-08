@@ -586,7 +586,7 @@ fn makeTestAgent(alloc: std.mem.Allocator, agents: *SlotMap(*Agent)) !TestAgent 
             stats.Resource.init(10.0, 10.0, 2.0),
             stats.Resource.init(3.0, 5.0, 3.0),
             stats.Resource.init(5.0, 5.0, 0.0),
-            Armament{ .single = sword },
+            Armament{ .equipped = .{ .single = sword }, .natural = &.{} },
         ),
         .sword = sword,
     };

@@ -77,8 +77,8 @@ pub fn agentFromTemplate(
 
     // Allocate weapons and build Armament
     var weapon_storage: AgentHandle.WeaponStorage = .none;
-    const armament: Armament = switch (template.armament) {
-        .unarmed => undefined, // Will need to handle this case
+    const equipped: Armament.Equipped = switch (template.armament) {
+        .unarmed => .unarmed,
         .single => |tmpl| blk: {
             const w = try alloc.create(weapon.Instance);
             w.* = .{ .id = entity.ID{ .index = 0, .generation = 999 }, .template = tmpl };
@@ -97,6 +97,7 @@ pub fn agentFromTemplate(
             break :blk .{ .dual = .{ .primary = primary, .secondary = secondary } };
         },
     };
+    const armament = Armament{ .equipped = equipped, .natural = &.{} };
 
     // Convert DirectorKind to combat.Director
     const director: combat.Director = switch (template.director) {
@@ -104,8 +105,14 @@ pub fn agentFromTemplate(
         .noop_ai => ai.noop(),
     };
 
-    // Create body from plan
-    const agent_body = try body.Body.fromPlan(alloc, template.body_plan);
+    // Create body from species
+    const agent_body = try body.Body.fromPlan(alloc, template.species.body_plan);
+
+    // Derive resources from species with default recovery, or use template override
+    const sp = template.species;
+    const stamina_res = template.stamina orelse stats.Resource.init(sp.base_stamina, sp.base_stamina, 2.0);
+    const focus_res = template.focus orelse stats.Resource.init(sp.base_focus, sp.base_focus, 1.0);
+    const blood_res = template.blood orelse stats.Resource.init(sp.base_blood, sp.base_blood, 0.0);
 
     // Create agent
     const agent = try Agent.init(
@@ -115,9 +122,9 @@ pub fn agentFromTemplate(
         template.draw_style,
         template.base_stats,
         agent_body,
-        template.stamina,
-        template.focus,
-        template.blood,
+        stamina_res,
+        focus_res,
+        blood_res,
         armament,
     );
 
@@ -130,6 +137,47 @@ pub fn agentFromTemplate(
         .agents_map = agents_map,
         .weapons = weapon_storage,
     };
+}
+
+// ============================================================================
+// Body damage utilities
+// ============================================================================
+
+/// Set the severity of parts matching the given tag (and optionally side).
+/// Useful for testing body-gated features like natural weapon availability.
+/// Returns the number of parts modified.
+pub fn setPartSeverity(
+    b: *body.Body,
+    tag: body.PartTag,
+    side: ?body.Side,
+    severity: body.Severity,
+) usize {
+    var count: usize = 0;
+    for (b.parts.items) |*part| {
+        if (part.tag != tag) continue;
+        if (side) |s| if (part.side != s) continue;
+        part.severity = severity;
+        count += 1;
+    }
+    return count;
+}
+
+/// Sever parts matching the given tag (and optionally side).
+/// Sets is_severed = true on matching parts.
+/// Returns the number of parts severed.
+pub fn severPart(
+    b: *body.Body,
+    tag: body.PartTag,
+    side: ?body.Side,
+) usize {
+    var count: usize = 0;
+    for (b.parts.items) |*part| {
+        if (part.tag != tag) continue;
+        if (side) |s| if (part.side != s) continue;
+        part.is_severed = true;
+        count += 1;
+    }
+    return count;
 }
 
 // ============================================================================
@@ -149,8 +197,8 @@ test "agentFromTemplate with single weapon" {
     var handle = try agentFromTemplate(alloc, &personas.Agents.ser_marcus);
     defer handle.deinit();
 
-    try std.testing.expect(handle.agent.weapons == .single);
-    try std.testing.expectEqualStrings("knight's sword", handle.agent.weapons.single.template.name);
+    try std.testing.expect(handle.agent.weapons.equipped == .single);
+    try std.testing.expectEqualStrings("knight's sword", handle.agent.weapons.equipped.single.template.name);
 }
 
 test "agentFromTemplate with dual wield" {
@@ -158,9 +206,9 @@ test "agentFromTemplate with dual wield" {
     var handle = try agentFromTemplate(alloc, &personas.Agents.sword_and_board);
     defer handle.deinit();
 
-    try std.testing.expect(handle.agent.weapons == .dual);
-    try std.testing.expectEqualStrings("knight's sword", handle.agent.weapons.dual.primary.template.name);
-    try std.testing.expectEqualStrings("buckler", handle.agent.weapons.dual.secondary.template.name);
+    try std.testing.expect(handle.agent.weapons.equipped == .dual);
+    try std.testing.expectEqualStrings("knight's sword", handle.agent.weapons.equipped.dual.primary.template.name);
+    try std.testing.expectEqualStrings("buckler", handle.agent.weapons.equipped.dual.secondary.template.name);
 }
 
 test "agentFromTemplate player director" {
@@ -187,4 +235,49 @@ test "agentFromTemplate respects stats" {
     // Grunni has stamina 8/8
     try std.testing.expectEqual(@as(f32, 8.0), handle.agent.stamina.current);
     try std.testing.expectEqual(@as(f32, 8.0), handle.agent.stamina.max);
+}
+
+test "setPartSeverity damages matching parts" {
+    const alloc = std.testing.allocator;
+    var handle = try agentFromTemplate(alloc, &personas.Agents.ser_marcus);
+    defer handle.deinit();
+
+    // Initially all parts healthy
+    try std.testing.expect(handle.agent.body.hasFunctionalPart(.hand, .left));
+    try std.testing.expect(handle.agent.body.hasFunctionalPart(.hand, .right));
+
+    // Damage left hand to missing
+    const count = setPartSeverity(&handle.agent.body, .hand, .left, .missing);
+    try std.testing.expectEqual(@as(usize, 1), count);
+
+    // Left hand no longer functional, right still is
+    try std.testing.expect(!handle.agent.body.hasFunctionalPart(.hand, .left));
+    try std.testing.expect(handle.agent.body.hasFunctionalPart(.hand, .right));
+}
+
+test "setPartSeverity with null side affects all matching" {
+    const alloc = std.testing.allocator;
+    var handle = try agentFromTemplate(alloc, &personas.Agents.ser_marcus);
+    defer handle.deinit();
+
+    // Damage all hands (both sides)
+    const count = setPartSeverity(&handle.agent.body, .hand, null, .missing);
+    try std.testing.expectEqual(@as(usize, 2), count);
+
+    // No functional hands
+    try std.testing.expect(!handle.agent.body.hasFunctionalPart(.hand, null));
+}
+
+test "severPart severs matching parts" {
+    const alloc = std.testing.allocator;
+    var handle = try agentFromTemplate(alloc, &personas.Agents.ser_marcus);
+    defer handle.deinit();
+
+    // Sever left arm
+    const count = severPart(&handle.agent.body, .arm, .left);
+    try std.testing.expectEqual(@as(usize, 1), count);
+
+    // Left hand not functional (parent severed), right still is
+    try std.testing.expect(!handle.agent.body.hasFunctionalPart(.hand, .left));
+    try std.testing.expect(handle.agent.body.hasFunctionalPart(.hand, .right));
 }

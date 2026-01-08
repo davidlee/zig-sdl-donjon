@@ -31,7 +31,7 @@ pub fn setupEncounter(world: *World) !void {
         stats.Resource.init(10.0, 10.0, 2.0), // stamina
         stats.Resource.init(3.0, 5.0, 3.0), // focus
         stats.Resource.init(5.0, 5.0, 0.0), // blood
-        combat.Armament{ .single = wpn1 },
+        combat.Armament{ .equipped = .{ .single = wpn1 }, .natural = &.{} },
     );
 
     var card_ids1 = try world.card_registry.createFromTemplatePtrs(&Templates, 5);
@@ -57,7 +57,7 @@ pub fn setupEncounter(world: *World) !void {
         stats.Resource.init(8.0, 8.0, 1.5), // stamina (less)
         stats.Resource.init(2.0, 4.0, 2.0), // focus (less)
         stats.Resource.init(5.0, 5.0, 0.0), // blood
-        combat.Armament{ .single = wpn2 },
+        combat.Armament{ .equipped = .{ .single = wpn2 }, .natural = &.{} },
     );
 
     var card_ids2 = try world.card_registry.createFromTemplatePtrs(&Templates, 5);

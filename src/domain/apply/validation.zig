@@ -584,7 +584,7 @@ const weapon = @import("../weapon.zig");
 const ai = @import("../ai.zig");
 const stats = @import("../stats.zig");
 
-fn makeTestAgent(armament: combat.Armament) combat.Agent {
+fn makeTestAgent(equipped: combat.Armament.Equipped) combat.Agent {
     return combat.Agent{
         .id = entity.ID{ .index = 99, .generation = 0 },
         .alloc = undefined,
@@ -593,7 +593,7 @@ fn makeTestAgent(armament: combat.Armament) combat.Agent {
         .stats = undefined,
         .body = undefined,
         .armour = undefined,
-        .weapons = armament,
+        .weapons = .{ .equipped = equipped, .natural = &.{} },
         .stamina = stats.Resource.init(10.0, 10.0, 2.0),
         .focus = stats.Resource.init(3.0, 5.0, 3.0),
         .blood = stats.Resource.init(5.0, 5.0, 0.0),

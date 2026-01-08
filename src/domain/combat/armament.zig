@@ -1,22 +1,47 @@
 //! Armament - weapon configuration for combat agents.
 //!
-//! Handles single weapons, dual-wielding, and compound weapon sets.
+//! Handles equipped weapons (single, dual-wield, compound) and natural weapons from species.
 
 const std = @import("std");
 const weapon = @import("../weapon.zig");
 const cards = @import("../cards.zig");
+const species = @import("../species.zig");
 
 /// Weapon configuration for an agent.
-pub const Armament = union(enum) {
-    single: *weapon.Instance,
-    dual: struct {
-        primary: *weapon.Instance,
-        secondary: *weapon.Instance,
-    },
-    compound: [][]*weapon.Instance,
+/// Combines equipped weapons (gear) with natural weapons (from species).
+pub const Armament = struct {
+    equipped: Equipped,
+    natural: []const species.NaturalWeapon,
 
+    /// Equipped weapon configuration.
+    pub const Equipped = union(enum) {
+        unarmed,
+        single: *weapon.Instance,
+        dual: struct {
+            primary: *weapon.Instance,
+            secondary: *weapon.Instance,
+        },
+        compound: [][]*weapon.Instance,
+    };
+
+    /// Create Armament from species natural weapons only (unarmed).
+    pub fn fromSpecies(natural_weapons: []const species.NaturalWeapon) Armament {
+        return .{ .equipped = .unarmed, .natural = natural_weapons };
+    }
+
+    /// Create new Armament with different equipped weapons, preserving natural.
+    pub fn withEquipped(self: Armament, new_equipped: Equipped) Armament {
+        return .{
+            .equipped = new_equipped,
+            .natural = self.natural,
+        };
+    }
+
+    /// Check if equipped weapons include a category (e.g., .shield, .sword).
+    /// Does not check natural weapons.
     pub fn hasCategory(self: Armament, cat: weapon.Category) bool {
-        return switch (self) {
+        return switch (self.equipped) {
+            .unarmed => false,
             .single => |w| hasWeaponCategory(w.template, cat),
             .dual => |d| hasWeaponCategory(d.primary.template, cat) or
                 hasWeaponCategory(d.secondary.template, cat),
@@ -38,10 +63,11 @@ pub const Armament = union(enum) {
         return false;
     }
 
-    /// Get the offensive mode (swing/thrust) from the primary weapon for a given attack mode.
-    /// Returns null if the weapon lacks that mode, or for .ranged/.none modes.
+    /// Get the offensive mode (swing/thrust) from the primary equipped weapon.
+    /// Returns null if unarmed, weapon lacks that mode, or for .ranged/.none modes.
     pub fn getOffensiveMode(self: Armament, mode: cards.AttackMode) ?weapon.Offensive {
-        const template = switch (self) {
+        const template = switch (self.equipped) {
+            .unarmed => return null,
             .single => |w| w.template,
             .dual => |d| d.primary.template,
             .compound => {
@@ -73,11 +99,11 @@ test "Armament.hasCategory single weapon" {
     var buckler_instance = weapon.Instance{ .id = testId(0), .template = &weapon_list.buckler };
     var sword_instance = weapon.Instance{ .id = testId(1), .template = &weapon_list.knights_sword };
 
-    const shield_armament = Armament{ .single = &buckler_instance };
+    const shield_armament = Armament{ .equipped = .{ .single = &buckler_instance }, .natural = &.{} };
     try testing.expect(shield_armament.hasCategory(.shield));
     try testing.expect(!shield_armament.hasCategory(.sword));
 
-    const sword_armament = Armament{ .single = &sword_instance };
+    const sword_armament = Armament{ .equipped = .{ .single = &sword_instance }, .natural = &.{} };
     try testing.expect(!sword_armament.hasCategory(.shield));
     try testing.expect(sword_armament.hasCategory(.sword));
 }
@@ -87,11 +113,44 @@ test "Armament.hasCategory dual wield" {
     var buckler_instance = weapon.Instance{ .id = testId(0), .template = &weapon_list.buckler };
     var sword_instance = weapon.Instance{ .id = testId(1), .template = &weapon_list.knights_sword };
 
-    const sword_and_shield = Armament{ .dual = .{
-        .primary = &sword_instance,
-        .secondary = &buckler_instance,
-    } };
+    const sword_and_shield = Armament{
+        .equipped = .{ .dual = .{
+            .primary = &sword_instance,
+            .secondary = &buckler_instance,
+        } },
+        .natural = &.{},
+    };
     try testing.expect(sword_and_shield.hasCategory(.shield));
     try testing.expect(sword_and_shield.hasCategory(.sword));
     try testing.expect(!sword_and_shield.hasCategory(.axe));
+}
+
+test "Armament.hasCategory unarmed" {
+    const armament = Armament{ .equipped = .unarmed, .natural = &.{} };
+    try testing.expect(!armament.hasCategory(.shield));
+    try testing.expect(!armament.hasCategory(.sword));
+}
+
+test "Armament.fromSpecies creates unarmed with natural weapons" {
+    const armament = Armament.fromSpecies(species.DWARF.natural_weapons);
+    try testing.expect(armament.equipped == .unarmed);
+    try testing.expect(armament.natural.len > 0);
+}
+
+test "Armament.withEquipped preserves natural weapons" {
+    const weapon_list = @import("../weapon_list.zig");
+    var sword_instance = weapon.Instance{ .id = testId(0), .template = &weapon_list.knights_sword };
+
+    const unarmed = Armament.fromSpecies(species.DWARF.natural_weapons);
+    const armed = unarmed.withEquipped(.{ .single = &sword_instance });
+
+    try testing.expect(armed.equipped == .single);
+    try testing.expectEqual(unarmed.natural.ptr, armed.natural.ptr);
+    try testing.expectEqual(unarmed.natural.len, armed.natural.len);
+}
+
+test "Armament.getOffensiveMode returns null when unarmed" {
+    const armament = Armament{ .equipped = .unarmed, .natural = &.{} };
+    try testing.expect(armament.getOffensiveMode(.swing) == null);
+    try testing.expect(armament.getOffensiveMode(.thrust) == null);
 }

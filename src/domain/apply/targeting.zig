@@ -239,6 +239,24 @@ fn filterTargetsByMeleeRange(
     return filtered;
 }
 
+// ============================================================================
+// Target Validity (Single Path)
+// ============================================================================
+//
+// ARCHITECTURE NOTE: This is the ONE function for determining if a card has
+// valid targets. All target validity checks flow through here. This ensures:
+//
+// 1. Consistent behavior - incapacitation, range, and filters checked uniformly
+// 2. Single point of maintenance - no duplicate validation logic
+// 3. General-case by default - checks ALL expressions, not just techniques
+//
+// The function is intentionally general. If future requirements need narrower
+// checks (e.g., "only technique expressions"), pass a filter parameter rather
+// than creating a parallel function.
+//
+// See: Serena memory "target_validation_architecture" for design rationale.
+// ============================================================================
+
 /// Check if a card has any valid targets based on its expressions.
 /// For each expression, checks if at least one potential target is valid.
 /// A valid target must be:
@@ -254,7 +272,8 @@ pub fn hasAnyValidTarget(
 
     for (card.template.rules) |rule| {
         for (rule.expressions) |*expr| {
-            // Self-targeting expressions always have a valid target (the actor)
+            // Self-targeting expressions always have a valid target (the actor).
+            // Also avoids getTargetsForQuery(.self) which has a stack pointer bug.
             if (expr.target == .self) return true;
 
             // Get potential targets for this expression
@@ -270,6 +289,10 @@ pub fn hasAnyValidTarget(
 }
 
 /// Check if a specific target is valid for an expression.
+/// This is the SINGLE LOCATION for all target validity checks:
+/// - Incapacitation (universal)
+/// - Weapon reach (technique effects only)
+/// - Expression filters (advantage thresholds, etc.)
 fn isValidTargetForExpression(
     expr: *const cards.Expression,
     card: *const cards.Instance,
@@ -455,7 +478,7 @@ fn testId(index: u32) entity.ID {
     return .{ .index = index, .generation = 0 };
 }
 
-fn makeTestAgent(armament: combat.Armament) combat.Agent {
+fn makeTestAgent(equipped: combat.Armament.Equipped) combat.Agent {
     return combat.Agent{
         .id = testId(99),
         .alloc = undefined,
@@ -464,7 +487,7 @@ fn makeTestAgent(armament: combat.Armament) combat.Agent {
         .stats = undefined,
         .body = undefined,
         .armour = undefined,
-        .weapons = armament,
+        .weapons = .{ .equipped = equipped, .natural = &.{} },
         .stamina = stats.Resource.init(10.0, 10.0, 2.0),
         .focus = stats.Resource.init(3.0, 5.0, 3.0),
         .blood = stats.Resource.init(5.0, 5.0, 0.0),

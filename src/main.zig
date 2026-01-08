@@ -98,4 +98,5 @@ test {
     _ = @import("domain/resolution.zig");
     _ = @import("domain/weapon_list.zig");
     _ = @import("domain/tick.zig");
+    _ = @import("testing/mod.zig");
 }
