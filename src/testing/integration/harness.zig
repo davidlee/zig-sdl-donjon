@@ -138,10 +138,8 @@ pub const Harness = struct {
 
     /// Give a card to an agent by template name (from card_list).
     /// Creates a new instance and adds to hand.
-    pub fn giveCard(self: *Harness, agent: *Agent, template_name: []const u8) !entity.ID {
-        const template = card_list.byName(template_name) orelse
-            return error.CardNotFound;
-
+    pub fn giveCard(self: *Harness, agent: *Agent, comptime template_name: []const u8) !entity.ID {
+        const template = card_list.byName(template_name);
         const instance = try self.world.card_registry.create(template);
 
         // Add to combat state hand
@@ -205,6 +203,11 @@ pub const Harness = struct {
         try self.world.commandHandler.playActionCard(card_id, target);
     }
 
+    /// Cancel a card that's currently in play. Must be in selection phase.
+    pub fn cancelCard(self: *Harness, card_id: entity.ID) !void {
+        try self.world.commandHandler.cancelActionCard(card_id);
+    }
+
     /// Transition to commit phase, triggering commit effects.
     pub fn commitPlays(self: *Harness) !void {
         try self.transitionTo(.commit_phase);
@@ -255,6 +258,80 @@ pub const Harness = struct {
     /// Get player's available stamina (current minus committed).
     pub fn playerAvailableStamina(self: *Harness) f32 {
         return self.player().stamina.available;
+    }
+
+    /// Get player's hand card IDs.
+    pub fn playerHand(self: *Harness) []const entity.ID {
+        const cs = self.player().combat_state orelse return &[_]entity.ID{};
+        return cs.hand.items;
+    }
+
+    /// Check if a card is in player's hand.
+    pub fn isInHand(self: *Harness, card_id: entity.ID) bool {
+        for (self.playerHand()) |id| {
+            if (id.eql(card_id)) return true;
+        }
+        return false;
+    }
+
+    /// Check if a card ID is on cooldown.
+    pub fn isOnCooldown(self: *Harness, card_id: entity.ID) bool {
+        const cs = self.player().combat_state orelse return false;
+        return cs.cooldowns.contains(card_id);
+    }
+
+    // -------------------------------------------------------------------------
+    // Engagement Manipulation
+    // -------------------------------------------------------------------------
+
+    /// Get the engagement between player and an enemy.
+    pub fn getEngagement(self: *Harness, enemy_id: entity.ID) ?*combat.Engagement {
+        return self.encounter().getPlayerEngagement(enemy_id);
+    }
+
+    /// Set the engagement range between player and an enemy.
+    pub fn setRange(self: *Harness, enemy_id: entity.ID, range: combat.Reach) void {
+        if (self.getEngagement(enemy_id)) |eng| {
+            eng.range = range;
+        }
+    }
+
+    /// Configure the player from an AgentTemplate (persona).
+    /// Applies name, stats, resources, and armament from the template.
+    /// Does not change body or director.
+    pub fn setPlayerFromTemplate(self: *Harness, template: *const personas.AgentTemplate) !void {
+        const p = self.player();
+        p.name = .{ .static = template.name };
+        p.stats = template.base_stats;
+        p.stamina = template.stamina;
+        p.focus = template.focus;
+        p.blood = template.blood;
+
+        // Apply armament (unarmed not yet supported in domain)
+        switch (template.armament) {
+            .unarmed => @panic("unarmed armament not yet supported"),
+            .single => |tmpl| {
+                const instance = try self.alloc.create(domain.weapon.Instance);
+                instance.* = .{
+                    .id = try self.world.entities.weapons.insert(instance),
+                    .template = tmpl,
+                };
+                p.weapons = .{ .single = instance };
+            },
+            .dual => |d| {
+                const primary = try self.alloc.create(domain.weapon.Instance);
+                primary.* = .{
+                    .id = try self.world.entities.weapons.insert(primary),
+                    .template = d.primary,
+                };
+                const secondary = try self.alloc.create(domain.weapon.Instance);
+                secondary.* = .{
+                    .id = try self.world.entities.weapons.insert(secondary),
+                    .template = d.secondary,
+                };
+                p.weapons = .{ .dual = .{ .primary = primary, .secondary = secondary } };
+            },
+        }
     }
 
     // -------------------------------------------------------------------------

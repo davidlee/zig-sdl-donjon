@@ -113,3 +113,91 @@ test "Pool card clone lifecycle: clone created, original gets cooldown" {
     // Clone ID should differ from master ID
     try testing.expect(!play_card_id.eql(thrust_master_id));
 }
+
+// ============================================================================
+// Cancel Workflow
+// ============================================================================
+
+test "Cancel pool card: clone destroyed, stamina returned" {
+    var harness = try Harness.init(testing.allocator);
+    defer harness.deinit();
+
+    // Setup
+    const enemy = try harness.addEnemyFromTemplate(&personas.Agents.ser_marcus);
+    try harness.beginSelection();
+
+    const thrust_master_id = harness.findAlwaysAvailable("thrust") orelse
+        return error.ThrustNotFound;
+
+    // Record initial state
+    const initial_available = harness.playerAvailableStamina();
+
+    // Play the card (creates clone)
+    try harness.playCard(thrust_master_id, enemy.id);
+
+    // Get the clone ID from the play
+    const plays = harness.getPlays();
+    const clone_id = plays[0].play.action;
+
+    // Verify clone differs from master
+    try testing.expect(!clone_id.eql(thrust_master_id));
+
+    // Clear events from play
+    harness.clearEvents();
+
+    // Cancel the play
+    try harness.cancelCard(clone_id);
+
+    // Verify: play removed
+    try testing.expectEqual(@as(usize, 0), harness.getPlays().len);
+
+    // Verify: stamina returned
+    try testing.expectEqual(initial_available, harness.playerAvailableStamina());
+
+    // Verify: card_cancelled event emitted (uses master_id since clone is destroyed)
+    try harness.expectEvent(.card_cancelled);
+}
+
+test "Cancel hand card: card returned to hand, time returned" {
+    var harness = try Harness.init(testing.allocator);
+    defer harness.deinit();
+
+    // Setup - need an enemy for encounter but card targets self
+    _ = try harness.addEnemyFromTemplate(&personas.Agents.ser_marcus);
+    try harness.beginSelection();
+
+    // Give a hand card (breath work targets .self, playable from hand)
+    const card_id = try harness.giveCard(harness.player(), "breath work");
+
+    // Record initial state
+    const initial_time = harness.player().time_available;
+    try testing.expect(harness.isInHand(card_id));
+
+    // Play the card (targets self, no enemy target needed)
+    try harness.playCard(card_id, null);
+
+    // Verify: card removed from hand, play created
+    try testing.expect(!harness.isInHand(card_id));
+    try testing.expectEqual(@as(usize, 1), harness.getPlays().len);
+
+    // Verify: time was reserved
+    try testing.expect(harness.player().time_available < initial_time);
+
+    // Clear events from play
+    harness.clearEvents();
+
+    // Cancel the play
+    try harness.cancelCard(card_id);
+
+    // Verify: play removed
+    try testing.expectEqual(@as(usize, 0), harness.getPlays().len);
+
+    // Verify: card returned to hand
+    try testing.expect(harness.isInHand(card_id));
+
+    // Verify: time returned
+    try testing.expectEqual(initial_time, harness.player().time_available);
+
+    // Verify: card_moved event emitted (not card_cancelled - that's for clones)
+    try harness.expectEvent(.card_moved);
+}

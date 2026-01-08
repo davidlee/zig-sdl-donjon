@@ -141,33 +141,6 @@ pub fn rulePredicatesSatisfied(
 // Internal Validation Helpers
 // ============================================================================
 
-fn validateMeleeReach(
-    template: *const cards.Template,
-    actor: *const Agent,
-    encounter: *const combat.Encounter,
-) bool {
-    const technique = template.getTechnique() orelse {
-        // .melee card without technique is unexpected; warn and allow play
-        std.debug.print("warning: .melee card '{s}' has no technique\n", .{template.name});
-        return true;
-    };
-    const attack_mode = technique.attack_mode;
-
-    // Defensive techniques (.none) have no reach requirement
-    if (attack_mode == .none) return true;
-
-    // Get weapon's offensive mode for this attack type
-    const weapon_mode = actor.weapons.getOffensiveMode(attack_mode) orelse return false;
-
-    // Check if any enemy is within reach (Option A: short-circuit true on first valid)
-    for (encounter.enemies.items) |enemy| {
-        const engagement = encounter.getPlayerEngagementConst(enemy.id) orelse continue;
-        // weapon.reach >= engagement.range means we can hit them
-        if (@intFromEnum(weapon_mode.reach) >= @intFromEnum(engagement.range)) return true;
-    }
-    return false;
-}
-
 fn isInPlayableSource(actor: *const Agent, cs: *const combat.CombatState, card_id: entity.ID, pf: cards.PlayableFrom) bool {
     // Check CombatState.hand
     if (pf.hand and cs.isInZone(card_id, .hand)) return true;

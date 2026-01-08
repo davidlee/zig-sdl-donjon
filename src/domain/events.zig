@@ -135,6 +135,14 @@ pub const Event = union(enum) {
         defender_modifier: f32, // total defense adjustment from defender conditions
     },
 
+    attack_out_of_range: struct {
+        attacker_id: entity.ID,
+        defender_id: entity.ID,
+        technique_id: cards.TechniqueID,
+        weapon_reach: combat.Reach,
+        engagement_range: combat.Reach,
+    },
+
     manoeuvre_contest_resolved: struct {
         aggressor_id: entity.ID,
         defender_id: entity.ID,

@@ -7,6 +7,7 @@ const lib = @import("infra");
 const entity = lib.entity;
 const cards = @import("../cards.zig");
 const combat = @import("../combat.zig");
+const events = @import("../events.zig");
 const resolution = @import("../resolution.zig");
 const world = @import("../world.zig");
 const weapon_list = @import("../weapon_list.zig");
@@ -163,6 +164,29 @@ pub const TickResolver = struct {
                         if (!targeting.expressionAppliesToTarget(expr, card, action.actor, defender, engagement)) {
                             continue; // Filter failed, skip this target
                         }
+                    }
+                }
+
+                // Check weapon reach vs engagement range (resolution-time range validation)
+                const attack_mode = action.technique.attack_mode;
+                if (attack_mode != .none) {
+                    // Offensive technique - must have weapon reach >= engagement range
+                    const weapon_mode = action.actor.weapons.getOffensiveMode(attack_mode);
+                    if (weapon_mode) |wm| {
+                        if (@intFromEnum(wm.reach) < @intFromEnum(engagement.range)) {
+                            // Out of range - emit event and skip this target
+                            try w.events.push(.{ .attack_out_of_range = .{
+                                .attacker_id = action.actor.id,
+                                .defender_id = defender.id,
+                                .technique_id = action.technique.id,
+                                .weapon_reach = wm.reach,
+                                .engagement_range = engagement.range,
+                            } });
+                            continue;
+                        }
+                    } else {
+                        // No weapon for this attack mode - can't attack
+                        continue;
                     }
                 }
 
