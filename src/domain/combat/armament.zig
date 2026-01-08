@@ -82,6 +82,18 @@ pub const Armament = struct {
             .none => null,
         };
     }
+
+    /// Get the ranged profile from the primary equipped weapon.
+    /// Returns null if unarmed or weapon has no ranged capability.
+    pub fn getRangedMode(self: Armament) ?weapon.Ranged {
+        const template = switch (self.equipped) {
+            .unarmed => return null,
+            .single => |w| w.template,
+            .dual => |d| d.primary.template,
+            .compound => return null,
+        };
+        return template.ranged;
+    }
 };
 
 // ============================================================================

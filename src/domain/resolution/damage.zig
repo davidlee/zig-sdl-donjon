@@ -23,7 +23,10 @@ pub fn getWeaponOffensive(
     return switch (technique.attack_mode) {
         .thrust => if (weapon_template.thrust) |*t| t else null,
         .swing => if (weapon_template.swing) |*s| s else null,
-        .ranged => null, // TODO: add ranged profile to weapon.Template
+        .ranged => if (weapon_template.ranged) |r| switch (r) {
+            .thrown => |*t| &t.throw,
+            .projectile => null, // TODO: projectile weapons (bows, crossbows)
+        } else null,
         .none => null, // defensive techniques don't use weapon offensive
     };
 }

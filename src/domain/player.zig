@@ -29,7 +29,7 @@ pub fn newPlayer(
 
     // Equip starting weapon
     var weapn = try alloc.create(weapon.Instance);
-    weapn.template = weapon_list.byName("falchion");
+    weapn.template = weapon_list.byName("fist stone");
     weapn.id = try world.entities.weapons.insert(weapn);
     agent.weapons = agent.weapons.withEquipped(.{ .single = weapn });
 

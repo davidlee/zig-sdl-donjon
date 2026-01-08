@@ -91,6 +91,27 @@ pub const TechniqueEntries = [_]Technique{
         .parry_mult = 1.2,
     },
 
+    .{
+        .id = .throw,
+        .name = "throw",
+        .attack_mode = .ranged,
+        .target_height = .mid, // thrown objects target center mass
+        .damage = .{
+            .instances = &.{
+                .{ .amount = 1.0, .types = &.{.bludgeon} },
+            },
+            .scaling = .{
+                .ratio = 0.8, // less scaling than melee
+                .stats = .{ .average = .{ .speed, .speed } }, // mostly speed
+            },
+        },
+        .difficulty = 0.9, // slightly easier than swing
+        .deflect_mult = 0.8, // hard to deflect incoming projectile
+        .dodge_mult = 1.0, // can sidestep
+        .counter_mult = 0.0, // can't counter a thrown object
+        .parry_mult = 0.7, // hard to parry
+    },
+
     // Defensive techniques - guard positions
     // Deflect: gentle redirection, cheap, covers adjacent heights
     .{
@@ -351,6 +372,26 @@ const t_slash = Template{
         .valid = .always,
         .expressions = &.{.{
             .effect = .{ .combat_technique = Technique.byID(.swing) },
+            .filter = null,
+            .target = .single,
+        }},
+    }},
+};
+
+const t_throw = Template{
+    .id = hashName("throw"),
+    .kind = .action,
+    .name = "throw",
+    .description = "hurl something at them",
+    .rarity = .common,
+    .cost = .{ .stamina = 2.5, .time = 0.2 },
+    .tags = .{ .ranged = true, .offensive = true, .phase_selection = true, .phase_commit = true },
+    .playable_from = PlayableFrom.always_avail,
+    .rules = &.{.{
+        .trigger = .on_play,
+        .valid = .always,
+        .expressions = &.{.{
+            .effect = .{ .combat_technique = Technique.byID(.throw) },
             .filter = null,
             .target = .single,
         }},
@@ -635,6 +676,7 @@ const t_pivot = Template{
 pub const BaseAlwaysAvailableTemplates = [_]*const Template{
     &t_thrust,
     &t_slash,
+    &t_throw,
     &t_deflect,
     &t_parry,
     &t_shield_block,

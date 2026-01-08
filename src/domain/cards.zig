@@ -242,6 +242,7 @@ pub fn defaultChannelsForTags(tags: TagSet) ChannelSet {
 pub const TechniqueID = enum {
     thrust,
     swing,
+    throw,
     deflect,
     parry,
     block,

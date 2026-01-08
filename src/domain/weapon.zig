@@ -41,7 +41,7 @@ pub const Thrown = struct {
     range: combat.Reach,
 };
 
-pub const Ranged = union {
+pub const Ranged = union(enum) {
     projectile: Projectile,
     thrown: Thrown,
 };

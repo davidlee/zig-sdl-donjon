@@ -27,6 +27,7 @@ pub const WeaponEntries = [_]*const Template{
     &dirk,
     &spear,
     &buckler,
+    &fist_stone,
 };
 
 pub fn byName(comptime name: []const u8) *const Template {
@@ -579,6 +580,89 @@ pub const buckler = Template{
 };
 
 // ============================================================================
+// Fist Stone
+// ============================================================================
+// Improvised weapon - a good rock for bashing or throwing.
+// Low damage, unreliable, but works in a pinch.
+
+const fist_stone_swing = Offensive{
+    .name = "fist stone",
+    .reach = .clinch,
+    .damage_types = &.{.bludgeon},
+    .accuracy = 0.75, // awkward grip
+    .speed = 1.1, // quick but limited
+    .damage = 0.4, // low base, needs luck
+    .penetration = 0.1, // blunt
+    .penetration_max = 0.5,
+    .fragility = 1.5, // may crack on contact
+    .defender_modifiers = .{
+        .reach = .clinch,
+        .parry = 1.1, // easy to parry
+        .deflect = 1.0,
+        .block = 0.9,
+        .fragility = 1.5, // hard on shields
+    },
+};
+
+const fist_stone_throw = Offensive{
+    .name = "fist stone throw",
+    .reach = .medium, // thrown range
+    .damage_types = &.{.bludgeon},
+    .accuracy = 0.8, // natural throwing motion
+    .speed = 1.0,
+    .damage = 0.6, // momentum helps
+    .penetration = 0.2,
+    .penetration_max = 1.0,
+    .fragility = 2.0, // likely to shatter
+    .defender_modifiers = .{
+        .reach = .medium,
+        .parry = 0.9, // hard to intercept
+        .deflect = 0.8,
+        .block = 0.7,
+        .fragility = 1.0,
+    },
+};
+
+const fist_stone_defence = Defensive{
+    .name = "fist stone defence",
+    .reach = .clinch,
+    .parry = 0.2, // basically useless
+    .deflect = 0.1,
+    .block = 0.1,
+    .fragility = 1.5, // will crack
+};
+
+pub const fist_stone = Template{
+    .name = "fist stone",
+    .categories = &.{.improvised},
+    .features = .{
+        .hooked = false,
+        .spiked = false,
+        .crossguard = false,
+        .pommel = false,
+    },
+    .grip = .{
+        .one_handed = true,
+        .two_handed = false,
+        .versatile = false,
+        .bastard = false,
+        .half_sword = false,
+        .murder_stroke = false,
+    },
+    .length = 10.0, // fist-sized
+    .weight = 0.5,
+    .balance = 0.5, // neutral
+    .swing = fist_stone_swing,
+    .thrust = null, // no thrust
+    .defence = fist_stone_defence,
+    .ranged = .{ .thrown = .{
+        .throw = fist_stone_throw,
+        .range = .medium,
+    } },
+    .integrity = 30.0, // can shatter on armour
+};
+
+// ============================================================================
 // Tests
 // ============================================================================
 
@@ -626,6 +710,7 @@ test "weapon categories are correct" {
     try std.testing.expectEqual(Category.dagger, dirk.categories[0]);
     try std.testing.expectEqual(Category.polearm, spear.categories[0]);
     try std.testing.expectEqual(Category.shield, buckler.categories[0]);
+    try std.testing.expectEqual(Category.improvised, fist_stone.categories[0]);
 }
 
 test "grip constraints are sensible" {
