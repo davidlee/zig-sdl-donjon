@@ -796,13 +796,14 @@ pub fn layerResistance(layer: TissueLayer, kind: DamageKind) LayerResistance {
     };
 }
 
-/// Thresholds for converting damage amount to severity
+/// Thresholds for converting damage amount to severity.
+/// Scale: sword swing = 10.0 base damage, thresholds scaled to match.
 fn severityFromDamage(amount: f32) Severity {
-    if (amount < 0.05) return .none;
-    if (amount < 0.15) return .minor;
-    if (amount < 0.30) return .inhibited;
-    if (amount < 0.50) return .disabled;
-    if (amount < 0.80) return .broken;
+    if (amount < 0.5) return .none;
+    if (amount < 1.5) return .minor;
+    if (amount < 3.0) return .inhibited;
+    if (amount < 5.0) return .disabled;
+    if (amount < 8.0) return .broken;
     return .missing;
 }
 
@@ -1462,7 +1463,7 @@ test "wound finds deepest layer and worst severity" {
 
 test "slash damage: heavy outer layer damage, shallow penetration" {
     const packet = damage.Packet{
-        .amount = 1.0,
+        .amount = 10.0,
         .kind = .slash,
         .penetration = 0.5, // limited penetration
     };
@@ -1484,7 +1485,7 @@ test "slash damage: heavy outer layer damage, shallow penetration" {
 
 test "pierce damage: light outer damage, deep penetration" {
     const packet = damage.Packet{
-        .amount = 1.0,
+        .amount = 10.0,
         .kind = .pierce,
         .penetration = 1.5, // high penetration
     };
@@ -1502,7 +1503,7 @@ test "pierce damage: light outer damage, deep penetration" {
 
 test "bludgeon damage: bone and muscle absorb most" {
     const packet = damage.Packet{
-        .amount = 1.0,
+        .amount = 10.0,
         .kind = .bludgeon,
         .penetration = 0.0, // irrelevant for bludgeon
     };
@@ -1521,7 +1522,7 @@ test "bludgeon damage: bone and muscle absorb most" {
 
 test "facial tissue: cartilage instead of bone" {
     const packet = damage.Packet{
-        .amount = 0.8,
+        .amount = 8.0,
         .kind = .slash,
         .penetration = 0.5,
     };
@@ -1535,7 +1536,7 @@ test "facial tissue: cartilage instead of bone" {
 
 test "digit tissue: minimal layers" {
     const packet = damage.Packet{
-        .amount = 0.5,
+        .amount = 5.0,
         .kind = .slash,
         .penetration = 0.3,
     };
@@ -1561,7 +1562,7 @@ test "applying damage to part adds wound and updates severity" {
 
     // Apply moderate slash
     const packet = damage.Packet{
-        .amount = 0.6,
+        .amount = 6.0,
         .kind = .slash,
         .penetration = 0.4,
     };
@@ -1587,7 +1588,7 @@ test "severe slash can sever a limb" {
 
     // Massive slash - enough to break bone and disable muscle
     const packet = damage.Packet{
-        .amount = 3.0,
+        .amount = 30.0,
         .kind = .slash,
         .penetration = 2.0,
     };
@@ -1616,7 +1617,7 @@ test "major artery hit detection" {
 
     // Deep stab to neck
     const packet = damage.Packet{
-        .amount = 1.0,
+        .amount = 10.0,
         .kind = .pierce,
         .penetration = 1.0,
     };

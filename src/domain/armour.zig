@@ -1423,7 +1423,7 @@ test "full flow: armor absorption then body damage" {
 
     // 3. Create damage packet
     const initial_packet = damage.Packet{
-        .amount = 1.0,
+        .amount = 10.0,
         .kind = .slash,
         .penetration = 1.0,
     };
@@ -1436,8 +1436,8 @@ test "full flow: armor absorption then body damage" {
 
     const armor_result = resolveThroughArmour(&stack, torso_idx, initial_packet, &rng);
 
-    // Damage should be reduced: (1.0 - 0.2) * 0.5 = 0.4
-    const expected_remaining = (1.0 - 0.2) * 0.5;
+    // Damage should be reduced: (10.0 - 0.2) * 0.5 = 4.9
+    const expected_remaining = (10.0 - 0.2) * 0.5;
     try std.testing.expectApproxEqAbs(expected_remaining, armor_result.remaining.amount, 0.01);
     try std.testing.expectEqual(@as(u8, 1), armor_result.layers_hit);
 

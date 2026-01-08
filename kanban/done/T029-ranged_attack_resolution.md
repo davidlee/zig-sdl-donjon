@@ -67,3 +67,17 @@ Changes made:
 - `getWeaponOffensive()` handles `.ranged` → extracts `thrown.throw` Offensive
 - `getRangedMode()` added to Armament
 - `isValidTargetForExpression()` branches on attack_mode for range checking
+
+### 2026-01-09 - Resolution fixed - COMPLETE
+
+**Root cause**: `TickResolver.resolve()` had a switch on attack_mode that returned `null` for `.ranged`, causing the attack to silently skip.
+
+**Fix**: Added explicit `.ranged` branch in resolver (lines 191-208) that:
+1. Gets ranged profile from weapon template
+2. Extracts max range from thrown/projectile
+3. Checks `engagement.range <= max_range`
+4. Allows attack to proceed to `resolveTechniqueVsDefense()`
+
+The existing `getWeaponOffensive()` in damage.zig already handled extracting the `Offensive` profile from thrown weapons, so damage calculation worked once the resolver stopped bailing out.
+
+**Verified**: Threw rock at goblin, hit on second throw, head shattered.

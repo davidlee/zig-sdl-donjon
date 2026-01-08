@@ -100,7 +100,7 @@ pub const FIST = weapon.Template{
         .damage_types = &.{.bludgeon},
         .accuracy = 0.8,
         .speed = 1.2,
-        .damage = 2.0,
+        .damage = 2.0, // natural weapon: weaker than steel (sword = 10.0)
         .penetration = 0.0,
         .penetration_max = 0.0,
         .defender_modifiers = .{ .reach = .clinch, .parry = 1.0, .deflect = 0.0, .block = 0.0, .fragility = 0.0 },
@@ -130,7 +130,7 @@ pub const BITE = weapon.Template{
         .damage_types = &.{ .pierce, .slash },
         .accuracy = 0.7,
         .speed = 1.0,
-        .damage = 3.0,
+        .damage = 4.0, // natural weapon: weaker than steel (sword = 10.0)
         .penetration = 1.0,
         .penetration_max = 2.0,
         .defender_modifiers = .{ .reach = .clinch, .parry = 1.0, .deflect = 0.0, .block = 0.0, .fragility = 0.0 },
@@ -159,7 +159,7 @@ pub const HEADBUTT = weapon.Template{
         .damage_types = &.{.bludgeon},
         .accuracy = 0.6,
         .speed = 0.8,
-        .damage = 4.0,
+        .damage = 3.0, // natural weapon: weaker than steel (sword = 10.0)
         .penetration = 0.0,
         .penetration_max = 0.0,
         .defender_modifiers = .{ .reach = .clinch, .parry = 1.0, .deflect = 0.0, .block = 0.0, .fragility = 0.0 },

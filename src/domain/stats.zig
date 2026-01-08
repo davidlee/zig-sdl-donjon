@@ -224,6 +224,10 @@ test "Resource ratio returns current/max" {
     try testing.expectEqual(@as(f32, 0.0), zero_max.ratio());
 }
 
+// Stat scale constants - used for normalization and damage formulas
+pub const STAT_BASELINE: f32 = 5.0; // average/default stat value
+pub const STAT_MAX: f32 = 10.0; // maximum stat value for normalization
+
 pub const Block = packed struct {
     // physical
     power: f32,
@@ -287,8 +291,7 @@ pub const Block = packed struct {
     /// Normalize a raw stat value to 0-1 range.
     /// Baseline: stat of 5 → 0.5, stat of 10 → 1.0.
     pub fn normalize(value: f32) f32 {
-        const baseline: f32 = 10.0;
-        return std.math.clamp(value / baseline, 0.0, 1.0);
+        return std.math.clamp(value / STAT_MAX, 0.0, 1.0);
     }
 
     test "Block.normalize scales stats to 0-1" {
