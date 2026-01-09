@@ -278,8 +278,8 @@ test "generated template integrates with armour stack" {
     const body_mod = @import("body.zig");
     const inventory = @import("inventory.zig");
 
-    // Create a test body using HumanoidPlan
-    var bod = try body_mod.Body.fromPlan(alloc, &body_mod.HumanoidPlan);
+    // Create a test body using humanoid plan
+    var bod = try body_mod.Body.fromPlan(alloc, "humanoid");
     defer bod.deinit();
 
     // Create armour instance from generated template

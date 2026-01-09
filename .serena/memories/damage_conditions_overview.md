@@ -1,7 +1,9 @@
 # Damage & Conditions Overview
 
 ## Damage System
-- `src/domain/damage.zig` defines the shared damage taxonomy. `Kind`/`Category` enumerate physical/magical/elemental/biological families, while `Instance` and `Packet` describe concrete attacks (amount, type mix, penetration). Scaling metadata and helper functions (`afterLayer`, `penaltiesFor`) keep math reusable.
+- `src/domain/damage.zig` defines the shared damage taxonomy. `Kind` enumerates damage types, `Category` groups them (physical/elemental/energy/biological/magical). `Instance` and `Packet` describe concrete attacks (amount, type mix, penetration).
+- `Kind.category()` returns the Category; `Kind.isPhysical()` etc. for convenient checks.
+- Physical damage uses 3-axis mechanics (geometry/energy/rigidity); non-physical bypasses this.
 - Armour/body resistance is encoded via `Resistance`, `Vulnerability`, `Susceptibility`, and `Immunity` structs so mitigation tweaks remain data-driven.
 
 ## Condition Framework (T018)

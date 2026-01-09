@@ -56,7 +56,7 @@ pub const NaturalWeapon = struct {
 /// Recovery rates default to global values if not specified.
 pub const Species = struct {
     name: []const u8,
-    body_plan: []const body.PartDef,
+    body_plan_id: []const u8,
     natural_weapons: []const NaturalWeapon,
     base_blood: f32,
     base_stamina: f32,
@@ -232,7 +232,7 @@ fn buildSpecies(comptime id: []const u8) Species {
     const gen = comptime findGeneratedSpecies(id);
     return .{
         .name = gen.name,
-        .body_plan = &body.HumanoidPlan, // TODO: resolve from gen.body_plan
+        .body_plan_id = gen.body_plan,
         .natural_weapons = buildNaturalWeapons(gen.natural_weapons),
         .base_blood = gen.base_blood,
         .base_stamina = gen.base_stamina,
@@ -302,7 +302,7 @@ test "Species recovery rates use global defaults" {
 test "Species can override recovery rates" {
     const dragon = Species{
         .name = "Dragon",
-        .body_plan = &body.HumanoidPlan, // placeholder
+        .body_plan_id = "humanoid", // placeholder
         .natural_weapons = &.{},
         .base_blood = 20.0,
         .base_stamina = 30.0,

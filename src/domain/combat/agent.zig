@@ -107,7 +107,7 @@ pub const Agent = struct {
         sb: stats.Block,
     ) !*Agent {
         // Derive body from species
-        const agent_body = try body.Body.fromPlan(alloc, sp.body_plan);
+        const agent_body = try body.Body.fromPlan(alloc, sp.body_plan_id);
 
         // Derive resources from species (base values + recovery rates)
         const stamina_res = stats.Resource.init(sp.base_stamina, sp.base_stamina, sp.getStaminaRecovery());

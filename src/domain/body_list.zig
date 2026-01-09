@@ -151,6 +151,7 @@ pub fn getTissueStackRuntime(id: []const u8) ?*const TissueStack {
 /// Convert a tissue template string ID to the TissueTemplate enum.
 /// Fails at comptime with a helpful error if the ID doesn't match any enum variant.
 fn stringToTissueTemplate(comptime id: []const u8) body.TissueTemplate {
+    @setEvalBranchQuota(10000);
     return std.meta.stringToEnum(body.TissueTemplate, id) orelse
         @compileError("Unknown tissue template ID: '" ++ id ++ "'. Valid values are: limb, digit, joint, facial, organ, core. Check data/bodies.cue tissue_template field.");
 }
@@ -158,6 +159,7 @@ fn stringToTissueTemplate(comptime id: []const u8) body.TissueTemplate {
 /// Find a part's index within a body plan by name.
 /// Returns null if not found (caller should emit appropriate error).
 fn findPartIndexInPlan(comptime plan: *const BodyPlanDef, comptime name: []const u8) ?usize {
+    @setEvalBranchQuota(10000);
     for (plan.parts, 0..) |*part, i| {
         if (std.mem.eql(u8, part.name, name)) {
             return i;
@@ -172,6 +174,7 @@ fn buildPartDef(
     comptime part: *const BodyPartDef,
     comptime plan: *const BodyPlanDef,
 ) body.PartDef {
+    @setEvalBranchQuota(100000);
     // Resolve parent reference
     const parent_id: ?body.PartId = if (part.parent) |parent_name| blk: {
         if (findPartIndexInPlan(plan, parent_name) == null) {
@@ -209,6 +212,7 @@ fn buildPartDef(
 
 /// Build runtime PartDef array from a generated body plan.
 fn buildBodyPlan(comptime plan: *const BodyPlanDef) [plan.parts.len]body.PartDef {
+    @setEvalBranchQuota(1000000);
     var result: [plan.parts.len]body.PartDef = undefined;
     for (plan.parts, 0..) |*part, i| {
         result[i] = buildPartDef(part, plan);
@@ -292,6 +296,7 @@ pub fn getBodyPlanRuntime(id: []const u8) ?*const BodyPlan {
 
 /// Validate all body parts reference valid tissue templates.
 fn validateAllBodyParts() void {
+    @setEvalBranchQuota(10000);
     for (&body_plan_defs) |*plan| {
         for (plan.parts) |*part| {
             _ = resolveTissueTemplateDef(part.tissue_template_id);
@@ -301,6 +306,7 @@ fn validateAllBodyParts() void {
 
 /// Validate all parent/enclosing references resolve correctly.
 fn validateAllPartReferences() void {
+    @setEvalBranchQuota(100000);
     for (&body_plan_defs) |*plan| {
         for (plan.parts) |*part| {
             if (part.parent) |parent_name| {

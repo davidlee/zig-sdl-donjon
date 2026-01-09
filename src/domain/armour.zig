@@ -782,7 +782,7 @@ const TestBodyPlan = [_]body.PartDef{
 };
 
 fn makeTestBody(alloc: std.mem.Allocator) !body.Body {
-    return body.Body.fromPlan(alloc, &TestBodyPlan);
+    return body.Body.fromParts(alloc, &TestBodyPlan);
 }
 
 /// Create a seeded RNG for deterministic tests
@@ -1452,7 +1452,7 @@ test "full flow: armor absorption then body damage" {
     const alloc = std.testing.allocator;
 
     // 1. Create body with full humanoid plan (has torso with proper tissue)
-    var bod = try body.Body.fromPlan(alloc, &body.HumanoidPlan);
+    var bod = try body.Body.fromPlan(alloc, "humanoid");
     defer bod.deinit();
 
     // 2. Create and equip mail shirt
@@ -1525,7 +1525,7 @@ test "full flow: armor absorption then body damage" {
     const wound_severity = body_result.wound.worstSeverity();
 
     // 6. Compare with unarmored damage - armor should reduce or equal severity
-    var unarmored_bod = try body.Body.fromPlan(alloc, &body.HumanoidPlan);
+    var unarmored_bod = try body.Body.fromPlan(alloc, "humanoid");
     defer unarmored_bod.deinit();
 
     const unarmored_torso_idx = unarmored_bod.indexOf("torso").?;

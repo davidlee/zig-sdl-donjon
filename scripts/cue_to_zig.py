@@ -239,7 +239,7 @@ def emit_tissue_templates(templates: Dict[str, Any]) -> str:
         return float(section.get(field, 0.0))
 
     lines: List[str] = []
-    lines.append("const TissueLayerDefinition = struct {")
+    lines.append("pub const TissueLayerDefinition = struct {")
     lines.append("    material_id: []const u8,")
     lines.append("    thickness_ratio: f32,")
     lines.append("    deflection: f32,")
@@ -334,6 +334,32 @@ def format_part_flags(flags: Dict[str, Any]) -> str:
     return ".{ " + ", ".join(entries) + " }"
 
 
+def topological_sort_parts(parts: Dict[str, Any]) -> List[tuple]:
+    """Sort body parts so parents come before children."""
+    # Build adjacency: child -> parent
+    result = []
+    remaining = set(parts.keys())
+
+    while remaining:
+        # Find parts whose parent is already emitted (or has no parent)
+        ready = []
+        for name in remaining:
+            parent = parts[name].get("parent")
+            if parent is None or parent not in remaining:
+                ready.append(name)
+
+        if not ready:
+            # Cycle or missing parent - fall back to alphabetical for remaining
+            ready = sorted(remaining)
+
+        # Add ready parts in alphabetical order for determinism
+        for name in sorted(ready):
+            result.append((name, parts[name]))
+            remaining.discard(name)
+
+    return result
+
+
 def emit_body_plans(plans: Dict[str, Any]) -> str:
     lines: List[str] = []
     lines.append("pub const BodyPartGeometry = struct {")
@@ -371,7 +397,7 @@ def emit_body_plans(plans: Dict[str, Any]) -> str:
         lines.append(f'        .base_mass_kg = {zig_float(plan.get("base_mass_kg", 0.0))},')
         parts = plan.get("parts", {})
         lines.append("        .parts = &.{")
-        for part_name, part in sorted(parts.items()):
+        for part_name, part in topological_sort_parts(parts):
             lines.append("            .{")
             lines.append(f'                .name = "{part_name}",')
             lines.append(f"                .tag = {format_part_tag(part.get('tag', 'torso'))},")

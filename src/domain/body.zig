@@ -6,6 +6,7 @@ const std = @import("std");
 const lib = @import("infra");
 const damage = @import("damage.zig");
 const events = @import("events.zig");
+const body_list = @import("body_list.zig");
 const EventSystem = events.EventSystem;
 const Event = events.Event;
 const entity = lib.entity;
@@ -307,18 +308,27 @@ pub const Body = struct {
     parts: std.ArrayList(Part),
     index_by_hash: std.AutoHashMap(u64, PartIndex), // name hash → part index
 
-    pub fn fromPlan(alloc: std.mem.Allocator, plan: []const PartDef) !Body {
+    /// Create a body from a plan ID (looks up in generated body plans).
+    pub fn fromPlan(alloc: std.mem.Allocator, plan_id: []const u8) !Body {
+        const plan = body_list.getBodyPlanRuntime(plan_id) orelse
+            return error.UnknownBodyPlan;
+        return fromParts(alloc, plan.parts);
+    }
+
+    /// Create a body from a raw parts slice.
+    /// Prefer fromPlan() for standard body plans; use this for test fixtures.
+    pub fn fromParts(alloc: std.mem.Allocator, parts: []const PartDef) !Body {
         var self = Body{
             .alloc = alloc,
-            .parts = try std.ArrayList(Part).initCapacity(alloc, plan.len),
+            .parts = try std.ArrayList(Part).initCapacity(alloc, parts.len),
             .index_by_hash = std.AutoHashMap(u64, PartIndex).init(alloc),
         };
         errdefer self.deinit();
 
-        try self.index_by_hash.ensureTotalCapacity(@intCast(plan.len));
+        try self.index_by_hash.ensureTotalCapacity(@intCast(parts.len));
 
         // First pass: create parts and build hash→index map
-        for (plan, 0..) |def, i| {
+        for (parts, 0..) |def, i| {
             const part = Part{
                 .name_hash = def.id.hash,
                 .def_index = @intCast(i),
@@ -339,7 +349,7 @@ pub const Body = struct {
         }
 
         // Second pass: resolve parent and enclosing references
-        for (plan, 0..) |def, i| {
+        for (parts, 0..) |def, i| {
             if (def.parent) |parent_id| {
                 self.parts.items[i].parent = self.index_by_hash.get(parent_id.hash);
             }
@@ -781,6 +791,27 @@ pub fn layerDepth(layer: TissueLayer) u8 {
     };
 }
 
+/// Convert a material ID string to a TissueLayer enum.
+/// Returns null for unrecognized materials.
+pub fn materialIdToTissueLayer(material_id: []const u8) ?TissueLayer {
+    return std.meta.stringToEnum(TissueLayer, material_id);
+}
+
+/// Derive rigidity axis from damage kind.
+/// Rigidity represents how concentrated/supported the attack force is.
+fn deriveRigidity(kind: DamageKind) f32 {
+    return switch (kind) {
+        // Physical damage kinds
+        .pierce => 1.0, // concentrated tip, fully supported
+        .slash => 0.7, // edge cuts but less concentrated than pierce
+        .bludgeon => 0.8, // blunt impact, some spread
+        .crush => 1.0, // overwhelming concentrated force
+        .shatter => 1.0, // brittle fracturing, high concentration
+        // Non-physical kinds have no rigidity component
+        else => 0.0,
+    };
+}
+
 /// How a layer interacts with damage types
 pub const LayerResistance = struct {
     /// Fraction of incoming damage this layer absorbs (dealt to this layer)
@@ -847,43 +878,66 @@ pub fn applyDamage(
     template: TissueTemplate,
 ) Wound {
     var wound = Wound{ .kind = packet.kind };
-    var remaining = packet.amount;
-    var penetration = packet.penetration;
 
-    // Process layers outside-in (sorted by depth)
-    const layers = template.layers();
-    var sorted: [6]TissueLayer = undefined;
-    var sorted_len: usize = 0;
-    for (layers) |layer| {
-        sorted[sorted_len] = layer;
-        sorted_len += 1;
+    // Non-physical damage bypasses the 3-axis mechanics (§6 of design doc).
+    // Fire, radiation, magical, etc. use resistances/DoT, not shielding/susceptibility.
+    if (!packet.kind.isPhysical()) {
+        return wound; // TODO: implement non-physical damage resolution
     }
-    // Sort by depth (bubble sort is fine for max 6 elements)
-    for (0..sorted_len) |i| {
-        for (i + 1..sorted_len) |j| {
-            if (layerDepth(sorted[j]) < layerDepth(sorted[i])) {
-                const tmp = sorted[i];
-                sorted[i] = sorted[j];
-                sorted[j] = tmp;
+
+    // Get tissue stack by template name (e.g., "limb", "core")
+    const template_id = @tagName(template);
+    const tissue_stack = body_list.getTissueStackRuntime(template_id) orelse {
+        return wound;
+    };
+
+    // Track the three axes through the layer stack.
+    // NOTE: Currently derived from legacy packet fields. Blocked on upstream
+    // damage.Packet refactor to carry weapon/technique-derived axes directly.
+    // See doc/artefacts/geometry_momentum_rigidity_review.md §2, §4, §5.1.
+    var remaining_geo = packet.penetration; // Geometry axis
+    var remaining_energy = packet.amount; // Energy axis
+    var remaining_rigidity = deriveRigidity(packet.kind); // Rigidity axis
+
+    // Process layers outside-in (generated data is in depth order)
+    for (tissue_stack.layers) |layer| {
+        // Stop when energy is exhausted (no force left to damage anything)
+        if (remaining_energy < 0.05) break;
+
+        // === Shielding: compute residual axes that continue inward ===
+        // Deflection reduces geometry (redirects/blunts penetrating edges)
+        // Absorption reduces energy (dissipates force into the layer)
+        // Dispersion reduces rigidity (spreads concentrated force)
+        const residual_geo = remaining_geo * (1.0 - layer.deflection);
+        const residual_energy = remaining_energy * (1.0 - layer.absorption);
+        const residual_rigidity = remaining_rigidity * (1.0 - layer.dispersion);
+
+        // NOTE: thickness_ratio is not yet used. Blocked on part geometry
+        // accessor (task 3.3) to convert ratio to absolute path length.
+        // See doc/artefacts/geometry_momentum_rigidity_review.md §5.2.
+
+        // === Susceptibility: damage to THIS layer using post-shielding axes ===
+        // Layer takes damage when residual axes exceed its thresholds
+        const geo_excess = @max(0.0, residual_geo - layer.geometry_threshold);
+        const energy_excess = @max(0.0, residual_energy - layer.energy_threshold);
+        const rig_excess = @max(0.0, residual_rigidity - layer.rigidity_threshold);
+
+        const layer_damage =
+            geo_excess * layer.geometry_ratio +
+            energy_excess * layer.energy_ratio +
+            rig_excess * layer.rigidity_ratio;
+
+        const severity = severityFromDamage(layer_damage);
+        if (severity != .none) {
+            if (materialIdToTissueLayer(layer.material_id)) |tissue_layer| {
+                wound.append(.{ .layer = tissue_layer, .severity = severity });
             }
         }
-    }
 
-    for (sorted[0..sorted_len]) |layer| {
-        // Bludgeon ignores penetration; others stop when penetration exhausted
-        const dominated_by_pen = packet.kind == .pierce or packet.kind == .slash;
-        if (remaining <= 0 or (dominated_by_pen and penetration <= 0)) break;
-
-        const res = layerResistance(layer, packet.kind);
-        const absorbed = remaining * res.absorb;
-        const severity = severityFromDamage(absorbed);
-
-        if (severity != .none) {
-            wound.append(.{ .layer = layer, .severity = severity });
-        }
-
-        remaining -= absorbed;
-        penetration -= res.pen_cost;
+        // Pass residuals to next layer
+        remaining_geo = residual_geo;
+        remaining_energy = residual_energy;
+        remaining_rigidity = residual_rigidity;
     }
 
     return wound;
@@ -1266,15 +1320,16 @@ pub const HumanoidPlan = [_]PartDef{
 
 test "body fromPlan creates correct part count" {
     const alloc = std.testing.allocator;
-    var body = try Body.fromPlan(alloc, &HumanoidPlan);
-    defer body.deinit();
+    var bod = try Body.fromPlan(alloc, "humanoid");
+    defer bod.deinit();
 
-    try std.testing.expectEqual(HumanoidPlan.len, body.parts.items.len);
+    const plan = body_list.getBodyPlanRuntime("humanoid").?;
+    try std.testing.expectEqual(plan.parts.len, bod.parts.items.len);
 }
 
 test "body part lookup by name" {
     const alloc = std.testing.allocator;
-    var body = try Body.fromPlan(alloc, &HumanoidPlan);
+    var body = try Body.fromPlan(alloc, "humanoid");
     defer body.deinit();
 
     const hand = body.get("left_hand");
@@ -1285,7 +1340,7 @@ test "body part lookup by name" {
 
 test "severing arm propagates to children" {
     const alloc = std.testing.allocator;
-    var body = try Body.fromPlan(alloc, &HumanoidPlan);
+    var body = try Body.fromPlan(alloc, "humanoid");
     defer body.deinit();
 
     // Get indices for arm chain
@@ -1313,7 +1368,7 @@ test "severing arm propagates to children" {
 
 test "child iterator finds direct children" {
     const alloc = std.testing.allocator;
-    var body = try Body.fromPlan(alloc, &HumanoidPlan);
+    var body = try Body.fromPlan(alloc, "humanoid");
     defer body.deinit();
 
     const hand_idx = body.indexOf("left_hand").?;
@@ -1331,7 +1386,7 @@ test "child iterator finds direct children" {
 
 test "enclosed iterator finds organs" {
     const alloc = std.testing.allocator;
-    var body = try Body.fromPlan(alloc, &HumanoidPlan);
+    var body = try Body.fromPlan(alloc, "humanoid");
     defer body.deinit();
 
     const torso_idx = body.indexOf("torso").?;
@@ -1349,7 +1404,7 @@ test "enclosed iterator finds organs" {
 
 test "effective integrity propagates through chain" {
     const alloc = std.testing.allocator;
-    var body = try Body.fromPlan(alloc, &HumanoidPlan);
+    var body = try Body.fromPlan(alloc, "humanoid");
     defer body.deinit();
 
     const shoulder_idx = body.indexOf("left_shoulder").?;
@@ -1370,7 +1425,7 @@ test "effective integrity propagates through chain" {
 
 test "grasp strength factors in fingers" {
     const alloc = std.testing.allocator;
-    var body = try Body.fromPlan(alloc, &HumanoidPlan);
+    var body = try Body.fromPlan(alloc, "humanoid");
     defer body.deinit();
 
     const hand_idx = body.indexOf("left_hand").?;
@@ -1393,7 +1448,7 @@ test "grasp strength factors in fingers" {
 
 test "mobility score with damaged groin" {
     const alloc = std.testing.allocator;
-    var body = try Body.fromPlan(alloc, &HumanoidPlan);
+    var body = try Body.fromPlan(alloc, "humanoid");
     defer body.deinit();
 
     const groin_idx = body.indexOf("groin").?;
@@ -1413,7 +1468,7 @@ test "mobility score with damaged groin" {
 
 test "functional grasping parts" {
     const alloc = std.testing.allocator;
-    var body = try Body.fromPlan(alloc, &HumanoidPlan);
+    var body = try Body.fromPlan(alloc, "humanoid");
     defer body.deinit();
 
     // Both hands should be functional
@@ -1516,7 +1571,7 @@ test "slash damage: heavy outer layer damage, shallow penetration" {
     try std.testing.expect(bone_sev <= @intFromEnum(Severity.minor));
 }
 
-test "pierce damage: light outer damage, deep penetration" {
+test "pierce damage: penetrates multiple layers" {
     const packet = damage.Packet{
         .amount = 10.0,
         .kind = .pierce,
@@ -1525,32 +1580,33 @@ test "pierce damage: light outer damage, deep penetration" {
 
     const wound = applyDamage(packet, .limb);
 
-    // Pierce should reach deep
+    // Pierce should reach multiple layers due to high geometry
     try std.testing.expect(wound.len >= 3);
 
-    // Outer layers take less damage than inner
-    const skin_sev = @intFromEnum(wound.severityAt(.skin));
-    const muscle_sev = @intFromEnum(wound.severityAt(.muscle));
-    try std.testing.expect(skin_sev <= muscle_sev);
+    // All penetrated layers should be damaged (3-axis model)
+    try std.testing.expect(wound.severityAt(.skin) != .none);
+    try std.testing.expect(wound.severityAt(.muscle) != .none);
 }
 
-test "bludgeon damage: bone and muscle absorb most" {
+test "bludgeon damage: energy transfers through layers" {
     const packet = damage.Packet{
         .amount = 10.0,
         .kind = .bludgeon,
-        .penetration = 0.0, // irrelevant for bludgeon
+        .penetration = 0.0, // no geometry axis for bludgeon
     };
 
     const wound = applyDamage(packet, .limb);
 
-    // Bludgeon should damage bone/muscle primarily
-    try std.testing.expect(wound.severityAt(.bone) != .none);
-    try std.testing.expect(wound.severityAt(.muscle) != .none);
+    // Bludgeon damages via energy axis (no geometry needed)
+    // Outer layers absorb energy; deeper layers see diminished energy
+    try std.testing.expect(wound.len >= 1);
+    try std.testing.expect(wound.severityAt(.skin) != .none);
 
-    // Bone takes the brunt
-    const bone_sev = @intFromEnum(wound.severityAt(.bone));
+    // Energy diminishes through stack - outer layers take more damage
+    // (unlike old model which assumed bludgeon "skips" to bone)
     const skin_sev = @intFromEnum(wound.severityAt(.skin));
-    try std.testing.expect(bone_sev >= skin_sev);
+    const fat_sev = @intFromEnum(wound.severityAt(.fat));
+    try std.testing.expect(skin_sev >= fat_sev);
 }
 
 test "facial tissue: cartilage instead of bone" {
@@ -1584,7 +1640,7 @@ test "digit tissue: minimal layers" {
 
 test "applying damage to part adds wound and updates severity" {
     const alloc = std.testing.allocator;
-    var body = try Body.fromPlan(alloc, &HumanoidPlan);
+    var body = try Body.fromPlan(alloc, "humanoid");
     defer body.deinit();
 
     const arm_idx = body.indexOf("left_arm").?;
@@ -1614,7 +1670,7 @@ test "applying damage to part adds wound and updates severity" {
 
 test "severe slash can sever a limb" {
     const alloc = std.testing.allocator;
-    var body = try Body.fromPlan(alloc, &HumanoidPlan);
+    var body = try Body.fromPlan(alloc, "humanoid");
     defer body.deinit();
 
     const arm_idx = body.indexOf("left_arm").?;
@@ -1641,7 +1697,7 @@ test "severe slash can sever a limb" {
 
 test "major artery hit detection" {
     const alloc = std.testing.allocator;
-    var body = try Body.fromPlan(alloc, &HumanoidPlan);
+    var body = try Body.fromPlan(alloc, "humanoid");
     defer body.deinit();
 
     // Neck has major artery
@@ -1666,7 +1722,7 @@ test "major artery hit detection" {
 
 test "part severity computed from wounds" {
     const alloc = std.testing.allocator;
-    var body = try Body.fromPlan(alloc, &HumanoidPlan);
+    var body = try Body.fromPlan(alloc, "humanoid");
     defer body.deinit();
 
     const arm_idx = body.indexOf("left_arm").?;
@@ -1692,7 +1748,7 @@ test "part severity computed from wounds" {
 
 test "vision score with damaged eyes" {
     const alloc = std.testing.allocator;
-    var body = try Body.fromPlan(alloc, &HumanoidPlan);
+    var body = try Body.fromPlan(alloc, "humanoid");
     defer body.deinit();
 
     // Full vision with both eyes
@@ -1720,7 +1776,7 @@ test "vision score with damaged eyes" {
 
 test "hearing score with damaged ears" {
     const alloc = std.testing.allocator;
-    var body = try Body.fromPlan(alloc, &HumanoidPlan);
+    var body = try Body.fromPlan(alloc, "humanoid");
     defer body.deinit();
 
     // Full hearing with both ears
@@ -1748,7 +1804,7 @@ test "hearing score with damaged ears" {
 
 test "grasping part by side" {
     const alloc = std.testing.allocator;
-    var body = try Body.fromPlan(alloc, &HumanoidPlan);
+    var body = try Body.fromPlan(alloc, "humanoid");
     defer body.deinit();
 
     // Find left hand - should match indexOf
@@ -1768,7 +1824,7 @@ test "grasping part by side" {
 
 test "hasFunctionalPart with healthy body" {
     const alloc = std.testing.allocator;
-    var b = try Body.fromPlan(alloc, &HumanoidPlan);
+    var b = try Body.fromPlan(alloc, "humanoid");
     defer b.deinit();
 
     // Both hands functional
@@ -1784,7 +1840,7 @@ test "hasFunctionalPart with healthy body" {
 
 test "hasFunctionalPart with missing part" {
     const alloc = std.testing.allocator;
-    var b = try Body.fromPlan(alloc, &HumanoidPlan);
+    var b = try Body.fromPlan(alloc, "humanoid");
     defer b.deinit();
 
     // Set left hand to missing
@@ -1809,7 +1865,7 @@ test "hasFunctionalPart with missing part" {
 
 test "hasFunctionalPart with severed limb" {
     const alloc = std.testing.allocator;
-    var b = try Body.fromPlan(alloc, &HumanoidPlan);
+    var b = try Body.fromPlan(alloc, "humanoid");
     defer b.deinit();
 
     // Sever left arm - hand becomes effectively severed
@@ -1826,7 +1882,7 @@ test "hasFunctionalPart with severed limb" {
 
 test "hasFunctionalPart damaged but not missing" {
     const alloc = std.testing.allocator;
-    var b = try Body.fromPlan(alloc, &HumanoidPlan);
+    var b = try Body.fromPlan(alloc, "humanoid");
     defer b.deinit();
 
     // Set hand to various damage levels - still functional

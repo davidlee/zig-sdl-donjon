@@ -330,16 +330,44 @@ Already complete in CUE. Wire to runtime:
 
 ### Phase 3: Runtime Integration
 
-- [ ] **3.1** Update `Body.fromPlan` signature: `fromPlan(alloc, plan_id: []const u8)`
-- [ ] **3.2** Wire `Body.fromPlan` to use `body_list.getBodyPlan()`
+- [x] **3.1** Update `Body.fromPlan` signature: `fromPlan(alloc, plan_id: []const u8)`
+- [x] **3.2** Wire `Body.fromPlan` to use `body_list.getBodyPlan()`
 - [ ] **3.3** Add geometry accessor (lookup from plan or store in `Part`)
-- [ ] **3.4** Update callers of `Body.fromPlan` (tests, agent creation)
+  - Geometry in `BodyPartDefinition`: `thickness_cm`, `length_cm`, `area_cm2`
+  - Options: (a) store in `Part`, (b) add `body_list.getPartGeometry(plan_id, part_name)`
+  - Needed for 4.1: thickness affects penetration path length in tissue resolution
+- [x] **3.4** Update callers of `Body.fromPlan` (tests, agent creation)
 
 ### Phase 4: Tissue Resolution Update
 
-- [ ] **4.1** Update tissue damage resolution to use 3-axis model (like armour)
-- [ ] **4.2** Wire tissue layer damage to wound severity contributions
+**Current state:** `body.applyDamage(packet, template: TissueTemplate)` at line 854:
+- Uses `template.layers()` → hardcoded `TissueTemplate` enum's layers
+- Uses `layerResistance()` / `layerDepth()` → hardcoded per-layer values
+- Does NOT use 3-axis model from generated data
+
+**Target:** Follow `armour.resolveThroughArmour()` pattern (line 316):
+1. Derive axes: geometry (penetration), energy (amount), rigidity (from kind)
+2. Susceptibility: layer takes damage when axes exceed thresholds
+3. Shielding: deflection reduces geometry, absorption reduces energy
+
+**Key files:**
+- `body.zig:854` - `applyDamage()` - needs rewrite
+- `body.zig:611` - `applyDamageToPart()` - calls applyDamage
+- `body_list.zig` - `getTissueStackRuntime()` - provides tissue layers
+- `armour.zig:316` - `resolveThroughArmour()` - pattern to follow
+
+**Tasks:**
+- [x] **4.1** Rewrite `applyDamage()` to:
+  - Take `tissue_template_id: []const u8` instead of `TissueTemplate` enum
+  - Lookup via `body_list.getTissueStackRuntime(id)`
+  - Apply 3-axis model per layer using `TissueLayerMaterial` coefficients
+  - Need geometry accessor (3.3) for part thickness → penetration path length
+- [ ] **4.2** Map layer damage to wound severity:
+  - Current: `severityFromDamage(absorbed)` - simple threshold
+  - New: consider geometry/energy/rigidity contributions separately?
 - [ ] **4.3** Integration test: damage packet → armour → tissue → wound
+  - Compare sword-vs-arm results with/without armour
+  - Verify layer damage accumulates correctly
 
 ### Phase 5: Cleanup
 
@@ -477,3 +505,65 @@ Key implementation notes:
 - Comptime errors include helpful file references (e.g., "Check data/bodies.cue")
 
 Ready for Phase 3: Runtime Integration
+
+**2026-01-10**: Phase 3 in progress - Runtime integration.
+- [x] **3.1** Changed `Body.fromPlan(alloc, plan: []const PartDef)` → `fromPlan(alloc, plan_id: []const u8)`
+- [x] **3.2** Added `fromParts(alloc, parts)` for test fixtures (e.g., armour.zig's `TestBodyPlan`)
+- [x] **3.4** Updated all callers:
+  - body.zig tests: `&HumanoidPlan` → `"humanoid"`
+  - armour_list.zig, armour.zig: same
+  - Species.body_plan → Species.body_plan_id (now uses CUE-generated plan ID)
+  - agent.zig: uses `sp.body_plan_id`
+
+**Critical fix:** Generator now outputs parts in topological order (parents before children).
+- `computeEffectiveIntegrities()` requires parents to be processed before children
+- Added `topological_sort_parts()` in `cue_to_zig.py` to ensure correct ordering
+- Previously alphabetical order caused parent chain traversal to fail
+
+**Branch quota increases:** Added `@setEvalBranchQuota()` to several comptime functions:
+- `stringToTissueTemplate`, `findPartIndexInPlan`, `buildPartDef`, `buildBodyPlan`
+- `validateAllBodyParts`, `validateAllPartReferences`
+- 67 parts × multiple lookups × string comparisons exceeded default limits
+
+**Generator fix:** Made `TissueLayerDefinition` public (was missing `pub`)
+
+All tests pass. Geometry accessor (3.3) deferred - will add when Phase 4 needs it
+
+**2026-01-10**: Phase 4.1 complete - Tissue resolution rewritten with 3-axis model.
+
+Changes to `body.zig`:
+- Added `materialIdToTissueLayer(material_id)` - converts string ID to TissueLayer enum
+- Added `deriveRigidity(kind)` - derives rigidity axis from damage kind (matches armour.zig)
+- Rewrote `applyDamage()` to use 3-axis model:
+  - Looks up TissueStack via `body_list.getTissueStackRuntime(@tagName(template))`
+  - Tracks all three axes: geometry (penetration), energy (amount), rigidity (from kind)
+  - **Shielding** (per layer): deflection reduces geometry, absorption reduces energy, dispersion reduces rigidity
+  - **Susceptibility** (per layer): uses POST-shielding axes vs thresholds/ratios to compute layer damage
+  - Correctly implements doc §5.1: shielding first, then susceptibility on residuals
+
+Test updates:
+- "pierce damage" test: now verifies pierce reaches multiple layers and damages all penetrated layers
+- "bludgeon damage" test: now verifies energy transfers through layers (outer absorb more)
+- Removed old model assumptions (e.g., "skin_sev <= muscle_sev" for pierce was physically dubious)
+
+Key insight from design doc: Dispersion reduces rigidity axis for the NEXT layer, not for self-damage calculation. This matches §5.1: "plate can have low dispersion (transmits force) yet high thresholds (hard to dent), while padding has high dispersion but low thresholds (protects what's beneath while getting chewed up)."
+
+Note: Current tissue data produces physically reasonable but possibly unbalanced results. The damage number audit (mentioned in design doc §9) will tune coefficients. Model is correct; numbers need calibration.
+
+All tests pass.
+
+**2026-01-10**: Phase 4.1 fixes - axis decoupling and non-physical bypass.
+
+Code review identified two issues with the initial implementation:
+
+1. **Non-physical damage bypass** - Fire, radiation, magical damage was incorrectly running through 3-axis mechanics. Fixed: early return for non-physical kinds (§6 of design doc).
+
+2. **Axis coupling via `dominated_by_pen`** - The check that stopped slash/pierce when geometry=0 prevented residual energy/rigidity from reaching deeper layers. This violated axis independence (§7.1). Fixed: removed the check; all three axes now flow independently through the layer stack.
+
+**Blocked items documented in code:**
+
+1. **Packet axes** (NOTE at line ~896): Currently derived from legacy `packet.amount`/`packet.penetration`. Blocked on upstream `damage.Packet` refactor to carry weapon/technique-derived Geometry/Energy/Rigidity directly. Until then, CUE weapon/technique coefficients are ignored.
+
+2. **Thickness ratio** (NOTE at line ~915): `layer.thickness_ratio` is not used. Blocked on part geometry accessor (task 3.3) to convert ratio to absolute path length in cm. Until then, penetration decay is identical regardless of layer thickness.
+
+All tests pass.

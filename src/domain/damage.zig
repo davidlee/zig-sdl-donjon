@@ -333,29 +333,35 @@ pub const Kind = enum {
     channeling,
     binding,
 
-    fn isPhysical(self: *Kind) bool {
-        return self.kind() == .physical;
-    }
-
-    fn isMagical(self: *Kind) bool {
-        return self.kind() == .magical;
-    }
-
-    fn isElemental(self: *Kind) bool {
-        return self.kind() == .elemental;
-    }
-
-    fn isBiological(self: *Kind) bool {
-        return self.kind() == .biological;
-    }
-
-    fn kind(self: *Kind) Category {
+    /// Returns the damage category (physical, elemental, energy, biological, magical).
+    pub fn category(self: Kind) Category {
         return switch (self) {
-            .bludgeon....shatter => .physical,
-            .fire....corrosion => .elemental,
-            .asphyxiation....necrosis => .biological,
-            .arcane....binding => .magical,
+            .bludgeon, .pierce, .slash, .crush, .shatter => .physical,
+            .fire, .frost, .lightning, .corrosion => .elemental,
+            .beam, .plasma, .radiation => .energy,
+            .asphyxiation, .starvation, .dehydration, .infection, .necrosis => .biological,
+            .arcane, .divine, .death, .disintegration, .transmutation, .channeling, .binding => .magical,
         };
+    }
+
+    pub fn isPhysical(self: Kind) bool {
+        return self.category() == .physical;
+    }
+
+    pub fn isElemental(self: Kind) bool {
+        return self.category() == .elemental;
+    }
+
+    pub fn isEnergy(self: Kind) bool {
+        return self.category() == .energy;
+    }
+
+    pub fn isBiological(self: Kind) bool {
+        return self.category() == .biological;
+    }
+
+    pub fn isMagical(self: Kind) bool {
+        return self.category() == .magical;
     }
 };
 
@@ -373,7 +379,7 @@ pub const Category = enum {
     physical,
     elemental,
     energy,
-    biogogical,
+    biological,
     magical,
 };
 
