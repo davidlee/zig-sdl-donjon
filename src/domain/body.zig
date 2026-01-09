@@ -228,6 +228,7 @@ pub const Part = struct {
     tissue: TissueTemplate, // tissue composition
     has_major_artery: bool, // major blood vessel present
     trauma_mult: f32, // pain/trauma sensitivity multiplier
+    geometry: body_list.BodyPartGeometry, // physical dimensions (thickness, length, area)
 
     severity: Severity, // overall part damage state
     wounds: std.ArrayList(Wound),
@@ -300,6 +301,7 @@ pub const PartDef = struct {
     flags: Flags = .{},
     tissue: TissueTemplate = .limb,
     has_major_artery: bool = false, // neck, groin, armpit, inner thigh
+    geometry: body_list.BodyPartGeometry, // physical dimensions from generated data
 };
 
 pub const Body = struct {
@@ -340,6 +342,7 @@ pub const Body = struct {
                 .tissue = def.tissue,
                 .has_major_artery = def.has_major_artery,
                 .trauma_mult = def.trauma_mult,
+                .geometry = def.geometry,
                 .severity = .none, // undamaged
                 .wounds = try std.ArrayList(Wound).initCapacity(alloc, 0),
                 .is_severed = false,
@@ -611,8 +614,8 @@ pub const Body = struct {
     pub fn applyDamageToPart(self: *Body, part_idx: PartIndex, packet: damage.Packet) !DamageResult {
         const part = &self.parts.items[part_idx];
 
-        // Generate wound based on part's tissue template
-        var wound = applyDamage(packet, part.tissue);
+        // Generate wound based on part's tissue template and geometry
+        var wound = applyDamage(packet, part.tissue, part.geometry);
 
         // Check for severing: structural layer at .missing from slash,
         // or .broken+ structural from massive damage
@@ -876,7 +879,9 @@ fn severityFromDamage(amount: f32) Severity {
 pub fn applyDamage(
     packet: damage.Packet,
     template: TissueTemplate,
+    geometry: body_list.BodyPartGeometry,
 ) Wound {
+    _ = geometry; // TODO: use for path-length math once upstream packet axes are available
     var wound = Wound{ .kind = packet.kind };
 
     // Non-physical damage bypasses the 3-axis mechanics (§6 of design doc).
@@ -912,9 +917,9 @@ pub fn applyDamage(
         const residual_energy = remaining_energy * (1.0 - layer.absorption);
         const residual_rigidity = remaining_rigidity * (1.0 - layer.dispersion);
 
-        // NOTE: thickness_ratio is not yet used. Blocked on part geometry
-        // accessor (task 3.3) to convert ratio to absolute path length.
-        // See doc/artefacts/geometry_momentum_rigidity_review.md §5.2.
+        // TODO: Use layer.thickness_ratio * geometry.thickness_cm for path-length
+        // calculations once upstream damage.Packet carries proper axes (not legacy
+        // amount/penetration). See geometry_momentum_rigidity_review.md §5.2.
 
         // === Susceptibility: damage to THIS layer using post-shielding axes ===
         // Layer takes damage when residual axes exceed its thresholds
@@ -1122,6 +1127,9 @@ fn definePartFull(
         .flags = flags,
         .tissue = defaultTemplate(tag),
         .has_major_artery = has_major_artery,
+        // Placeholder geometry - real data comes from CUE-generated plans.
+        // This hardcoded plan is deprecated (Phase 5 cleanup).
+        .geometry = .{ .thickness_cm = 5.0, .length_cm = 10.0, .area_cm2 = 100.0 },
     };
 }
 
@@ -1549,6 +1557,13 @@ test "wound finds deepest layer and worst severity" {
     try std.testing.expectEqual(Severity.inhibited, wound.worstSeverity());
 }
 
+// Test helper: representative geometry (geometry not yet used in calculations)
+const TestGeometry = body_list.BodyPartGeometry{
+    .thickness_cm = 8.0,
+    .length_cm = 30.0,
+    .area_cm2 = 400.0,
+};
+
 test "slash damage: heavy outer layer damage, shallow penetration" {
     const packet = damage.Packet{
         .amount = 10.0,
@@ -1556,7 +1571,7 @@ test "slash damage: heavy outer layer damage, shallow penetration" {
         .penetration = 0.5, // limited penetration
     };
 
-    const wound = applyDamage(packet, .limb);
+    const wound = applyDamage(packet, .limb, TestGeometry);
 
     // Slash should damage outer layers heavily
     try std.testing.expect(wound.len >= 2);
@@ -1578,7 +1593,7 @@ test "pierce damage: penetrates multiple layers" {
         .penetration = 1.5, // high penetration
     };
 
-    const wound = applyDamage(packet, .limb);
+    const wound = applyDamage(packet, .limb, TestGeometry);
 
     // Pierce should reach multiple layers due to high geometry
     try std.testing.expect(wound.len >= 3);
@@ -1595,7 +1610,7 @@ test "bludgeon damage: energy transfers through layers" {
         .penetration = 0.0, // no geometry axis for bludgeon
     };
 
-    const wound = applyDamage(packet, .limb);
+    const wound = applyDamage(packet, .limb, TestGeometry);
 
     // Bludgeon damages via energy axis (no geometry needed)
     // Outer layers absorb energy; deeper layers see diminished energy
@@ -1616,7 +1631,7 @@ test "facial tissue: cartilage instead of bone" {
         .penetration = 0.5,
     };
 
-    const wound = applyDamage(packet, .facial);
+    const wound = applyDamage(packet, .facial, TestGeometry);
 
     // Facial has cartilage, not bone
     try std.testing.expectEqual(Severity.none, wound.severityAt(.bone));
@@ -1630,7 +1645,7 @@ test "digit tissue: minimal layers" {
         .penetration = 0.3,
     };
 
-    const wound = applyDamage(packet, .digit);
+    const wound = applyDamage(packet, .digit, TestGeometry);
 
     // Digit only has bone, tendon, skin - no muscle
     try std.testing.expectEqual(Severity.none, wound.severityAt(.muscle));

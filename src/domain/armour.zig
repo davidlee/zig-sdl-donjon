@@ -5,6 +5,7 @@
 const std = @import("std");
 const lib = @import("infra");
 const body = @import("body.zig");
+const body_list = @import("body_list.zig");
 const damage = @import("damage.zig");
 const entity = lib.entity;
 const events = @import("events.zig");
@@ -722,6 +723,13 @@ const TestTemplates = struct {
 };
 
 // Minimal body plan for armor tests - just the parts we need
+// Placeholder geometry; real data comes from CUE-generated plans.
+const TestGeometry = body_list.BodyPartGeometry{
+    .thickness_cm = 5.0,
+    .length_cm = 10.0,
+    .area_cm2 = 100.0,
+};
+
 const TestBodyPlan = [_]body.PartDef{
     .{
         .id = body.PartId.init("torso"),
@@ -736,6 +744,7 @@ const TestBodyPlan = [_]body.PartDef{
         .flags = .{ .is_vital = true },
         .tissue = .core,
         .has_major_artery = false,
+        .geometry = TestGeometry,
     },
     .{
         .id = body.PartId.init("abdomen"),
@@ -750,6 +759,7 @@ const TestBodyPlan = [_]body.PartDef{
         .flags = .{ .is_vital = true },
         .tissue = .core,
         .has_major_artery = false,
+        .geometry = TestGeometry,
     },
     .{
         .id = body.PartId.init("left_arm"),
@@ -764,6 +774,7 @@ const TestBodyPlan = [_]body.PartDef{
         .flags = .{},
         .tissue = .limb,
         .has_major_artery = false,
+        .geometry = TestGeometry,
     },
     .{
         .id = body.PartId.init("right_arm"),
@@ -778,6 +789,7 @@ const TestBodyPlan = [_]body.PartDef{
         .flags = .{},
         .tissue = .limb,
         .has_major_artery = false,
+        .geometry = TestGeometry,
     },
 };
 

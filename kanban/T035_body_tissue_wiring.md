@@ -332,10 +332,11 @@ Already complete in CUE. Wire to runtime:
 
 - [x] **3.1** Update `Body.fromPlan` signature: `fromPlan(alloc, plan_id: []const u8)`
 - [x] **3.2** Wire `Body.fromPlan` to use `body_list.getBodyPlan()`
-- [ ] **3.3** Add geometry accessor (lookup from plan or store in `Part`)
-  - Geometry in `BodyPartDefinition`: `thickness_cm`, `length_cm`, `area_cm2`
-  - Options: (a) store in `Part`, (b) add `body_list.getPartGeometry(plan_id, part_name)`
-  - Needed for 4.1: thickness affects penetration path length in tissue resolution
+- [x] **3.3** Add geometry accessor (lookup from plan or store in `Part`)
+  - Chose option (a): store geometry in `Part` (direct access, 12 bytes/part)
+  - Added `geometry: BodyPartGeometry` to `body.PartDef` and `body.Part`
+  - `body_list.buildPartDef` copies geometry from generated `BodyPartDefinition`
+  - `applyDamage` now accepts geometry parameter (unused until upstream packet axes ready)
 - [x] **3.4** Update callers of `Body.fromPlan` (tests, agent creation)
 
 ### Phase 4: Tissue Resolution Update
@@ -362,7 +363,7 @@ Already complete in CUE. Wire to runtime:
   - Lookup via `body_list.getTissueStackRuntime(id)`
   - Apply 3-axis model per layer using `TissueLayerMaterial` coefficients
   - Need geometry accessor (3.3) for part thickness → penetration path length
-- [ ] **4.2** Map layer damage to wound severity:
+- [x] **4.2** Map layer damage to wound severity:
   - Current: `severityFromDamage(absorbed)` - simple threshold
   - New: consider geometry/energy/rigidity contributions separately?
 - [ ] **4.3** Integration test: damage packet → armour → tissue → wound
@@ -564,6 +565,21 @@ Code review identified two issues with the initial implementation:
 
 1. **Packet axes** (NOTE at line ~896): Currently derived from legacy `packet.amount`/`packet.penetration`. Blocked on upstream `damage.Packet` refactor to carry weapon/technique-derived Geometry/Energy/Rigidity directly. Until then, CUE weapon/technique coefficients are ignored.
 
-2. **Thickness ratio** (NOTE at line ~915): `layer.thickness_ratio` is not used. Blocked on part geometry accessor (task 3.3) to convert ratio to absolute path length in cm. Until then, penetration decay is identical regardless of layer thickness.
+2. **Thickness ratio** (TODO at line ~920): `layer.thickness_ratio` available but not yet used. Geometry accessor (task 3.3) now complete - `applyDamage` receives `geometry.thickness_cm`. Path-length math blocked on upstream `damage.Packet` refactor to carry proper axes.
 
 All tests pass.
+
+**2026-01-10**: Phase 3.3 complete - Geometry accessor added.
+- Added `geometry: BodyPartGeometry` field to `body.PartDef` (plan definition)
+- Added `geometry: BodyPartGeometry` field to `body.Part` (runtime instance)
+- `body_list.buildPartDef` copies geometry directly from generated `BodyPartDefinition`
+  - Comptime validation: if CUE omits geometry, compilation fails immediately
+- `Body.fromParts` copies geometry from `PartDef` to `Part`
+- Updated `applyDamage` signature to accept geometry parameter
+  - `_ = geometry; // TODO` until upstream packet axes are available
+  - Updated NOTE in function body about path-length math
+- Updated test fixtures:
+  - `TestGeometry` constant in body.zig and armour.zig for test calls
+  - Hardcoded `HumanoidPlan` gets placeholder geometry (deprecated in Phase 5)
+
+All tests pass. Phase 3 now fully complete.

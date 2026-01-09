@@ -207,6 +207,7 @@ fn buildPartDef(
         .flags = part.flags,
         .tissue = stringToTissueTemplate(part.tissue_template_id),
         .has_major_artery = part.has_major_artery,
+        .geometry = part.geometry,
     };
 }
 
