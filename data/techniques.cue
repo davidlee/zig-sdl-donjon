@@ -234,4 +234,71 @@ techniques: {
             rigidity_mult: 1.1
         }
     }
+
+    #Footwork: #Technique & {
+        attack_mode: "none"
+        channels: { footwork: true }
+        damage: {
+            instances: [{
+                amount: 0.0
+                types: []
+            }]
+            scaling: {
+                ratio: 0.0
+                stats: { stat: "power" }
+            }
+        }
+        difficulty: 0.0
+        deflect_mult: 1.0
+        parry_mult: 1.0
+        dodge_mult: 1.0
+        counter_mult: 1.0
+    }
+
+    advance: #Footwork & {
+        id: "advance"
+        name: "advance"
+        overlay_bonus: {
+            offensive: { damage_mult: 1.10 }
+        }
+    }
+
+    retreat: #Footwork & {
+        id: "retreat"
+        name: "retreat"
+        overlay_bonus: {
+            defensive: { defense_bonus: 0.10 }
+        }
+    }
+
+    sidestep: #Footwork & {
+        id: "sidestep"
+        name: "sidestep"
+        overlay_bonus: {
+            offensive: { to_hit_bonus: 0.05 }
+        }
+    }
+
+    hold: #Footwork & {
+        id: "hold"
+        name: "hold"
+    }
+
+    circle: #Footwork & {
+        id: "circle"
+        name: "circle"
+    }
+
+    disengage: #Footwork & {
+        id: "disengage"
+        name: "disengage"
+        overlay_bonus: {
+            defensive: { defense_bonus: 0.05 }
+        }
+    }
+
+    pivot: #Footwork & {
+        id: "pivot"
+        name: "pivot"
+    }
 }

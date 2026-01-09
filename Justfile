@@ -1,9 +1,9 @@
-default: format test build run
+default: format generate test build run
 
 up: build run
 
 # you probably want this. Fast, comprehensive.
-check: format test build
+check: format generate test build
 
 # alias, create with correct ID from template.
 new-kanban: new-card
@@ -17,7 +17,7 @@ format:
 run:
   ./zig-out/bin/cardigan
 
-regenerate:
+generate:
   (cue export data/materials.cue data/weapons.cue data/techniques.cue --out json | ./scripts/cue_to_zig.py > src/gen/generated_data.zig)
 
 

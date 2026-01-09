@@ -43,272 +43,90 @@ fn hashName(comptime name: []const u8) ID {
     return std.hash.Wyhash.hash(0, name);
 }
 
+const generated = @import("../gen/generated_data.zig");
+
+comptime {
+    @setEvalBranchQuota(20000);
+}
+
 const TechniqueRepository = struct {
     entries: []Technique,
 };
 
-pub const TechniqueEntries = [_]Technique{
-    .{
-        .id = .thrust,
-        .name = "thrust",
-        .attack_mode = .thrust,
-        .target_height = .mid, // thrusts target center mass
+pub const TechniqueEntries = generateTechniqueEntries();
+
+fn generateTechniqueEntries() [generated.GeneratedTechniques.len]Technique {
+    var entries: [generated.GeneratedTechniques.len]Technique = undefined;
+    inline for (generated.GeneratedTechniques, 0..) |def, idx| {
+        entries[idx] = makeTechnique(def);
+    }
+    return entries;
+}
+
+fn makeTechnique(def: generated.TechniqueDefinition) Technique {
+    var technique = Technique{
+        .id = parseTechniqueID(def.id),
+        .name = def.name,
+        .attack_mode = parseAttackMode(def.attack_mode),
+        .channels = .{
+            .weapon = def.channels.weapon,
+            .off_hand = def.channels.off_hand,
+            .footwork = def.channels.footwork,
+        },
+        .covers_adjacent = def.covers_adjacent,
         .damage = .{
-            .instances = &.{
-                .{ .amount = 1.0, .types = &.{.pierce} },
-            },
-            .scaling = .{
-                .ratio = 0.5,
-                .stats = .{ .average = .{ .speed, .power } },
-            },
+            .instances = def.damage_instances,
+            .scaling = def.scaling,
         },
-        .difficulty = 0.7,
-        .deflect_mult = 1.3,
-        .dodge_mult = 0.5,
-        .counter_mult = 1.1,
-        .parry_mult = 1.2,
-    },
+        .difficulty = def.difficulty,
+        .deflect_mult = def.deflect_mult,
+        .parry_mult = def.parry_mult,
+        .dodge_mult = def.dodge_mult,
+        .counter_mult = def.counter_mult,
+        .overlay_bonus = buildOverlay(def),
+    };
+    if (def.target_height) |height| technique.target_height = height;
+    if (def.secondary_height) |height| technique.secondary_height = height;
+    if (def.guard_height) |height| technique.guard_height = height;
+    return technique;
+}
 
-    .{
-        .id = .swing,
-        .name = "swing",
-        .attack_mode = .swing,
-        .target_height = .high, // swings come from above
-        .secondary_height = .mid, // can catch torso too
-        .damage = .{
-            .instances = &.{
-                .{ .amount = 1.0, .types = &.{.slash} },
-            },
-            .scaling = .{
-                .ratio = 1.2,
-                .stats = .{ .average = .{ .speed, .power } },
-            },
-        },
-        .difficulty = 1.0,
-        .deflect_mult = 1.0,
-        .dodge_mult = 1.2,
-        .counter_mult = 1.3,
-        .parry_mult = 1.2,
-    },
+fn parseTechniqueID(name: []const u8) TechniqueID {
+    inline for (std.meta.fields(TechniqueID)) |field| {
+        if (std.mem.eql(u8, name, field.name)) {
+            return @field(TechniqueID, field.name);
+        }
+    }
+    @compileError("unknown TechniqueID '" ++ name ++ "'");
+}
 
-    .{
-        .id = .throw,
-        .name = "throw",
-        .attack_mode = .ranged,
-        .target_height = .mid, // thrown objects target center mass
-        .damage = .{
-            .instances = &.{
-                .{ .amount = 1.0, .types = &.{.bludgeon} },
-            },
-            .scaling = .{
-                .ratio = 0.8, // less scaling than melee
-                .stats = .{ .average = .{ .speed, .speed } }, // mostly speed
-            },
-        },
-        .difficulty = 0.9, // slightly easier than swing
-        .deflect_mult = 0.8, // hard to deflect incoming projectile
-        .dodge_mult = 1.0, // can sidestep
-        .counter_mult = 0.0, // can't counter a thrown object
-        .parry_mult = 0.7, // hard to parry
-    },
+fn parseAttackMode(value: []const u8) cards.AttackMode {
+    inline for (std.meta.fields(cards.AttackMode)) |field| {
+        if (std.mem.eql(u8, value, field.name)) {
+            return @field(cards.AttackMode, field.name);
+        }
+    }
+    @compileError("unknown attack mode '" ++ value ++ "'");
+}
 
-    // Defensive techniques - guard positions
-    // Deflect: gentle redirection, cheap, covers adjacent heights
-    .{
-        .id = .deflect,
-        .name = "deflect",
-        .attack_mode = .none,
-        .guard_height = .mid,
-        .covers_adjacent = true, // can catch high/low with penalty
-        .damage = .{
-            .instances = &.{.{ .amount = 0.0, .types = &.{} }},
-            .scaling = .{ .ratio = 0.0, .stats = .{ .stat = .power } },
-        },
-        .difficulty = 0.8, // easier than parry
-        .deflect_mult = 1.2, // good at deflecting
-        .dodge_mult = 1.0,
-        .counter_mult = 0.8, // hard to counter off a deflect
-        .parry_mult = 1.0,
-        // Minimal advantage change - just redirects
-    },
+fn buildOverlay(def: generated.TechniqueDefinition) ?cards.OverlayBonus {
+    const offensive =
+        def.overlay_offensive_to_hit_bonus != 0 or def.overlay_offensive_damage_mult != 1;
+    const defensive = def.overlay_defensive_defense_bonus != 0;
+    if (!offensive and !defensive) return null;
 
-    // Parry: beat away weapon, creates opening (control gain)
-    .{
-        .id = .parry,
-        .name = "parry",
-        .attack_mode = .none,
-        .guard_height = .mid, // modifiers shift high/low
-        .covers_adjacent = false, // precise, must match height
-        .damage = .{
-            .instances = &.{.{ .amount = 0.0, .types = &.{} }},
-            .scaling = .{ .ratio = 0.0, .stats = .{ .stat = .power } },
-        },
-        .difficulty = 1.2, // harder than deflect
-        .deflect_mult = 0.8, // not great at deflecting
-        .dodge_mult = 1.0,
-        .counter_mult = 1.3, // good for setting up counter
-        .parry_mult = 1.4, // excellent parry
-        // Successful parry creates opening
-        .advantage = .{
-            .on_blocked = .{ .control = 0.15 }, // beat their weapon aside
-            .on_parried = .{ .control = 0.20 }, // clean parry = initiative
-        },
-    },
-
-    .{
-        .id = .block,
-        .name = "block",
-        .attack_mode = .none,
-        .channels = .{ .off_hand = true }, // shield technique
-        .guard_height = .mid, // shield covers mid
-        .covers_adjacent = true, // shields cover wide area
-        .damage = .{
-            .instances = &.{.{ .amount = 0.0, .types = &.{} }},
-            .scaling = .{
-                .ratio = 0.0,
-                .stats = .{ .stat = .power },
-            },
-        },
-        .difficulty = 1.0,
-        .deflect_mult = 1.0,
-        .dodge_mult = 1.0,
-        .counter_mult = 1.0,
-        .parry_mult = 1.0,
-    },
-
-    // Riposte: quick counter-thrust after gaining control advantage
-    .{
-        .id = .riposte,
-        .name = "riposte",
-        .attack_mode = .thrust,
-        .target_height = .mid,
-        .damage = .{
-            .instances = &.{
-                .{ .amount = 1.2, .types = &.{.pierce} }, // slightly more than thrust
-            },
-            .scaling = .{
-                .ratio = 0.6,
-                .stats = .{ .average = .{ .speed, .power } },
-            },
-        },
-        .difficulty = 0.5, // easier when you have control
-        .deflect_mult = 0.8, // hard to deflect a well-timed riposte
-        .dodge_mult = 0.6, // hard to dodge
-        .counter_mult = 1.5, // risky to counter a counter
-        .parry_mult = 0.9,
-        .advantage = .{
-            .on_hit = .{ .pressure = 0.15, .control = 0.10 },
-            .on_miss = .{ .control = -0.20, .self_balance = -0.10 }, // overextend on miss
-        },
-    },
-
-    // -------------------------------------------------------------------------
-    // Manoeuvres (footwork techniques)
-    // -------------------------------------------------------------------------
-
-    .{
-        .id = .advance,
-        .name = "advance",
-        .attack_mode = .none,
-        .channels = .{ .footwork = true },
-        .damage = .{
-            .instances = &.{.{ .amount = 0.0, .types = &.{} }},
-            .scaling = .{ .ratio = 0.0, .stats = .{ .stat = .power } },
-        },
-        .difficulty = 0.0,
-        .overlay_bonus = .{
-            .offensive = .{ .damage_mult = 1.10 }, // +10% damage
-        },
-    },
-
-    .{
-        .id = .retreat,
-        .name = "retreat",
-        .attack_mode = .none,
-        .channels = .{ .footwork = true },
-        .damage = .{
-            .instances = &.{.{ .amount = 0.0, .types = &.{} }},
-            .scaling = .{ .ratio = 0.0, .stats = .{ .stat = .power } },
-        },
-        .difficulty = 0.0,
-        .overlay_bonus = .{
-            .defensive = .{ .defense_bonus = 0.10 }, // +0.1 defense
-        },
-    },
-
-    .{
-        .id = .sidestep,
-        .name = "sidestep",
-        .attack_mode = .none,
-        .channels = .{ .footwork = true },
-        .damage = .{
-            .instances = &.{.{ .amount = 0.0, .types = &.{} }},
-            .scaling = .{ .ratio = 0.0, .stats = .{ .stat = .power } },
-        },
-        .difficulty = 0.0,
-        .overlay_bonus = .{
-            .offensive = .{ .to_hit_bonus = 0.05 }, // +5% to_hit
-        },
-    },
-
-    .{
-        .id = .hold,
-        .name = "hold",
-        .attack_mode = .none,
-        .channels = .{ .footwork = true },
-        .damage = .{
-            .instances = &.{.{ .amount = 0.0, .types = &.{} }},
-            .scaling = .{ .ratio = 0.0, .stats = .{ .stat = .power } },
-        },
-        .difficulty = 0.0,
-        // No overlay bonus - stationary penalty applies
-    },
-
-    // -------------------------------------------------------------------------
-    // Multi-opponent manoeuvres
-    // -------------------------------------------------------------------------
-
-    .{
-        .id = .circle,
-        .name = "circle",
-        .attack_mode = .none,
-        .channels = .{ .footwork = true },
-        .damage = .{
-            .instances = &.{.{ .amount = 0.0, .types = &.{} }},
-            .scaling = .{ .ratio = 0.0, .stats = .{ .stat = .power } },
-        },
-        .difficulty = 0.0,
-        // Position bonus applied via modify_position effect
-    },
-
-    .{
-        .id = .disengage,
-        .name = "disengage",
-        .attack_mode = .none,
-        .channels = .{ .footwork = true },
-        .damage = .{
-            .instances = &.{.{ .amount = 0.0, .types = &.{} }},
-            .scaling = .{ .ratio = 0.0, .stats = .{ .stat = .power } },
-        },
-        .difficulty = 0.0,
-        .overlay_bonus = .{
-            .defensive = .{ .defense_bonus = 0.05 }, // small defense bonus
-        },
-    },
-
-    .{
-        .id = .pivot,
-        .name = "pivot",
-        .attack_mode = .none,
-        .channels = .{ .footwork = true },
-        .damage = .{
-            .instances = &.{.{ .amount = 0.0, .types = &.{} }},
-            .scaling = .{ .ratio = 0.0, .stats = .{ .stat = .power } },
-        },
-        .difficulty = 0.0,
-        // Sets primary target + position bonus via effects
-    },
-};
+    var bonus: cards.OverlayBonus = .{};
+    if (offensive) {
+        bonus.offensive = .{
+            .to_hit_bonus = def.overlay_offensive_to_hit_bonus,
+            .damage_mult = def.overlay_offensive_damage_mult,
+        };
+    }
+    if (defensive) {
+        bonus.defensive = .{ .defense_bonus = def.overlay_defensive_defense_bonus };
+    }
+    return bonus;
+}
 
 // -----------------------------------------------------------------------------
 // Template helpers

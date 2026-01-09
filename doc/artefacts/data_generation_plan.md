@@ -2,6 +2,14 @@
 
 **Related**: `doc/issues/data_generation.md`, `doc/artefacts/geometry_momentum_rigidity_review.md`, `doc/issues/impulse_penetration_bite.md`
 
+## 0. Current Status (2026-01-09)
+
+- `data/materials.cue`, `data/weapons.cue`, `data/techniques.cue`, and `data/armour.cue` are live and checked in.
+- `scripts/cue_to_zig.py` exports weapons (with `moment_of_inertia`, `effective_mass`, `reference_energy_j`) and techniques (channels, damage instances, scaling, overlays, axis bias, etc.), validates technique IDs, and emits `src/gen/generated_data.zig`.
+- `just generate` (wired into `just check`) runs the export pipeline automatically; generated files live under `src/gen/`.
+- `src/domain/card_list.zig` imports `generated_data.zig`, builds `TechniqueEntries` from the generated definitions at comptime, and retains all overlay/axis metadata.
+- Immediate next wiring targets: plug generated armour pieces into runtime resolution and extend the converter to emit material stacks for armour coverage.
+
 ## 1. Goals
 
 - Reduce repetition and boilerplate when defining weapons, armour, species, and body templates.
