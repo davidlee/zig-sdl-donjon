@@ -949,7 +949,7 @@ pub const GeneratedBodyPlans = [_]BodyPlanDefinition{
                 .tag = body.PartTag.abdomen,
                 .side = body.Side.center,
                 .tissue_template = body.TissueTemplate.core,
-                .flags = .{ .vital = true },
+                .flags = .{ .is_vital = true },
                 .geometry = .{ .thickness_cm = 28, .length_cm = 45, .area_cm2 = 950 },
             },
             .{
@@ -957,7 +957,7 @@ pub const GeneratedBodyPlans = [_]BodyPlanDefinition{
                 .tag = body.PartTag.brain,
                 .side = body.Side.center,
                 .tissue_template = body.TissueTemplate.organ,
-                .flags = .{ .vital = true, .internal = true },
+                .flags = .{ .is_vital = true, .is_internal = true },
                 .geometry = .{ .thickness_cm = 6, .length_cm = 18, .area_cm2 = 140 },
             },
             .{
@@ -974,7 +974,7 @@ pub const GeneratedBodyPlans = [_]BodyPlanDefinition{
                 .tag = body.PartTag.head,
                 .side = body.Side.center,
                 .tissue_template = body.TissueTemplate.core,
-                .flags = .{ .vital = true },
+                .flags = .{ .is_vital = true },
                 .geometry = .{ .thickness_cm = 20, .length_cm = 25, .area_cm2 = 450 },
             },
             .{
@@ -982,7 +982,7 @@ pub const GeneratedBodyPlans = [_]BodyPlanDefinition{
                 .tag = body.PartTag.heart,
                 .side = body.Side.center,
                 .tissue_template = body.TissueTemplate.organ,
-                .flags = .{ .vital = true, .internal = true },
+                .flags = .{ .is_vital = true, .is_internal = true },
                 .geometry = .{ .thickness_cm = 8, .length_cm = 12, .area_cm2 = 90 },
             },
             .{
@@ -990,7 +990,7 @@ pub const GeneratedBodyPlans = [_]BodyPlanDefinition{
                 .tag = body.PartTag.intestine,
                 .side = body.Side.center,
                 .tissue_template = body.TissueTemplate.organ,
-                .flags = .{ .internal = true },
+                .flags = .{ .is_internal = true },
                 .geometry = .{ .thickness_cm = 8, .length_cm = 35, .area_cm2 = 250 },
             },
             .{
@@ -1094,7 +1094,7 @@ pub const GeneratedBodyPlans = [_]BodyPlanDefinition{
                 .tag = body.PartTag.lung,
                 .side = body.Side.left,
                 .tissue_template = body.TissueTemplate.organ,
-                .flags = .{ .internal = true },
+                .flags = .{ .is_internal = true },
                 .geometry = .{ .thickness_cm = 10, .length_cm = 25, .area_cm2 = 200 },
             },
             .{
@@ -1192,7 +1192,7 @@ pub const GeneratedBodyPlans = [_]BodyPlanDefinition{
                 .tag = body.PartTag.liver,
                 .side = body.Side.center,
                 .tissue_template = body.TissueTemplate.organ,
-                .flags = .{ .internal = true },
+                .flags = .{ .is_internal = true },
                 .geometry = .{ .thickness_cm = 9, .length_cm = 20, .area_cm2 = 180 },
             },
             .{
@@ -1201,7 +1201,7 @@ pub const GeneratedBodyPlans = [_]BodyPlanDefinition{
                 .side = body.Side.center,
                 .tissue_template = body.TissueTemplate.core,
                 .has_major_artery = true,
-                .flags = .{ .vital = true },
+                .flags = .{ .is_vital = true },
                 .geometry = .{ .thickness_cm = 14, .length_cm = 15, .area_cm2 = 320 },
             },
             .{
@@ -1313,7 +1313,7 @@ pub const GeneratedBodyPlans = [_]BodyPlanDefinition{
                 .tag = body.PartTag.lung,
                 .side = body.Side.right,
                 .tissue_template = body.TissueTemplate.organ,
-                .flags = .{ .internal = true },
+                .flags = .{ .is_internal = true },
                 .geometry = .{ .thickness_cm = 10, .length_cm = 25, .area_cm2 = 220 },
             },
             .{
@@ -1411,7 +1411,7 @@ pub const GeneratedBodyPlans = [_]BodyPlanDefinition{
                 .tag = body.PartTag.spleen,
                 .side = body.Side.left,
                 .tissue_template = body.TissueTemplate.organ,
-                .flags = .{ .internal = true },
+                .flags = .{ .is_internal = true },
                 .geometry = .{ .thickness_cm = 6, .length_cm = 12, .area_cm2 = 80 },
             },
             .{
@@ -1419,7 +1419,7 @@ pub const GeneratedBodyPlans = [_]BodyPlanDefinition{
                 .tag = body.PartTag.stomach,
                 .side = body.Side.center,
                 .tissue_template = body.TissueTemplate.organ,
-                .flags = .{ .internal = true },
+                .flags = .{ .is_internal = true },
                 .geometry = .{ .thickness_cm = 8, .length_cm = 18, .area_cm2 = 150 },
             },
             .{
@@ -1435,7 +1435,7 @@ pub const GeneratedBodyPlans = [_]BodyPlanDefinition{
                 .tag = body.PartTag.torso,
                 .side = body.Side.center,
                 .tissue_template = body.TissueTemplate.core,
-                .flags = .{ .vital = true },
+                .flags = .{ .is_vital = true },
                 .geometry = .{ .thickness_cm = 32, .length_cm = 55, .area_cm2 = 1200 },
             },
             .{
@@ -1443,7 +1443,7 @@ pub const GeneratedBodyPlans = [_]BodyPlanDefinition{
                 .tag = body.PartTag.trachea,
                 .side = body.Side.center,
                 .tissue_template = body.TissueTemplate.facial,
-                .flags = .{ .internal = true },
+                .flags = .{ .is_internal = true },
                 .geometry = .{ .thickness_cm = 4, .length_cm = 12, .area_cm2 = 60 },
             },
         },

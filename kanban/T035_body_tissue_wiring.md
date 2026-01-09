@@ -188,21 +188,165 @@ Generated parts have `geometry: { thickness_cm, length_cm, area_cm2 }`. Use for:
 3. **Wound interaction**: How do 3-axis tissue damage values map to wound severity?
 4. **Backward compatibility**: Existing tests use `HumanoidPlan` directly
 
+### Critical Gap: CUE Schema Incomplete
+
+**Problem**: The CUE body schema (`data/bodies.cue`) lacks parent/enclosing hierarchy.
+
+Current `BodyPartDefinition` in generated data:
+```zig
+const BodyPartDefinition = struct {
+    name: []const u8,
+    tag: body.PartTag,
+    side: body.Side = body.Side.center,
+    tissue_template: body.TissueTemplate,  // Uses hardcoded enum!
+    has_major_artery: bool = false,
+    flags: body.PartDef.Flags = .{},
+    geometry: BodyPartGeometry,
+    // MISSING: parent, enclosing, base_hit_chance, base_durability, trauma_mult
+};
+```
+
+vs runtime `PartDef`:
+```zig
+pub const PartDef = struct {
+    id: PartId,
+    parent: ?PartId,      // ← Missing from CUE
+    enclosing: ?PartId,   // ← Missing from CUE
+    tag: PartTag,
+    side: Side,
+    name: []const u8,
+    base_hit_chance: f32, // ← Missing from CUE (from defaultStats)
+    base_durability: f32, // ← Missing from CUE
+    trauma_mult: f32,     // ← Missing from CUE
+    flags: Flags = .{},
+    tissue: TissueTemplate = .limb,
+    has_major_artery: bool = false,
+};
+```
+
+The hardcoded `HumanoidPlan` encodes hierarchy through helper functions:
+```zig
+vital("torso", .torso, .center, null),           // torso has no parent
+vitalArtery("neck", .neck, .center, "torso"),    // neck → torso
+vital("head", .head, .center, "neck"),           // head → neck
+organ("brain", .brain, .center, "head", "head"), // brain enclosed by head
+```
+
+**Decision: Option B - Full migration**
+
+## Design Decisions
+
+### 1. Parent/Enclosing Hierarchy
+
+Add explicit fields to CUE `#BodyPart`:
+
+```cue
+#BodyPart: {
+    tag: string
+    parent?: string      // part name for attachment chain
+    enclosing?: string   // part name for containment
+    // ... existing fields
+}
+
+parts: {
+    torso: { tag: "torso" }  // no parent = root
+    neck: { tag: "neck", parent: "torso" }
+    head: { tag: "head", parent: "neck" }
+    brain: { tag: "brain", parent: "head", enclosing: "head" }
+    heart: { tag: "heart", parent: "torso", enclosing: "torso" }
+    left_shoulder: { tag: "shoulder", parent: "torso" }
+    left_arm: { tag: "arm", parent: "left_shoulder" }
+    // ...
+}
+```
+
+Part key = ID, parent/enclosing = string references to other part keys.
+Validate references at Zig comptime (like `armour_list.zig` does for material IDs).
+
+### 2. Stats (hit_chance, durability, trauma_mult)
+
+**Keep deriving from tag in Zig** - no CUE change needed.
+
+`defaultStats(tag: PartTag)` already provides sensible defaults per tag:
+- `.torso` → `{ .hit_chance = 0.30, .durability = 2.0, .trauma_mult = 1.0 }`
+- `.finger` → `{ .hit_chance = 0.01, .durability = 0.2, .trauma_mult = 2.0 }`
+- etc.
+
+`body_list.zig` will call `defaultStats(def.tag)` when building runtime `PartDef`.
+
+### 3. Tissue Template Reference
+
+CUE already has `tissue_template: string` (e.g., `"core"`, `"limb"`).
+
+Change generated code to:
+- Keep string ID in `BodyPartDefinition`
+- `body_list.zig` resolves string → `TissueStacks` entry at comptime
+- Remove dependency on hardcoded `TissueTemplate` enum for layer data
+
+### 4. Geometry
+
+Already complete in CUE. Wire to runtime:
+- Add `geometry: BodyPartGeometry` to runtime `Part` or provide accessor
+- Use for penetration path length, hit probability weighting, wound scaling
+
+### Summary Table
+
+| Field | Source | Approach |
+|-------|--------|----------|
+| parent/enclosing | CUE | Add fields, validate at Zig comptime |
+| stats | Zig | Derive from tag via `defaultStats()` |
+| tissue_template | CUE | String ID → lookup in `TissueStacks` |
+| geometry | CUE | Already complete, wire to runtime |
+| flags | CUE | Already complete ✓ |
+| has_major_artery | CUE | Already complete ✓ |
+
 ## Tasks / Sequence of Work
 
-- [ ] **1.1** Create `body_list.zig` skeleton
-- [ ] **1.2** Add `TissueLayerMaterial` and `TissueStack` types to body.zig
-- [ ] **1.3** Implement `buildTissueStack()` in body_list.zig
-- [ ] **1.4** Build static `TissueStacks` lookup table
-- [ ] **2.1** Implement `buildBodyPlan()`
-- [ ] **2.2** Build static `BodyPlans` lookup table
-- [ ] **2.3** Add `getBodyPlan()`, `getTissueStack()` lookup functions
-- [ ] **3.1** Update `Body.fromPlan` to use generated plan
-- [ ] **3.2** Add geometry to runtime Part (or accessor)
-- [ ] **4.1** Update tissue resolution to use 3-axis model
-- [ ] **4.2** Wire tissue damage to wound severity
-- [ ] **5.1** Update tests to use generated plans
-- [ ] **5.2** Remove hardcoded `HumanoidPlan` and `TissueTemplate.layers()`
+### Phase 0: CUE Schema & Generation
+
+- [ ] **0.1** Add `parent`/`enclosing` optional fields to CUE `#BodyPart` schema
+- [ ] **0.2** Populate parent/enclosing for all 67 humanoid parts in `data/bodies.cue`
+- [ ] **0.3** Update `cue_to_zig.py` to emit parent/enclosing in `BodyPartDefinition`
+- [ ] **0.4** Change `tissue_template` from enum to string ID in generated code
+- [ ] **0.5** Run `just generate`, verify output
+
+### Phase 1: Tissue Stack Wiring
+
+- [ ] **1.1** Add `TissueLayerMaterial` and `TissueStack` types to `body.zig`
+- [ ] **1.2** Create `body_list.zig` skeleton (following `armour_list.zig` pattern)
+- [ ] **1.3** Implement `buildTissueStack()` - convert generated def to runtime type
+- [ ] **1.4** Build static `TissueStacks` lookup table at comptime
+- [ ] **1.5** Add `getTissueStack(id: []const u8)` lookup function
+
+### Phase 2: Body Plan Wiring
+
+- [ ] **2.1** Update `BodyPartDefinition` to include parent/enclosing string fields
+- [ ] **2.2** Implement `buildPartDef()` - convert generated def to runtime `PartDef`
+  - Resolve parent/enclosing strings to `PartId` (comptime validation)
+  - Call `defaultStats(tag)` for hit_chance/durability/trauma_mult
+  - Resolve tissue_template string to `TissueStacks` reference
+- [ ] **2.3** Build static `BodyPlans` lookup table at comptime
+- [ ] **2.4** Add `getBodyPlan(id: []const u8)` lookup function
+
+### Phase 3: Runtime Integration
+
+- [ ] **3.1** Update `Body.fromPlan` signature: `fromPlan(alloc, plan_id: []const u8)`
+- [ ] **3.2** Wire `Body.fromPlan` to use `body_list.getBodyPlan()`
+- [ ] **3.3** Add geometry accessor (lookup from plan or store in `Part`)
+- [ ] **3.4** Update callers of `Body.fromPlan` (tests, agent creation)
+
+### Phase 4: Tissue Resolution Update
+
+- [ ] **4.1** Update tissue damage resolution to use 3-axis model (like armour)
+- [ ] **4.2** Wire tissue layer damage to wound severity contributions
+- [ ] **4.3** Integration test: damage packet → armour → tissue → wound
+
+### Phase 5: Cleanup
+
+- [ ] **5.1** Remove hardcoded `HumanoidPlan` constant
+- [ ] **5.2** Remove `TissueTemplate.layers()` method (superseded by `TissueStacks`)
+- [ ] **5.3** Consider removing `TissueTemplate` enum if no longer needed
+- [ ] **5.4** Update/remove obsolete tests
 
 ## Test / Verification Strategy
 
@@ -237,3 +381,45 @@ Generated parts have `geometry: { thickness_cm, length_cm, area_cm2 }`. Use for:
 - Generation pipeline emits `GeneratedBodyPlans` and `GeneratedTissueTemplates`
 - Runtime body.zig still uses hardcoded enums and tables
 - This completes the unified material model goal from §5 of design doc
+
+**2026-01-09**: Investigation session - schema gaps identified.
+
+Bug fix completed:
+- Fixed `scripts/cue_to_zig.py` flag mapping: `vital` → `is_vital`, `internal` → `is_internal`
+- Previously output `.flags = .{ .vital = true }` but `PartDef.Flags` has `is_vital`
+- Bug was hidden by Zig lazy compilation (unreferenced `GeneratedBodyPlans` not compiled)
+
+Key findings:
+
+1. **CUE `#BodyPart` lacks hierarchy** - no `parent`/`enclosing` fields
+   - CUE stores parts as flat map: `parts: { torso: {...}, neck: {...}, ... }`
+   - Zig hardcoded plan uses helpers that encode hierarchy: `vital("neck", ..., "torso")`
+   - Blocking issue for full migration
+
+2. **CUE lacks stats** - no `base_hit_chance`, `base_durability`, `trauma_mult`
+   - Hardcoded plan derives these from `defaultStats()` based on part tag/flags
+   - Could add to CUE or keep deriving from conventions
+
+3. **Tissue template cross-reference**
+   - CUE `tissue_template` is string ID (e.g., `"core"`)
+   - Generated code converts to `body.TissueTemplate.core` (hardcoded enum)
+   - Should reference generated `TissueStacks` instead after wiring
+
+4. **Lazy compilation masked errors**
+   - `GeneratedBodyPlans` not referenced anywhere in code
+   - Zig tree-shakes unreferenced code, so flag name bug compiled silently
+   - Will surface when we wire up the data
+
+What IS ready to wire:
+- `GeneratedTissueTemplates` - 6 templates (core, limb, digit, joint, facial, organ)
+- Each has full 3-axis coefficients per layer (deflection/absorption/dispersion + susceptibility)
+- `GeneratedBodyPlans` - 1 plan (humanoid) with 67 parts, each with geometry
+- Geometry data complete: `thickness_cm`, `length_cm`, `area_cm2` per part
+
+**2026-01-09**: Design decisions finalized.
+- Chose Option B (full migration)
+- Parent/enclosing: Add to CUE, validate at Zig comptime
+- Stats: Keep deriving from tag via `defaultStats()`
+- Tissue template: Change to string ID, lookup in `TissueStacks`
+- Task sequence updated with 5 phases
+- Ready for implementation

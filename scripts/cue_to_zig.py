@@ -310,8 +310,8 @@ def format_part_flags(flags: Dict[str, Any]) -> str:
     if not flags:
         return ".{}"
     mapping = [
-        ("vital", "vital"),
-        ("internal", "internal"),
+        ("vital", "is_vital"),
+        ("internal", "is_internal"),
         ("grasp", "can_grasp"),
         ("stand", "can_stand"),
         ("see", "can_see"),
