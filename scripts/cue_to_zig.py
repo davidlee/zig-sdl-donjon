@@ -293,4 +293,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-pub const GeneratedArmourPieces = [_]ArmourPieceDefinition{
