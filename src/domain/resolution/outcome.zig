@@ -224,6 +224,11 @@ pub fn resolveTechniqueVsDefense(
         const attacker_overlay = getOverlayBonuses(w, attack.attacker.id, attack.time_start, attack.time_end, true);
         dmg_packet.?.amount *= attacker_overlay.damage_mult;
 
+        // Capture initial packet values for audit event (post-overlay, pre-armour)
+        const initial_amount = dmg_packet.?.amount;
+        const initial_penetration = dmg_packet.?.penetration;
+        const damage_kind = dmg_packet.?.kind;
+
         // Resolve through armor
         const target_body_part = &attack.defender.body.parts.items[target_part];
         armour_result = try armour.resolveThroughArmourWithEvents(
@@ -277,6 +282,27 @@ pub fn resolveTechniqueVsDefense(
                 }
             }
         }
+
+        // Emit audit event with full packet lifecycle
+        const wound_severity: ?u8 = if (body_result) |br|
+            @intFromEnum(br.wound.worstSeverity())
+        else
+            null;
+        try w.events.push(.{ .combat_packet_resolved = .{
+            .attacker_id = attack.attacker.id,
+            .defender_id = attack.defender.id,
+            .technique_id = attack.technique.id,
+            .target_part = target_part,
+            .initial_amount = initial_amount,
+            .initial_penetration = initial_penetration,
+            .damage_kind = damage_kind,
+            .post_armour_amount = armour_result.?.remaining.amount,
+            .post_armour_penetration = armour_result.?.remaining.penetration,
+            .armour_layers_hit = armour_result.?.layers_hit,
+            .armour_deflected = armour_result.?.deflected,
+            .gap_found = armour_result.?.gap_found,
+            .wound_severity = wound_severity,
+        } });
     }
 
     // Emit technique_resolved event with full roll details
@@ -740,5 +766,74 @@ test "resolveTechniqueVsDefense emits condition_applied for pain threshold" {
 
         // Defender should now have distracted condition from pain
         try std.testing.expect(found_distracted);
+    }
+}
+
+test "resolveTechniqueVsDefense emits combat_packet_resolved on hit" {
+    const alloc = std.testing.allocator;
+
+    var w = try makeTestWorld(alloc);
+    defer w.deinit();
+    w.attachEventHandlers();
+
+    const attacker = w.player;
+    const defender = try makeTestAgent(alloc, w.entities.agents, ai.noop());
+    try w.encounter.?.addEnemy(defender);
+
+    const engagement = w.encounter.?.getPlayerEngagement(defender.id).?;
+
+    const technique = &cards.Technique.byID(.thrust);
+
+    const attack = AttackContext{
+        .attacker = attacker,
+        .defender = defender,
+        .technique = technique,
+        .weapon_template = &weapon_list.knights_sword,
+        .stakes = .committed,
+        .engagement = engagement,
+    };
+
+    const defense = DefenseContext{
+        .defender = defender,
+        .technique = null,
+        .weapon_template = &weapon_list.knights_sword,
+    };
+
+    const target_part: body.PartIndex = 0; // torso
+
+    // Stack odds for a guaranteed hit
+    defender.balance = 0.0;
+    engagement.pressure = 0.95;
+    engagement.control = 0.95;
+    engagement.position = 0.95;
+
+    const result = try resolveTechniqueVsDefense(w, attack, defense, target_part);
+
+    // Only test if we got a hit
+    if (result.outcome == .hit) {
+        w.events.swap_buffers();
+
+        var found_packet_event = false;
+        while (w.events.pop()) |event| {
+            switch (event) {
+                .combat_packet_resolved => |data| {
+                    found_packet_event = true;
+                    // Verify identities
+                    try std.testing.expectEqual(attacker.id, data.attacker_id);
+                    try std.testing.expectEqual(defender.id, data.defender_id);
+                    try std.testing.expectEqual(cards.TechniqueID.thrust, data.technique_id);
+                    try std.testing.expectEqual(target_part, data.target_part);
+                    // Verify packet data is populated
+                    try std.testing.expect(data.initial_amount > 0);
+                    try std.testing.expect(data.initial_penetration > 0);
+                    try std.testing.expectEqual(damage_mod.Kind.pierce, data.damage_kind);
+                    // Post-armour values should be <= initial (armour absorbs)
+                    try std.testing.expect(data.post_armour_amount <= data.initial_amount);
+                },
+                else => {},
+            }
+        }
+
+        try std.testing.expect(found_packet_event);
     }
 }

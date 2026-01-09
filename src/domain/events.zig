@@ -137,6 +137,28 @@ pub const Event = union(enum) {
         defender_modifier: f32, // total defense adjustment from defender conditions
     },
 
+    /// Emitted after a damage packet passes through armour and body layers.
+    /// Consolidates packet lifecycle for audit/analysis (Phase 1 instrumentation).
+    combat_packet_resolved: struct {
+        attacker_id: entity.ID,
+        defender_id: entity.ID,
+        technique_id: cards.TechniqueID,
+        target_part: body.PartIndex,
+        // Input packet
+        initial_amount: f32,
+        initial_penetration: f32,
+        damage_kind: damage.Kind,
+        // After armour
+        post_armour_amount: f32,
+        post_armour_penetration: f32,
+        // Layer summary
+        armour_layers_hit: u8,
+        armour_deflected: bool,
+        gap_found: bool,
+        // Body outcome (null if armour stopped it or no body damage)
+        wound_severity: ?u8,
+    },
+
     attack_out_of_range: struct {
         attacker_id: entity.ID,
         defender_id: entity.ID,

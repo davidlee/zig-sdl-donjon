@@ -128,7 +128,7 @@ pub const GeneratedTechniques = [_]TechniqueDefinition{
         .difficulty = 0.7,
         .channels = .{ .weapon = true, .off_hand = false, .footwork = false },
         .damage_instances = &.{
-            .{ .amount = 1, .types = &.{ damage.Kind.pierce } },
+            .{ .amount = 1, .types = &.{damage.Kind.pierce} },
         },
         .scaling = .{ .ratio = 0.5, .stats = .{ .average = .{ stats.Accessor.speed, stats.Accessor.power } } },
         .deflect_mult = 1.3,
@@ -153,7 +153,7 @@ pub const GeneratedTechniques = [_]TechniqueDefinition{
         .difficulty = 1,
         .channels = .{ .weapon = true, .off_hand = false, .footwork = false },
         .damage_instances = &.{
-            .{ .amount = 1, .types = &.{ damage.Kind.slash } },
+            .{ .amount = 1, .types = &.{damage.Kind.slash} },
         },
         .scaling = .{ .ratio = 1.2, .stats = .{ .average = .{ stats.Accessor.speed, stats.Accessor.power } } },
         .deflect_mult = 1,
@@ -178,7 +178,7 @@ pub const GeneratedTechniques = [_]TechniqueDefinition{
         .difficulty = 0.9,
         .channels = .{ .weapon = true, .off_hand = false, .footwork = false },
         .damage_instances = &.{
-            .{ .amount = 1, .types = &.{ damage.Kind.bludgeon } },
+            .{ .amount = 1, .types = &.{damage.Kind.bludgeon} },
         },
         .scaling = .{ .ratio = 0.8, .stats = .{ .average = .{ stats.Accessor.speed, stats.Accessor.speed } } },
         .deflect_mult = 0.8,
@@ -228,7 +228,7 @@ pub const GeneratedTechniques = [_]TechniqueDefinition{
         .difficulty = 0.5,
         .channels = .{ .weapon = true, .off_hand = false, .footwork = false },
         .damage_instances = &.{
-            .{ .amount = 1.2, .types = &.{ damage.Kind.pierce } },
+            .{ .amount = 1.2, .types = &.{damage.Kind.pierce} },
         },
         .scaling = .{ .ratio = 0.6, .stats = .{ .average = .{ stats.Accessor.speed, stats.Accessor.power } } },
         .deflect_mult = 0.8,

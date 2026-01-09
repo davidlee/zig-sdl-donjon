@@ -147,3 +147,39 @@ Each phase should end with a written artefact (audit results, formal spec, inter
 4. Schedule a dedicated design session to tackle Phase 2, focusing on formulas for deriving Geometry/Energy/Rigidity from weapon/technique/stat inputs, including corner cases like lunges, half-swording, and natural weapons.
 
 Answering these will position us to draft the full specification confidently instead of refactoring blind.
+
+---
+
+## 9. Data Audit Status Check-in (2026‑01‑09)
+
+### 9.1 Restated Audit Brief
+- Phase 1 from Section 8 still anchors this effort: (a) instrument the current combat resolution to log packet amounts/penetration (soon axes) for ground-truth comparisons, (b) catalogue all weapon/armour/tissue templates so we know what physical descriptors exist and where the gaps lie, and (c) capture per-part geometry or scale factors so the forthcoming axis formulas have real lever/path inputs.
+- Success criteria: every layer (armour+tissue) should reference a shared material definition with explicit shielding/susceptibility, every offensive profile should expose derived axis magnitudes, and we should have at least a draft dataset describing body-part dimensions so the later formulas are not speculative.
+
+### 9.2 Modelling Implemented So Far
+- `doc/artefacts/data_generation_plan.md` and the live CUE files (`data/materials.cue`, `data/weapons.cue`, `data/techniques.cue`, `data/armour.cue`) give us the scaffolding for most of the catalogue work:
+  - **Shared materials** – `#Material` now encodes Deflection/Absorption/Dispersion plus per-axis thresholds/ratios for tissues and armour alike, with presets for muscle, bone, fat, steel plate, chain, and gambeson. Shape modifiers create the “geometry-aware” knobs we called for in §5.1.
+  - **Armour pieces** – `#ArmourPiece` entries point directly to those materials and define coverage (tags, side, totality, layer), ready to be fed into a unified layer stack once the converter emits them.
+  - **Weapons** – the weapon schema derives moment of inertia, effective mass, and reference energy from weight/length/balance; base Geometry/Rigidity coefficients plus curvature adjustments are expressed per template.
+  - **Techniques** – techniques now live in data with damage instances, scaling, channels, overlays, and explicit `axis_bias` multipliers, matching the conversion-factor discussion in §4.
+  - **Generation pipeline** – `scripts/cue_to_zig.py` already exports the weapon + technique data into `src/gen/generated_data.zig`, and `just generate`/`just check` run it automatically. This satisfies the “catalogue & validate before Zig” requirement and keeps the audit reproducible.
+
+### 9.3 Gaps Blocking the Audit
+- **Instrumentation** – we still lack packet logging hooks in the combat resolver, so there is no empirical data to compare against the derived coefficients. Adding temporary logging (even of the current amount/penetration scalars) remains step 1.
+- **Tissue/body datasets** – bodies still use hard-coded tables in `src/domain/body.zig`. We need CUE definitions for tissue layers, body plans, and per-part scale factors (thickness, circumference, reach percentages) so the audit can confirm coverage completeness and give the axis formulas real numbers.
+- **Armour integration** – the generator has not yet emitted armour stacks or wired them into runtime resolution. Until armour pieces consume the shared material presets in-game, the audit cannot verify that layering matches the design.
+- **Species & natural weapons** – species metadata and natural weapons remain in Zig; they should move into CUE alongside weapons so Energy/Geometry/Rigidity derivations apply consistently and can be inspected as part of the audit.
+- **Validation tooling** – there is no automated report summarising which templates lack required fields (e.g., missing curvature, absent axis bias, incomplete coverage totals). The audit needs such reporting to prove completeness.
+
+### 9.4 Immediate Follow-ups
+1. Add minimal packet logging in the existing Zig resolver (pre-axis) so Phase 1 yields real combat traces to baseline against once the axes land.
+2. Extend the CUE schema to cover tissues/body plans/species, generating per-part geometry tables and ensuring armour+tissue share the same material presets.
+3. Update the converter to emit armour pieces and plug them into the runtime layer stack, which will exercise the shared `#Material` definitions end-to-end.
+4. Produce an audit script/report (likely via the Python converter) that lists every weapon/technique/armour/tissue entry with derived axis values and flags missing parameters. This keeps the catalogue visible without digging through Zig.
+
+### 9.5 Event-System Instrumentation Plan
+- The existing event bus (`src/domain/events.zig`, see `events_system_overview` memory) already broadcasts key combat resolution milestones (technique resolved, armour deflected, wound inflicted). Rather than inventing a parallel logger, add a new packet-centric event (e.g., `combat_packet_resolved`) carrying the packet inputs/outputs, layer stack summary, and attacker/defender IDs.
+- Emit this event at the point in resolution where packets are finalised; subscribers can then fork the stream to: (a) a simple audit drain that writes structured logs for Phase 1 analysis, and (b) the combat-log/UI layer, which is already interested in these details for richer damage numbers.
+- Because events are double-buffered, consumers remain decoupled, and we can swap out the audit drain later without touching combat code—keeping instrumentation aligned with the “data-first” architecture while delivering the observability the audit requests.
+
+Capturing this status inside the original geometry/energy/rigidity doc keeps the motivating questions and the data-audit deliverables tied together as we continue Phase 1.
