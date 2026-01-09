@@ -302,13 +302,13 @@ Already complete in CUE. Wire to runtime:
 
 ## Tasks / Sequence of Work
 
-### Phase 0: CUE Schema & Generation
+### Phase 0: CUE Schema & Generation ✓
 
-- [ ] **0.1** Add `parent`/`enclosing` optional fields to CUE `#BodyPart` schema
-- [ ] **0.2** Populate parent/enclosing for all 67 humanoid parts in `data/bodies.cue`
-- [ ] **0.3** Update `cue_to_zig.py` to emit parent/enclosing in `BodyPartDefinition`
-- [ ] **0.4** Change `tissue_template` from enum to string ID in generated code
-- [ ] **0.5** Run `just generate`, verify output
+- [x] **0.1** Add `parent`/`enclosing` optional fields to CUE `#BodyPart` schema
+- [x] **0.2** Populate parent/enclosing for all 62 humanoid parts in `data/bodies.cue`
+- [x] **0.3** Update `cue_to_zig.py` to emit parent/enclosing in `BodyPartDefinition`
+- [x] **0.4** Change `tissue_template` from enum to string ID in generated code
+- [x] **0.5** Run `just generate`, verify output
 
 ### Phase 1: Tissue Stack Wiring
 
@@ -320,7 +320,7 @@ Already complete in CUE. Wire to runtime:
 
 ### Phase 2: Body Plan Wiring
 
-- [ ] **2.1** Update `BodyPartDefinition` to include parent/enclosing string fields
+- [x] **2.1** Update `BodyPartDefinition` to include parent/enclosing string fields (done in Phase 0)
 - [ ] **2.2** Implement `buildPartDef()` - convert generated def to runtime `PartDef`
   - Resolve parent/enclosing strings to `PartId` (comptime validation)
   - Call `defaultStats(tag)` for hit_chance/durability/trauma_mult
@@ -423,3 +423,21 @@ What IS ready to wire:
 - Tissue template: Change to string ID, lookup in `TissueStacks`
 - Task sequence updated with 5 phases
 - Ready for implementation
+
+**2026-01-09**: Phase 0 complete - CUE schema & generation updated.
+- [x] **0.1** Added `parent`/`enclosing` optional fields to CUE `#BodyPart` schema
+- [x] **0.2** Populated parent/enclosing for all 62 humanoid parts in `data/bodies.cue`
+  - Hierarchy matches hardcoded `HumanoidPlan`: torso→neck→head, torso→abdomen→groin, etc.
+  - Organs have both parent and enclosing (e.g., brain: parent=head, enclosing=head)
+  - Note: CUE has `tongue` which `HumanoidPlan` lacks (62 vs 61 parts)
+- [x] **0.3** Updated `cue_to_zig.py` to emit parent/enclosing in `BodyPartDefinition`
+- [x] **0.4** Changed `tissue_template` from enum to `tissue_template_id: []const u8`
+- [x] **0.5** Ran `just generate` and `just check` - all tests pass
+
+Generated data now includes:
+- `parent: ?[]const u8` - attachment hierarchy (null for root parts)
+- `enclosing: ?[]const u8` - containment for organs
+- `tissue_template_id: []const u8` - string ID for lookup in tissue tables
+- `BodyPartGeometry` and `BodyPartDefinition` now public (`pub const`)
+
+Ready for Phase 1: Tissue Stack Wiring

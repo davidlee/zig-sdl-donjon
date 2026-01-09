@@ -302,8 +302,16 @@ def format_side(side: str) -> str:
     return mapping.get(side, "body.Side.center")
 
 
-def format_tissue_template(tpl: str) -> str:
-    return f"body.TissueTemplate.{tpl}"
+def format_tissue_template_string(tpl: str) -> str:
+    """Return tissue template as string ID for lookup in generated tables."""
+    return f'"{tpl}"'
+
+
+def format_optional_string(value: str | None) -> str:
+    """Format an optional string field for Zig."""
+    if value is None:
+        return "null"
+    return f'"{value}"'
 
 
 def format_part_flags(flags: Dict[str, Any]) -> str:
@@ -328,17 +336,19 @@ def format_part_flags(flags: Dict[str, Any]) -> str:
 
 def emit_body_plans(plans: Dict[str, Any]) -> str:
     lines: List[str] = []
-    lines.append("const BodyPartGeometry = struct {")
+    lines.append("pub const BodyPartGeometry = struct {")
     lines.append("    thickness_cm: f32,")
     lines.append("    length_cm: f32,")
     lines.append("    area_cm2: f32,")
     lines.append("};")
     lines.append("")
-    lines.append("const BodyPartDefinition = struct {")
+    lines.append("pub const BodyPartDefinition = struct {")
     lines.append("    name: []const u8,")
     lines.append("    tag: body.PartTag,")
     lines.append("    side: body.Side = body.Side.center,")
-    lines.append("    tissue_template: body.TissueTemplate,")
+    lines.append("    parent: ?[]const u8 = null,")
+    lines.append("    enclosing: ?[]const u8 = null,")
+    lines.append("    tissue_template_id: []const u8,")
     lines.append("    has_major_artery: bool = false,")
     lines.append("    flags: body.PartDef.Flags = .{},")
     lines.append("    geometry: BodyPartGeometry,")
@@ -366,8 +376,14 @@ def emit_body_plans(plans: Dict[str, Any]) -> str:
             lines.append(f'                .name = "{part_name}",')
             lines.append(f"                .tag = {format_part_tag(part.get('tag', 'torso'))},")
             lines.append(f"                .side = {format_side(part.get('side', 'center'))},")
+            parent = part.get("parent")
+            if parent is not None:
+                lines.append(f'                .parent = "{parent}",')
+            enclosing = part.get("enclosing")
+            if enclosing is not None:
+                lines.append(f'                .enclosing = "{enclosing}",')
             lines.append(
-                f"                .tissue_template = {format_tissue_template(part.get('tissue_template', 'limb'))},"
+                f"                .tissue_template_id = {format_tissue_template_string(part.get('tissue_template', 'limb'))},"
             )
             if part.get("has_major_artery"):
                 lines.append("                .has_major_artery = true,")

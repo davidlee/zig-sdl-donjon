@@ -8,6 +8,9 @@ check: format generate test build
 # alias, create with correct ID from template.
 new-kanban: new-card
 
+cue-vet:
+  cue vet data/*.cue
+
 build:
   zig build
 
