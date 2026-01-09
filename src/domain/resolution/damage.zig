@@ -133,6 +133,6 @@ test "createDamagePacket scales by stakes" {
     try std.testing.expect(guarded.amount < committed.amount);
     try std.testing.expect(committed.amount < reckless.amount);
 
-    // Reckless should be 2x guarded (from stakes multiplier)
-    try std.testing.expectApproxEqAbs(guarded.amount * 2.0, reckless.amount, 0.01);
+    // Reckless should be 1.2x guarded (compressed damage range)
+    try std.testing.expectApproxEqAbs(guarded.amount * 1.2, reckless.amount, 0.01);
 }

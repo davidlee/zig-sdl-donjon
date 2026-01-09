@@ -457,23 +457,23 @@ pub const Stakes = enum {
     committed,
     reckless,
 
-    /// Modifier to base hit chance
+    /// Modifier to base hit chance (wider range - commitment affects accuracy)
     pub fn hitChanceBonus(self: Stakes) f32 {
         return switch (self) {
-            .probing => -0.1,
+            .probing => -0.15,
             .guarded => 0.0,
-            .committed => 0.1,
-            .reckless => 0.2,
+            .committed => 0.15,
+            .reckless => 0.30,
         };
     }
 
-    /// Multiplier for damage output
+    /// Multiplier for damage output (compressed - weapon matters, not commitment)
     pub fn damageMultiplier(self: Stakes) f32 {
         return switch (self) {
-            .probing => 0.4,
+            .probing => 0.85,
             .guarded => 1.0,
-            .committed => 1.4,
-            .reckless => 2.0,
+            .committed => 1.1,
+            .reckless => 1.2,
         };
     }
 

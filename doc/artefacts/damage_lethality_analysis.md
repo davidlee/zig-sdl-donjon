@@ -1,6 +1,9 @@
 # Damage & Lethality Analysis
 
-**Related**: `doc/issues/lethality.md`
+**Related**:
+- `doc/issues/lethality.md`
+- `doc/issues/impulse_penetration_bite.md` (three-axis damage model supersedes much of this)
+- `doc/issues/combat_modifiers_redesign.md` (stakes, height, modifiers)
 
 ---
 
@@ -9,7 +12,7 @@
 - [x] **Phase 1**: Natural weapons fixed (T030, 2026-01-09)
 - [x] **Phase 2**: Foundation work complete - stat constants, ×10 rescale (T030, 2026-01-09)
 - [x] **Phase 3a**: Additive stat scaling (T031, 2026-01-09)
-- [ ] **Phase 3b**: Stakes rebalance (pending)
+- [x] **Phase 3b**: Stakes numbers retuned (hit ±0.3, damage 0.85-1.2) → see `doc/issues/combat_modifiers_redesign.md` for further work
 
 ---
 
