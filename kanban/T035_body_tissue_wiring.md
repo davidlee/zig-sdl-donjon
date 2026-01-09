@@ -369,13 +369,28 @@ Already complete in CUE. Wire to runtime:
 - [ ] **4.3** Integration test: damage packet → armour → tissue → wound
   - Compare sword-vs-arm results with/without armour
   - Verify layer damage accumulates correctly
+- [ ] **4.4** Use geometry in `applyDamage()` for path-length calculations
+  - Blocked on: upstream `damage.Packet` refactor to carry proper Geometry/Energy/Rigidity axes
+  - Use `layer.thickness_ratio * geometry.thickness_cm` for penetration path per layer
+  - Geometry decay: reduce geometry axis as attack travels through tissue depth
+  - See TODO at `body.zig:920` and design doc §5.2
 
-### Phase 5: Cleanup
+### Phase 5: Cleanup ✓
 
-- [ ] **5.1** Remove hardcoded `HumanoidPlan` constant
-- [ ] **5.2** Remove `TissueTemplate.layers()` method (superseded by `TissueStacks`)
-- [ ] **5.3** Consider removing `TissueTemplate` enum if no longer needed
-- [ ] **5.4** Update/remove obsolete tests
+- [x] **5.1** Remove hardcoded `HumanoidPlan` constant
+  - Removed `HumanoidPlan` and all helper functions (`definePartFull`, `ext`, `vital`, etc.)
+  - Removed `defaultTemplate()` (only used by deprecated code)
+  - ~220 lines removed from body.zig
+- [x] **5.2** Remove `TissueTemplate.layers()` method (superseded by `TissueStacks`)
+  - Removed `layers()` and `has()` methods from `TissueTemplate` enum
+  - Updated `checkSevering()` to use `TissueStack.hasMaterial()` via runtime lookup
+- [x] **5.3** Keep `TissueTemplate` enum (decision: retain for type safety)
+  - Enum provides compile-time safety for tissue template identifiers
+  - Used in `Part.tissue`, `PartDef.tissue`, `applyDamage()` signature
+  - `@tagName()` converts to string for `TissueStack` lookup
+- [x] **5.4** Update/remove obsolete tests
+  - Converted "tissue template layer queries" to use `TissueStack.hasMaterial()`
+  - Converted "part definitions" test to use `body_list.getBodyPlanRuntime("humanoid")`
 
 ## Test / Verification Strategy
 
@@ -583,3 +598,21 @@ All tests pass.
   - Hardcoded `HumanoidPlan` gets placeholder geometry (deprecated in Phase 5)
 
 All tests pass. Phase 3 now fully complete.
+
+**2026-01-10**: Phase 5 complete - Cleanup.
+- Removed ~220 lines of deprecated code from body.zig:
+  - `HumanoidPlan` constant (61 parts)
+  - Helper functions: `definePartFull`, `ext`, `vital`, `vitalArtery`, `artery`, `organ`, `organMinor`, `sensory`, `grasping`, `standing`, `standingArtery`
+  - `defaultTemplate()` function
+  - `TissueTemplate.layers()` and `TissueTemplate.has()` methods
+- Updated `checkSevering()` to use `TissueStack.hasMaterial()` via runtime lookup
+- Converted tests to use generated data:
+  - "tissue template layer queries" now uses `body_list.getTissueStackRuntime()`
+  - "part definitions" now uses `body_list.getBodyPlanRuntime("humanoid")`
+- Decision: Keep `TissueTemplate` enum for type safety (used in Part, PartDef, applyDamage)
+
+All tests pass. T035 core work complete.
+
+**Remaining tasks:**
+- 4.3: Integration test (armour → tissue → wound)
+- 4.4: Use geometry for path-length (blocked on upstream packet axes)

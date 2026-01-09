@@ -157,31 +157,15 @@ pub const TissueLayer = enum {
     // All parts have capillaries (minor bleed); major vessels are site-specific.
 };
 
+/// Tissue template identifier. Layer composition now comes from generated
+/// TissueStacks in body_list.zig (via data/materials.cue).
 pub const TissueTemplate = enum {
-    limb, // bone, muscle, tendon, fat, nerve, skin
-    digit, // bone, tendon, skin (minimal soft tissue)
-    joint, // bone, tendon, fat, skin
-    facial, // cartilage, fat, skin (no bone)
-    organ, // organ tissue only
-    core, // bone, muscle, fat, skin (torso/head - encloses organs)
-
-    pub fn layers(self: TissueTemplate) []const TissueLayer {
-        return switch (self) {
-            .limb => &.{ .bone, .muscle, .tendon, .fat, .nerve, .skin },
-            .digit => &.{ .bone, .tendon, .skin },
-            .joint => &.{ .bone, .tendon, .fat, .skin },
-            .facial => &.{ .cartilage, .fat, .skin },
-            .organ => &.{.organ},
-            .core => &.{ .bone, .muscle, .fat, .skin },
-        };
-    }
-
-    pub fn has(self: TissueTemplate, layer: TissueLayer) bool {
-        for (self.layers()) |l| {
-            if (l == layer) return true;
-        }
-        return false;
-    }
+    limb,
+    digit,
+    joint,
+    facial,
+    organ,
+    core,
 };
 
 /// Runtime tissue layer with 3-axis physics coefficients.
@@ -960,8 +944,10 @@ fn checkSevering(part: *const Part, wound: *const Wound) bool {
     const tendon_sev = wound.severityAt(.tendon);
 
     // Determine which structural layer is relevant for this part
-    const has_bone = part.tissue.has(.bone);
-    const has_cartilage = part.tissue.has(.cartilage);
+    const template_id = @tagName(part.tissue);
+    const tissue_stack = body_list.getTissueStackRuntime(template_id);
+    const has_bone = if (tissue_stack) |stack| stack.hasMaterial("bone") else false;
+    const has_cartilage = if (tissue_stack) |stack| stack.hasMaterial("cartilage") else false;
 
     const structural_sev = if (has_bone)
         bone_sev
@@ -1077,252 +1063,6 @@ pub fn defaultStats(tag: PartTag) PartStats {
         .tongue => .{ .hit_chance = 0.0, .durability = 0.3, .trauma_mult = 2.0 },
     };
 }
-
-fn defaultTemplate(tag: PartTag) TissueTemplate {
-    return switch (tag) {
-        // Core structures (enclose organs, have bone)
-        .head, .torso, .abdomen => .core,
-        .neck => .core, // vertebrae
-
-        // Limb segments
-        .arm, .forearm, .thigh, .shin => .limb,
-        .shoulder => .limb, // scapula + humerus head
-
-        // Joints
-        .elbow, .knee, .wrist, .ankle, .groin => .joint,
-
-        // Extremities
-        .hand, .foot => .joint, // complex bone structure
-        .finger, .thumb, .toe => .digit,
-
-        // Facial features (cartilage-based)
-        .eye, .ear, .nose => .facial,
-
-        // Internal organs
-        .brain, .heart, .lung, .stomach, .liver, .intestine, .tongue, .trachea, .spleen => .organ,
-    };
-}
-
-fn definePartFull(
-    comptime name: []const u8,
-    tag: PartTag,
-    side: Side,
-    comptime parent_name: ?[]const u8,
-    comptime enclosing_name: ?[]const u8,
-    flags: PartFlags,
-    has_major_artery: bool,
-) PartDef {
-    @setEvalBranchQuota(10000);
-    const stats = defaultStats(tag);
-    return .{
-        .id = PartId.init(name),
-        .parent = if (parent_name) |p| PartId.init(p) else null,
-        .enclosing = if (enclosing_name) |e| PartId.init(e) else null,
-        .tag = tag,
-        .side = side,
-        .name = name,
-        .base_hit_chance = stats.hit_chance,
-        .base_durability = stats.durability,
-        .trauma_mult = stats.trauma_mult,
-        .flags = flags,
-        .tissue = defaultTemplate(tag),
-        .has_major_artery = has_major_artery,
-        // Placeholder geometry - real data comes from CUE-generated plans.
-        // This hardcoded plan is deprecated (Phase 5 cleanup).
-        .geometry = .{ .thickness_cm = 5.0, .length_cm = 10.0, .area_cm2 = 100.0 },
-    };
-}
-
-// Basic structural part (limb segments, joints, digits)
-fn ext(
-    comptime name: []const u8,
-    tag: PartTag,
-    side: Side,
-    comptime parent_name: ?[]const u8,
-) PartDef {
-    return definePartFull(name, tag, side, parent_name, null, .{}, false);
-}
-
-// Vital exterior part (head, neck, torso) - loss is fatal or catastrophic
-fn vital(
-    comptime name: []const u8,
-    tag: PartTag,
-    side: Side,
-    comptime parent_name: ?[]const u8,
-) PartDef {
-    return definePartFull(name, tag, side, parent_name, null, .{ .is_vital = true }, false);
-}
-
-// Vital part with major artery (neck)
-fn vitalArtery(
-    comptime name: []const u8,
-    tag: PartTag,
-    side: Side,
-    comptime parent_name: ?[]const u8,
-) PartDef {
-    return definePartFull(name, tag, side, parent_name, null, .{ .is_vital = true }, true);
-}
-
-// Part with major artery but not vital (groin, inner thigh, armpit)
-fn artery(
-    comptime name: []const u8,
-    tag: PartTag,
-    side: Side,
-    comptime parent_name: ?[]const u8,
-) PartDef {
-    return definePartFull(name, tag, side, parent_name, null, .{}, true);
-}
-
-// Internal organ - enclosed by another part, vital by default
-fn organ(
-    comptime name: []const u8,
-    tag: PartTag,
-    side: Side,
-    comptime parent_name: []const u8,
-    comptime enclosing_name: []const u8,
-) PartDef {
-    return definePartFull(name, tag, side, parent_name, enclosing_name, .{
-        .is_vital = true,
-        .is_internal = true,
-    }, false);
-}
-
-// Non-vital internal part (e.g. spleen - survivable loss)
-fn organMinor(
-    comptime name: []const u8,
-    tag: PartTag,
-    side: Side,
-    comptime parent_name: []const u8,
-    comptime enclosing_name: []const u8,
-) PartDef {
-    return definePartFull(name, tag, side, parent_name, enclosing_name, .{
-        .is_internal = true,
-    }, false);
-}
-
-// Sensory organ
-fn sensory(
-    comptime name: []const u8,
-    tag: PartTag,
-    side: Side,
-    comptime parent_name: []const u8,
-    comptime flags: PartFlags,
-) PartDef {
-    return definePartFull(name, tag, side, parent_name, null, flags, false);
-}
-
-// Grasping part (hands)
-fn grasping(
-    comptime name: []const u8,
-    tag: PartTag,
-    side: Side,
-    comptime parent_name: []const u8,
-) PartDef {
-    return definePartFull(name, tag, side, parent_name, null, .{ .can_grasp = true }, false);
-}
-
-// Weight-bearing part (feet, legs)
-fn standing(
-    comptime name: []const u8,
-    tag: PartTag,
-    side: Side,
-    comptime parent_name: []const u8,
-) PartDef {
-    return definePartFull(name, tag, side, parent_name, null, .{ .can_stand = true }, false);
-}
-
-// Weight-bearing part with major artery (thigh)
-fn standingArtery(
-    comptime name: []const u8,
-    tag: PartTag,
-    side: Side,
-    comptime parent_name: []const u8,
-) PartDef {
-    return definePartFull(name, tag, side, parent_name, null, .{ .can_stand = true }, true);
-}
-// to look up parts by ID at runtime, store a std.AutoHashMap(u64, PartIndex)
-// when building the body, using part.id.hash as the key.
-
-pub const HumanoidPlan = [_]PartDef{
-    // === Core structure ===
-    vital("torso", .torso, .center, null),
-    vitalArtery("neck", .neck, .center, "torso"), // carotid, jugular
-    vital("head", .head, .center, "neck"),
-    vital("abdomen", .abdomen, .center, "torso"),
-    artery("groin", .groin, .center, "abdomen"), // femoral
-
-    // === Head - sensory organs ===
-    sensory("left_eye", .eye, .left, "head", .{ .can_see = true }),
-    sensory("right_eye", .eye, .right, "head", .{ .can_see = true }),
-    ext("nose", .nose, .center, "head"),
-    sensory("left_ear", .ear, .left, "head", .{ .can_hear = true }),
-    sensory("right_ear", .ear, .right, "head", .{ .can_hear = true }),
-
-    // === Internal organs - head ===
-    organ("brain", .brain, .center, "head", "head"),
-
-    // === Internal organs - torso (enclosed by torso) ===
-    organ("heart", .heart, .center, "torso", "torso"),
-    organ("left_lung", .lung, .left, "torso", "torso"),
-    organ("right_lung", .lung, .right, "torso", "torso"),
-    organ("trachea", .trachea, .center, "neck", "neck"),
-
-    // === Internal organs - abdomen (enclosed by abdomen) ===
-    organ("liver", .liver, .center, "abdomen", "abdomen"),
-    organ("stomach", .stomach, .center, "abdomen", "abdomen"),
-    organMinor("spleen", .spleen, .left, "abdomen", "abdomen"),
-    organMinor("intestines", .intestine, .center, "abdomen", "abdomen"),
-
-    // === Left arm chain ===
-    artery("left_shoulder", .shoulder, .left, "torso"), // axillary
-    ext("left_arm", .arm, .left, "left_shoulder"),
-    ext("left_elbow", .elbow, .left, "left_arm"),
-    ext("left_forearm", .forearm, .left, "left_elbow"),
-    ext("left_wrist", .wrist, .left, "left_forearm"),
-    grasping("left_hand", .hand, .left, "left_wrist"),
-    ext("left_thumb", .thumb, .left, "left_hand"),
-    ext("left_index_finger", .finger, .left, "left_hand"),
-    ext("left_middle_finger", .finger, .left, "left_hand"),
-    ext("left_ring_finger", .finger, .left, "left_hand"),
-    ext("left_pinky_finger", .finger, .left, "left_hand"),
-
-    // === Right arm chain ===
-    artery("right_shoulder", .shoulder, .right, "torso"), // axillary
-    ext("right_arm", .arm, .right, "right_shoulder"),
-    ext("right_elbow", .elbow, .right, "right_arm"),
-    ext("right_forearm", .forearm, .right, "right_elbow"),
-    ext("right_wrist", .wrist, .right, "right_forearm"),
-    grasping("right_hand", .hand, .right, "right_wrist"),
-    ext("right_thumb", .thumb, .right, "right_hand"),
-    ext("right_index_finger", .finger, .right, "right_hand"),
-    ext("right_middle_finger", .finger, .right, "right_hand"),
-    ext("right_ring_finger", .finger, .right, "right_hand"),
-    ext("right_pinky_finger", .finger, .right, "right_hand"),
-
-    // === Left leg chain ===
-    standingArtery("left_thigh", .thigh, .left, "groin"), // femoral
-    ext("left_knee", .knee, .left, "left_thigh"),
-    standing("left_shin", .shin, .left, "left_knee"),
-    ext("left_ankle", .ankle, .left, "left_shin"),
-    standing("left_foot", .foot, .left, "left_ankle"),
-    ext("left_big_toe", .toe, .left, "left_foot"),
-    ext("left_second_toe", .toe, .left, "left_foot"),
-    ext("left_third_toe", .toe, .left, "left_foot"),
-    ext("left_fourth_toe", .toe, .left, "left_foot"),
-    ext("left_pinky_toe", .toe, .left, "left_foot"),
-
-    // === Right leg chain ===
-    standingArtery("right_thigh", .thigh, .right, "groin"), // femoral
-    ext("right_knee", .knee, .right, "right_thigh"),
-    standing("right_shin", .shin, .right, "right_knee"),
-    ext("right_ankle", .ankle, .right, "right_shin"),
-    standing("right_foot", .foot, .right, "right_ankle"),
-    ext("right_big_toe", .toe, .right, "right_foot"),
-    ext("right_second_toe", .toe, .right, "right_foot"),
-    ext("right_third_toe", .toe, .right, "right_foot"),
-    ext("right_fourth_toe", .toe, .right, "right_foot"),
-    ext("right_pinky_toe", .toe, .right, "right_foot"),
-};
 
 // === Tests ===
 
@@ -1492,27 +1232,31 @@ test "functional grasping parts" {
     try std.testing.expectEqual(@as(usize, 1), hands_after.len);
 }
 
-test "tissue template layer queries" {
-    // Limbs have bone, muscle, etc.
-    try std.testing.expect(TissueTemplate.limb.has(.bone));
-    try std.testing.expect(TissueTemplate.limb.has(.muscle));
-    try std.testing.expect(TissueTemplate.limb.has(.skin));
-    try std.testing.expect(!TissueTemplate.limb.has(.cartilage));
-    try std.testing.expect(!TissueTemplate.limb.has(.organ));
+test "tissue template layer queries (via TissueStack)" {
+    // Limbs have bone, muscle, etc. (from generated data)
+    const limb = body_list.getTissueStackRuntime("limb").?;
+    try std.testing.expect(limb.hasMaterial("bone"));
+    try std.testing.expect(limb.hasMaterial("muscle"));
+    try std.testing.expect(limb.hasMaterial("skin"));
+    try std.testing.expect(!limb.hasMaterial("cartilage"));
+    try std.testing.expect(!limb.hasMaterial("organ"));
 
     // Digits are minimal
-    try std.testing.expect(TissueTemplate.digit.has(.bone));
-    try std.testing.expect(TissueTemplate.digit.has(.tendon));
-    try std.testing.expect(!TissueTemplate.digit.has(.muscle));
+    const digit = body_list.getTissueStackRuntime("digit").?;
+    try std.testing.expect(digit.hasMaterial("bone"));
+    try std.testing.expect(digit.hasMaterial("tendon"));
+    try std.testing.expect(!digit.hasMaterial("muscle"));
 
     // Facial features have cartilage, not bone
-    try std.testing.expect(TissueTemplate.facial.has(.cartilage));
-    try std.testing.expect(!TissueTemplate.facial.has(.bone));
+    const facial = body_list.getTissueStackRuntime("facial").?;
+    try std.testing.expect(facial.hasMaterial("cartilage"));
+    try std.testing.expect(!facial.hasMaterial("bone"));
 }
 
 test "part definitions have correct tissue and artery flags" {
-    // Check a few representative parts from HumanoidPlan
-    for (HumanoidPlan) |def| {
+    // Check representative parts from generated humanoid body plan
+    const plan = body_list.getBodyPlanRuntime("humanoid").?;
+    for (plan.parts) |def| {
         if (std.mem.eql(u8, def.name, "neck")) {
             try std.testing.expectEqual(TissueTemplate.core, def.tissue);
             try std.testing.expect(def.has_major_artery); // carotid
