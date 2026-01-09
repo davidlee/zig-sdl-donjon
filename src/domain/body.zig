@@ -195,8 +195,8 @@ pub const TissueLayerMaterial = struct {
     // Susceptibility - how vulnerable this layer is to damage on each axis
     geometry_threshold: f32,
     geometry_ratio: f32,
-    momentum_threshold: f32,
-    momentum_ratio: f32,
+    energy_threshold: f32,
+    energy_ratio: f32,
     rigidity_threshold: f32,
     rigidity_ratio: f32,
 };

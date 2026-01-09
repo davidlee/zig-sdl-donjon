@@ -66,8 +66,8 @@ fn buildTissueLayer(comptime def: *const TissueLayerDef) TissueLayerMaterial {
         // Susceptibility
         .geometry_threshold = def.geometry_threshold,
         .geometry_ratio = def.geometry_ratio,
-        .momentum_threshold = def.momentum_threshold,
-        .momentum_ratio = def.momentum_ratio,
+        .energy_threshold = def.energy_threshold,
+        .energy_ratio = def.energy_ratio,
         .rigidity_threshold = def.rigidity_threshold,
         .rigidity_ratio = def.rigidity_ratio,
     };

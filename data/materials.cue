@@ -23,8 +23,8 @@ package data
     susceptibility: {
         geometry_threshold: float & >=0
         geometry_ratio: float & >0
-        momentum_threshold: float & >=0
-        momentum_ratio: float & >0
+        energy_threshold: float & >=0
+        energy_ratio: float & >0
         rigidity_threshold: float & >=0
         rigidity_ratio: float & >0
     }
@@ -55,8 +55,8 @@ materials: {
             susceptibility: {
                 geometry_threshold: 0.05
                 geometry_ratio: 0.7
-                momentum_threshold: 0.10
-                momentum_ratio: 0.6
+                energy_threshold: 0.10
+                energy_ratio: 0.6
                 rigidity_threshold: 0.05
                 rigidity_ratio: 0.8
             }
@@ -75,8 +75,8 @@ materials: {
             susceptibility: {
                 geometry_threshold: 0.20
                 geometry_ratio: 0.4
-                momentum_threshold: 0.35
-                momentum_ratio: 0.3
+                energy_threshold: 0.35
+                energy_ratio: 0.3
                 rigidity_threshold: 0.30
                 rigidity_ratio: 0.2
             }
@@ -95,8 +95,8 @@ materials: {
             susceptibility: {
                 geometry_threshold: 0.02
                 geometry_ratio: 0.9
-                momentum_threshold: 0.05
-                momentum_ratio: 0.8
+                energy_threshold: 0.05
+                energy_ratio: 0.8
                 rigidity_threshold: 0.02
                 rigidity_ratio: 0.9
             }
@@ -115,8 +115,8 @@ materials: {
             susceptibility: {
                 geometry_threshold: 0.02
                 geometry_ratio: 0.85
-                momentum_threshold: 0.05
-                momentum_ratio: 0.9
+                energy_threshold: 0.05
+                energy_ratio: 0.9
                 rigidity_threshold: 0.02
                 rigidity_ratio: 0.95
             }
@@ -135,8 +135,8 @@ materials: {
             susceptibility: {
                 geometry_threshold: 0.10
                 geometry_ratio: 0.6
-                momentum_threshold: 0.20
-                momentum_ratio: 0.5
+                energy_threshold: 0.20
+                energy_ratio: 0.5
                 rigidity_threshold: 0.15
                 rigidity_ratio: 0.55
             }
@@ -155,8 +155,8 @@ materials: {
             susceptibility: {
                 geometry_threshold: 0.08
                 geometry_ratio: 0.7
-                momentum_threshold: 0.18
-                momentum_ratio: 0.6
+                energy_threshold: 0.18
+                energy_ratio: 0.6
                 rigidity_threshold: 0.15
                 rigidity_ratio: 0.5
             }
@@ -175,8 +175,8 @@ materials: {
             susceptibility: {
                 geometry_threshold: 0.01
                 geometry_ratio: 0.95
-                momentum_threshold: 0.03
-                momentum_ratio: 0.9
+                energy_threshold: 0.03
+                energy_ratio: 0.9
                 rigidity_threshold: 0.01
                 rigidity_ratio: 0.95
             }
@@ -195,8 +195,8 @@ materials: {
             susceptibility: {
                 geometry_threshold: 0.02
                 geometry_ratio: 0.9
-                momentum_threshold: 0.08
-                momentum_ratio: 0.7
+                energy_threshold: 0.08
+                energy_ratio: 0.7
                 rigidity_threshold: 0.03
                 rigidity_ratio: 0.85
             }
@@ -217,8 +217,8 @@ materials: {
             susceptibility: {
                 geometry_threshold: 0.30
                 geometry_ratio: 0.3
-                momentum_threshold: 0.50
-                momentum_ratio: 0.4
+                energy_threshold: 0.50
+                energy_ratio: 0.4
                 rigidity_threshold: 0.45
                 rigidity_ratio: 0.3
             }
@@ -241,8 +241,8 @@ materials: {
             susceptibility: {
                 geometry_threshold: 0.15
                 geometry_ratio: 0.5
-                momentum_threshold: 0.25
-                momentum_ratio: 0.6
+                energy_threshold: 0.25
+                energy_ratio: 0.6
                 rigidity_threshold: 0.25
                 rigidity_ratio: 0.5
             }
@@ -265,8 +265,8 @@ materials: {
             susceptibility: {
                 geometry_threshold: 0.05
                 geometry_ratio: 0.8
-                momentum_threshold: 0.15
-                momentum_ratio: 0.5
+                energy_threshold: 0.15
+                energy_ratio: 0.5
                 rigidity_threshold: 0.10
                 rigidity_ratio: 0.7
             }

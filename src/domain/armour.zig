@@ -74,8 +74,8 @@ pub const Material = struct {
     // === Susceptibility (damage to this layer) ===
     geometry_threshold: f32,
     geometry_ratio: f32,
-    momentum_threshold: f32, // "energy" in design doc
-    momentum_ratio: f32,
+    energy_threshold: f32, // "energy" in design doc
+    energy_ratio: f32,
     rigidity_threshold: f32,
     rigidity_ratio: f32,
 
@@ -354,12 +354,12 @@ pub fn resolveThroughArmour(
         // === Susceptibility: compute damage to this layer ===
         // Layer takes damage when incoming axes exceed its thresholds
         const geo_excess = @max(0.0, geometry - mat.geometry_threshold);
-        const mom_excess = @max(0.0, momentum - mat.momentum_threshold);
+        const mom_excess = @max(0.0, momentum - mat.energy_threshold);
         const rig_excess = @max(0.0, rigidity - mat.rigidity_threshold);
 
         const layer_damage =
             geo_excess * mat.geometry_ratio +
-            mom_excess * mat.momentum_ratio +
+            mom_excess * mat.energy_ratio +
             rig_excess * mat.rigidity_ratio;
 
         layer.integrity.* -= layer_damage;
@@ -460,12 +460,12 @@ pub fn resolveThroughArmourWithEvents(
 
         // === Susceptibility: compute damage to this layer ===
         const geo_excess = @max(0.0, geometry - mat.geometry_threshold);
-        const mom_excess = @max(0.0, momentum - mat.momentum_threshold);
+        const mom_excess = @max(0.0, momentum - mat.energy_threshold);
         const rig_excess = @max(0.0, rigidity - mat.rigidity_threshold);
 
         const layer_damage =
             geo_excess * mat.geometry_ratio +
-            mom_excess * mat.momentum_ratio +
+            mom_excess * mat.energy_ratio +
             rig_excess * mat.rigidity_ratio;
 
         layer.integrity.* -= layer_damage;
@@ -562,8 +562,8 @@ const TestMaterials = struct {
         // Susceptibility: easily cut/pierced, resists blunt better
         .geometry_threshold = 0.02,
         .geometry_ratio = 0.9,
-        .momentum_threshold = 0.1,
-        .momentum_ratio = 0.6,
+        .energy_threshold = 0.1,
+        .energy_ratio = 0.6,
         .rigidity_threshold = 0.05,
         .rigidity_ratio = 0.7,
         // Shape
@@ -586,8 +586,8 @@ const TestMaterials = struct {
         // Susceptibility: rings stop cuts, thrusts can slip through, blunt transfers
         .geometry_threshold = 0.15,
         .geometry_ratio = 0.5,
-        .momentum_threshold = 0.2,
-        .momentum_ratio = 0.7,
+        .energy_threshold = 0.2,
+        .energy_ratio = 0.7,
         .rigidity_threshold = 0.2,
         .rigidity_ratio = 0.6,
         // Shape
@@ -610,8 +610,8 @@ const TestMaterials = struct {
         // Susceptibility: hard to damage, but concentrated force gets through
         .geometry_threshold = 0.3,
         .geometry_ratio = 0.3,
-        .momentum_threshold = 0.4,
-        .momentum_ratio = 0.5,
+        .energy_threshold = 0.4,
+        .energy_ratio = 0.5,
         .rigidity_threshold = 0.35,
         .rigidity_ratio = 0.4,
         // Shape
@@ -632,8 +632,8 @@ const TestMaterials = struct {
         .dispersion = 0,
         .geometry_threshold = 0,
         .geometry_ratio = 1.0,
-        .momentum_threshold = 0,
-        .momentum_ratio = 1.0,
+        .energy_threshold = 0,
+        .energy_ratio = 1.0,
         .rigidity_threshold = 0,
         .rigidity_ratio = 1.0,
         .shape = .solid,
@@ -1019,8 +1019,8 @@ test "resolveThroughArmour: absorption reduces momentum" {
         .dispersion = 0.0,
         .geometry_threshold = 10.0, // high thresholds = no layer damage
         .geometry_ratio = 0.0,
-        .momentum_threshold = 10.0,
-        .momentum_ratio = 0.0,
+        .energy_threshold = 10.0,
+        .energy_ratio = 0.0,
         .rigidity_threshold = 10.0,
         .rigidity_ratio = 0.0,
         .thickness = 0.0,
@@ -1080,8 +1080,8 @@ test "resolveThroughArmour: susceptibility damages layer" {
         .dispersion = 0.0,
         .geometry_threshold = 0.5, // pierce at 2.0 penetration exceeds this
         .geometry_ratio = 0.5, // 50% of excess becomes damage
-        .momentum_threshold = 0.5, // amount 1.0 exceeds this
-        .momentum_ratio = 0.4, // 40% of excess becomes damage
+        .energy_threshold = 0.5, // amount 1.0 exceeds this
+        .energy_ratio = 0.4, // 40% of excess becomes damage
         .rigidity_threshold = 0.5, // pierce rigidity 1.0 exceeds this
         .rigidity_ratio = 0.3, // 30% of excess becomes damage
         .thickness = 0.0,
@@ -1202,8 +1202,8 @@ test "resolveThroughArmour: pierce stops when penetration exhausted" {
         .dispersion = 0.3,
         .geometry_threshold = 0.0,
         .geometry_ratio = 1.0,
-        .momentum_threshold = 0.0,
-        .momentum_ratio = 1.0,
+        .energy_threshold = 0.0,
+        .energy_ratio = 1.0,
         .rigidity_threshold = 0.0,
         .rigidity_ratio = 1.0,
         .thickness = 1.5,
@@ -1262,8 +1262,8 @@ test "resolveThroughArmour: bludgeon ignores penetration" {
         .dispersion = 0.3,
         .geometry_threshold = 0.0,
         .geometry_ratio = 1.0,
-        .momentum_threshold = 0.0,
-        .momentum_ratio = 1.0,
+        .energy_threshold = 0.0,
+        .energy_ratio = 1.0,
         .rigidity_threshold = 0.0,
         .rigidity_ratio = 1.0,
         .thickness = 5.0, // very thick - would stop pierce
@@ -1409,8 +1409,8 @@ test "resolveThroughArmour: layer integrity degrades" {
         .dispersion = 0.15,
         .geometry_threshold = 0.0,
         .geometry_ratio = 0.5,
-        .momentum_threshold = 0.15,
-        .momentum_ratio = 0.6,
+        .energy_threshold = 0.15,
+        .energy_ratio = 0.6,
         .rigidity_threshold = 0.15,
         .rigidity_ratio = 0.5,
         .thickness = 0.5,
@@ -1473,8 +1473,8 @@ test "full flow: armor absorption then body damage" {
         .dispersion = 0.15,
         .geometry_threshold = 0.2,
         .geometry_ratio = 0.5,
-        .momentum_threshold = 0.15,
-        .momentum_ratio = 0.6,
+        .energy_threshold = 0.15,
+        .energy_ratio = 0.6,
         .rigidity_threshold = 0.15,
         .rigidity_ratio = 0.5,
         .thickness = 0.3,
