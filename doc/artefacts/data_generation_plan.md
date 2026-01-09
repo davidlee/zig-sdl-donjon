@@ -125,6 +125,46 @@
 
 ---
 
+## 8. Wiring Plan – Tissues, Body Plans, Species (2026-01-09)
+
+Now that `data/bodies.cue` and the generator emit `GeneratedTissueTemplates`, `GeneratedBodyPlans`, and `GeneratedSpecies`, we need a staged plan to migrate runtime systems away from bespoke Zig tables.
+
+### 8.1 Required Schema Extensions
+- **Parent/enclosing references:** `PartDef` needs `parent` and `enclosing` IDs to build the anatomical tree. Extend `#BodyPart` with `parent` (attachment) and optional `enclosing` (protective shell). Enforce via CUE validation that parents exist and that enclosing targets live earlier in the structure to permit comptime construction.
+- **Exposure/coverage metadata:** current `HumanoidPlan` leans on hard-coded exposure tables (`humanoid_exposures`). We should either embed the exposure entries directly per part (prob weighted hit chance per height/side) or reference a shared exposure preset. Without this, hit selection can’t move off the static Zig array.
+- **Flag parity:** `#BodyPart.flags` already mirrors `PartDef.Flags`; ensure the schema explicitly validates boolean presence so we don’t silently drop capabilities (vision/hearing/grasp/stand).
+- **Tissue thickness alignment:** each template currently provides `thickness_ratio` weights, but we also need an absolute reference thickness per part to convert ratios into actual lengths when computing penetration. Add a `thickness_cm` on parts (already present) and ensure the generator computes derived layer thicknesses for convenience.
+
+### 8.2 Runtime Integration Strategy
+1. **Tissue templates first**
+   - Introduce a `body/generated_loader.zig` helper that imports `GeneratedTissueTemplates` and builds a comptime dictionary mapping `body.TissueTemplate` enum values to the generated layer stacks. This keeps the rest of the body code referencing the existing enum while allowing us to drive layer properties from data.
+   - Replace the hard-coded `layerResistance` absorption/pen tables with functions that consult the generated template → material stack (using the shielding/susceptibility coefficients from `data/materials.cue`). Until the three-axis resolution lands, emit equivalent `absorb`/`pen_cost` aggregates to preserve behaviour.
+2. **Body plan generation**
+   - Once `#BodyPart` stores `parent`/`enclosing`, write a comptime builder that walks `GeneratedBodyPlans.humanoid.parts`, resolves string IDs to `PartId`s, and produces the existing `PartDef` array. This preserves existing APIs (`body.HumanoidPlan`) but makes the data originate from CUE.
+   - Validate at comptime that the generated part count and tag coverage match the previous hard-coded plan (unit test can compare `body.HumanoidPlan.len` against a constant, or even diff by tag).
+3. **Species migration**
+   - Replace the Zig `Species` constants with a loader that instantiates species records from `GeneratedSpecies`. Natural weapons will reference the generated weapon IDs; add a mapping layer that resolves `weapon_id` strings to existing `weapon.Template` pointers (covering both hand-made Zig templates and generated ones until weapons fully migrate).
+   - Move per-species size/blood/stamina defaults into the generated table to retire the Zig definitions.
+4. **Armour/tissue integration**
+   - Use the shared materials from `GeneratedTissueTemplates.layers[].material_id` to build per-layer `armour.Material` references so armour and tissue layers literally use the same structs during combat resolution. This sets the stage for the unified layer stack from the Geometry review.
+
+### 8.3 Validation & Tooling
+- Extend the Python converter to emit assertions or warnings when:
+  - A `body_part.parent` reference is missing or loops back.
+  - A species references an unknown body plan or natural weapon ID.
+  - Tissue templates cite materials not defined in `data/materials.cue`.
+- Add a debug command (`just audit-data`) that dumps summaries (part count, coverage per tag, missing capabilities) so the data audit can inspect completeness without diving into Zig.
+
+### 8.4 Rollout Order
+1. Implement schema additions and converter updates (parents, exposures, species references).
+2. Land the tissue template loader and replace `layerResistance` to start consuming generated materials immediately.
+3. Port `HumanoidPlan` construction to use the generated body plan once the schema can describe the tree.
+4. Migrate species definitions, natural weapon bindings, and size scalars to the generated data.
+
+Each step should retain the existing external API (enum types, function signatures) so downstream systems stay stable while we transition data sources. Only after all consumers read from generated structures should we delete the old Zig constants.
+
+---
+
 ## Appendix: Bootstrap Commands
 
 - Author materials in `data/materials.cue` and validate via:

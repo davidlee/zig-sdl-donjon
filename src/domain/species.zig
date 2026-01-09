@@ -6,6 +6,7 @@
 const std = @import("std");
 const body = @import("body.zig");
 const weapon = @import("weapon.zig");
+const generated = @import("../gen/generated_data.zig");
 
 /// Creature categorisation tags for card/condition targeting.
 pub const Tag = enum {
@@ -51,6 +52,22 @@ pub const NaturalWeapon = struct {
     required_part: body.PartTag,
 };
 
+fn buildTagSet(names: []const []const u8) TagSet {
+    var set = TagSet.initEmpty();
+    inline for (names) |name| {
+        set.insert(parseTag(name));
+    }
+    return set;
+}
+
+fn parseTag(name: []const u8) Tag {
+    inline for (std.meta.fields(Tag)) |field| {
+        if (std.mem.eql(u8, name, field.name)) {
+            return @field(Tag, field.name);
+        }
+    }
+    @compileError("Unknown species tag '" ++ name ++ "'");
+}
 /// Species definition - body plan, natural weapons, base resources, tags.
 /// Recovery rates default to global values if not specified.
 pub const Species = struct {
@@ -176,34 +193,92 @@ pub const HEADBUTT = weapon.Template{
 };
 
 // ============================================================================
-// Species Definitions
+// Generated Species Integration
 // ============================================================================
 
-pub const DWARF = Species{
-    .name = "Dwarf",
-    .body_plan = &body.HumanoidPlan,
-    .natural_weapons = &.{
-        .{ .template = &FIST, .required_part = .hand },
-        .{ .template = &HEADBUTT, .required_part = .head },
-    },
-    .base_blood = 4.5,
-    .base_stamina = 12.0,
-    .base_focus = 8.0,
-    .tags = TagSet.initMany(&.{ .humanoid, .mammal }),
+const TotalNaturalWeapons = blk: {
+    var count: usize = 0;
+    for (generated.GeneratedSpecies) |entry| {
+        count += entry.natural_weapons.len;
+    }
+    break :blk count;
 };
 
-pub const GOBLIN = Species{
-    .name = "Goblin",
-    .body_plan = &body.HumanoidPlan,
-    .natural_weapons = &.{
-        .{ .template = &FIST, .required_part = .hand },
-        .{ .template = &BITE, .required_part = .head },
-    },
-    .base_blood = 3.5,
-    .base_stamina = 8.0,
-    .base_focus = 6.0,
-    .tags = TagSet.initMany(&.{ .humanoid, .mammal }),
+const SpeciesBuild = blk: {
+    var species_storage: [generated.GeneratedSpecies.len]Species = undefined;
+    var id_storage: [generated.GeneratedSpecies.len][]const u8 = undefined;
+    var natural_weapon_storage: [TotalNaturalWeapons]NaturalWeapon = undefined;
+    var cursor: usize = 0;
+
+    for (generated.GeneratedSpecies, 0..) |entry, idx| {
+        id_storage[idx] = entry.id;
+        const start = cursor;
+        for (entry.natural_weapons) |natural| {
+            natural_weapon_storage[cursor] = .{
+                .template = resolveNaturalWeaponTemplate(natural.weapon_id),
+                .required_part = natural.required_part,
+            };
+            cursor += 1;
+        }
+
+        const natural_slice = natural_weapon_storage[start..cursor];
+
+        species_storage[idx] = .{
+            .name = entry.name,
+            .body_plan = resolveBodyPlan(entry.body_plan),
+            .natural_weapons = natural_slice,
+            .base_blood = entry.base_blood,
+            .base_stamina = entry.base_stamina,
+            .base_focus = entry.base_focus,
+            .stamina_recovery = entry.stamina_recovery,
+            .focus_recovery = entry.focus_recovery,
+            .blood_recovery = entry.blood_recovery,
+            .tags = buildTagSet(entry.tags),
+        };
+    }
+
+    break :blk .{
+        .species = species_storage,
+        .ids = id_storage,
+        .natural_weapons = natural_weapon_storage,
+    };
 };
+
+fn resolveBodyPlan(name: []const u8) []const body.PartDef {
+    if (std.mem.eql(u8, name, "humanoid")) return &body.HumanoidPlan;
+    @compileError("Unknown body plan '" ++ name ++ "'");
+}
+
+fn resolveNaturalWeaponTemplate(name: []const u8) *const weapon.Template {
+    if (std.mem.eql(u8, name, "natural.fist")) return &FIST;
+    if (std.mem.eql(u8, name, "natural.bite")) return &BITE;
+    if (std.mem.eql(u8, name, "natural.headbutt")) return &HEADBUTT;
+    @compileError("Unknown natural weapon '" ++ name ++ "'");
+}
+
+fn speciesIndex(comptime id: []const u8) usize {
+    inline for (SpeciesBuild.ids, 0..) |entry, idx| {
+        if (std.mem.eql(u8, entry, id)) {
+            return idx;
+        }
+    }
+    @compileError("Unknown species id '" ++ id ++ "'");
+}
+
+fn getSpeciesPtr(comptime id: []const u8) *const Species {
+    return &SpeciesBuild.species[speciesIndex(id)];
+}
+
+pub const DWARF = getSpeciesPtr("dwarf").*;
+pub const GOBLIN = getSpeciesPtr("goblin").*;
+
+pub fn listAll() []const Species {
+    return SpeciesBuild.species[0..];
+}
+
+pub fn getById(comptime id: []const u8) *const Species {
+    return getSpeciesPtr(id);
+}
 
 // ============================================================================
 // Tests
