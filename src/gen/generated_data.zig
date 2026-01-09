@@ -1448,7 +1448,7 @@ pub const GeneratedBodyPlans = [_]BodyPlanDefinition{
     },
 };
 
-const NaturalWeaponRef = struct {
+pub const NaturalWeaponRef = struct {
     weapon_id: []const u8,
     required_part: body.PartTag,
 };

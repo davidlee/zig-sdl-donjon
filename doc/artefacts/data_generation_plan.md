@@ -163,6 +163,24 @@ Now that `data/bodies.cue` and the generator emit `GeneratedTissueTemplates`, `G
 
 Each step should retain the existing external API (enum types, function signatures) so downstream systems stay stable while we transition data sources. Only after all consumers read from generated structures should we delete the old Zig constants.
 
+### 8.5 String ID Coupling Problem
+
+Generated data references weapons, body plans, and other entities by string ID (e.g. `"natural.fist"`, `"humanoid"`). Zig code must resolve these to concrete types/pointers. This creates fragile coupling: if CUE adds/renames an ID without a corresponding Zig resolver, compilation succeeds but hits `unreachable` at comptime with no clear error.
+
+**Options:**
+
+**A. Generated ID enums** — Generator emits enums from CUE IDs:
+```zig
+pub const WeaponId = enum { @"natural.fist", @"natural.bite", ... };
+```
+Species reference by enum; Zig resolvers switch on enum. Missing cases cause clear compile errors about unhandled enum values. Moderate effort, good safety.
+
+**B. Full template generation** — Move weapon/body plan templates entirely into CUE. Generator emits complete `weapon.Template` structs. Eliminates resolver layer entirely. More work upfront but cleanest long-term; requires extending CUE schemas to capture attack/defence modes.
+
+**C. Comptime validation (interim)** — Add comptime block that iterates all generated data, extracts referenced IDs, and asserts each resolves. Fails at compile time with explicit message if CUE/Zig disagree. Cheap insurance while building toward A or B.
+
+**Decision:** Implement C now as safety net. Target B as the end state when weapon schemas mature.
+
 ---
 
 ## Appendix: Bootstrap Commands

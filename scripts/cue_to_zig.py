@@ -391,7 +391,7 @@ def emit_body_plans(plans: Dict[str, Any]) -> str:
 
 def emit_species(species_map: Dict[str, Any]) -> str:
     lines: List[str] = []
-    lines.append("const NaturalWeaponRef = struct {")
+    lines.append("pub const NaturalWeaponRef = struct {")
     lines.append("    weapon_id: []const u8,")
     lines.append("    required_part: body.PartTag,")
     lines.append("};")
