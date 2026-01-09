@@ -101,6 +101,7 @@ test {
     _ = @import("domain/species.zig");
     _ = @import("domain/resolution.zig");
     _ = @import("domain/weapon_list.zig");
+    _ = @import("domain/armour_list.zig");
     _ = @import("domain/tick.zig");
     _ = @import("testing/mod.zig");
 }

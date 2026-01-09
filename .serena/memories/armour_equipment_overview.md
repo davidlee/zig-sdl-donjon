@@ -1,5 +1,30 @@
 # Armour & Equipment Overview
-- `src/domain/armour.zig` models armor declaratively through templates and coverage patterns. A `Template` references a `Material` (resistance curves, durability, hardness/flexibility, quality) and a `Pattern` (list of `PatternCoverage` entries describing which `PartTag`+`Side` each layer protects, the `Totality` of coverage, and layer ordering).
-- At runtime, equipping creates `Instance` structs with `InstanceCoverage` records keyed by body part/side/layer, tracking totality, material, and integrity per layer. `Stack.buildFromEquipped` aggregates all equipped pieces into a per-part armor stack without bespoke code per armour type.
-- Resolution APIs (`resolveThroughArmour` / `resolveThroughArmourWithEvents`) process incoming damage packets layer by layer, applying material resistances/vulnerabilities, hardness deflections, penetration reduction, and gap chances. Results report remaining penetration, deflection flags, destroyed layers, and event hooks so downstream systems can respond generically.
-- Because both material behavior and coverage are data-driven, adding new armor types only requires new templates/patterns. Combat/damage logic always queries the stack for protection, keeping the pipeline flexible and composable with other systems (body plans, events, condition triggers).
+
+## Data Model (3-Axis Physics)
+- `src/domain/armour.zig` models armor through `Material` using 3-axis physics:
+  - **Shielding** (protects layers beneath): deflection, absorption, dispersion
+  - **Susceptibility** (damage to layer itself): geometry_threshold/ratio, momentum_threshold/ratio, rigidity_threshold/ratio
+  - **Shape** modifiers: ShapeProfile enum (solid, mesh, quilted, laminar, composite) with bonus adjustments
+- `Template` references `Material` and `Pattern` (coverage specs)
+- `Instance` is runtime state with integrity tracking per covered part
+
+## Generated Data Pipeline
+- CUE definitions in `data/materials.cue`, `data/armour.cue` define materials and pieces
+- `scripts/cue_to_zig.py` generates `src/gen/generated_data.zig` with `ArmourMaterialDefinition`, `ArmourPieceDefinition`
+- `src/domain/armour_list.zig` provides:
+  - `buildMaterial()` - converts CUE definition to runtime `Material`
+  - `Materials`, `Patterns`, `Templates` - static comptime-built lookup tables
+  - `getMaterial(id)`, `getTemplate(id)` - comptime ID-based lookup
+
+## Runtime Flow
+- `Instance.init(allocator, template, side)` creates armor instance from template
+- `Stack.buildFromEquipped(body, equipped_instances)` aggregates coverage into per-part protection
+- `resolveThroughArmour(stack, part_idx, packet, rng)` processes damage through layers using 3-axis physics
+
+## Resolution Algorithm (3-axis)
+For each layer (outer to inner):
+1. Gap check (random based on totality)
+2. Derive axes: geometry=penetration, momentum=amount, rigidity=f(damage.Kind)
+3. Susceptibility: layer damage = Σ (axis - threshold) * ratio for each axis
+4. Shielding: remaining.penetration = geo * (1 - deflection) - thickness; remaining.amount = mom * (1 - absorption)
+5. Stop conditions: piercing/slashing stops if penetration=0; any attack stops if amount<0.05

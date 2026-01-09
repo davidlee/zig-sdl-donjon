@@ -15,7 +15,7 @@ const world = @import("world.zig");
 const Resistance = damage.Resistance;
 const Vulnerability = damage.Vulnerability;
 
-const Quality = enum {
+pub const Quality = enum {
     terrible,
     poor,
     common,
@@ -33,27 +33,80 @@ const Quality = enum {
     }
 };
 
-const Material = struct {
+/// Shape profile affects how material properties manifest in practice.
+/// A quilted gambeson absorbs differently than solid plate of similar material.
+pub const ShapeProfile = enum {
+    solid, // rigid continuous surface (plate)
+    mesh, // interlocking rings/links (mail)
+    quilted, // layered padding (gambeson)
+    laminar, // overlapping scales/bands
+    composite, // mixed construction
+
+    pub fn fromString(s: []const u8) ShapeProfile {
+        if (std.mem.eql(u8, s, "solid")) return .solid;
+        if (std.mem.eql(u8, s, "mesh")) return .mesh;
+        if (std.mem.eql(u8, s, "quilted")) return .quilted;
+        if (std.mem.eql(u8, s, "laminar")) return .laminar;
+        if (std.mem.eql(u8, s, "composite")) return .composite;
+        return .solid; // default
+    }
+};
+
+/// Material properties using the 3-axis physics model.
+///
+/// Shielding coefficients (0-1) describe how the layer protects what's beneath:
+/// - deflection: redirect/blunt penetrating edges before they enter
+/// - absorption: soak energy into the layer's own structure
+/// - dispersion: spread residual force across a larger area
+///
+/// Susceptibility (threshold + ratio per axis) describes how the layer itself
+/// takes damage. Threshold is minimum to cause damage; ratio is multiplier
+/// for excess.
+pub const Material = struct {
     name: []const u8,
+    quality: Quality = .common,
 
-    // these modify to the wearer
-    resistances: []const Resistance,
-    vulnerabilities: []const Vulnerability,
+    // === Shielding (protects layers beneath) ===
+    deflection: f32, // 0-1, chance to redirect/blunt geometry
+    absorption: f32, // 0-1, fraction of energy soaked
+    dispersion: f32, // 0-1, force spread to larger area
 
-    // these modify to the material itself
-    self_resistances: []const Resistance,
-    self_vulnerabilities: []const Vulnerability,
+    // === Susceptibility (damage to this layer) ===
+    geometry_threshold: f32,
+    geometry_ratio: f32,
+    momentum_threshold: f32, // "energy" in design doc
+    momentum_ratio: f32,
+    rigidity_threshold: f32,
+    rigidity_ratio: f32,
 
-    quality: Quality,
-    durability: f32, // base - modified by size, quality, etc
-    thickness: f32, // cm - affects penetration cost
-    hardness: f32, // deflection chance for glancing blows
-    flexibility: f32, // affects mobility penalty, gap size
+    // === Shape modifiers ===
+    shape: ShapeProfile = .solid,
+    shape_dispersion_bonus: f32 = 0,
+    shape_absorption_bonus: f32 = 0,
+
+    // === Physical properties ===
+    thickness: f32 = 0, // cm - material path that attack must cut through
+    durability: f32 = 100, // base integrity for armour instances
+
+    /// Effective deflection including shape bonus (clamped 0-1)
+    pub fn effectiveDeflection(self: Material) f32 {
+        return @min(1.0, @max(0.0, self.deflection));
+    }
+
+    /// Effective absorption including shape bonus (clamped 0-1)
+    pub fn effectiveAbsorption(self: Material) f32 {
+        return @min(1.0, @max(0.0, self.absorption + self.shape_absorption_bonus));
+    }
+
+    /// Effective dispersion including shape bonus (clamped 0-1)
+    pub fn effectiveDispersion(self: Material) f32 {
+        return @min(1.0, @max(0.0, self.dispersion + self.shape_dispersion_bonus));
+    }
 };
 
 // coverage of a particular part by a particular material - or,
 // how hard is it to get around the tough stuff with a lucky stab or a shiv in the kidneys?
-const Totality = enum {
+pub const Totality = enum {
     // full-fit simple construction (gambeson, etc) with no secondary materials
     total,
     // as good as it gets. More fully articulated plates than a pixar film about anthropomorphic
@@ -90,19 +143,19 @@ const InstanceCoverage = struct {
 };
 
 /// Design-time coverage pattern - reusable across bodies
-const PatternCoverage = struct {
+pub const PatternCoverage = struct {
     part_tags: []const body.PartTag,
-    side: ?body.Side, // null = assigned on instantiation (e.g., "left pauldron")
+    side: ?body.Side = null, // null = assigned on instantiation (e.g., "left pauldron")
     layer: inventory.Layer,
     totality: Totality,
 };
 
-const Pattern = struct {
+pub const Pattern = struct {
     coverage: []const PatternCoverage,
 };
 
 // designed to be easily definable at comptime
-const Template = struct {
+pub const Template = struct {
     id: u64,
     name: []const u8,
     material: *const Material,
@@ -110,7 +163,7 @@ const Template = struct {
 };
 
 /// A specific piece of armor with runtime state
-const Instance = struct {
+pub const Instance = struct {
     name: []const u8,
     template_id: u64,
     id: entity.ID,
@@ -215,7 +268,7 @@ pub const Stack = struct {
 };
 
 /// Resolve PartTag + Side to PartIndex for a specific body
-fn resolvePartIndex(bod: *const body.Body, tag: body.PartTag, side: body.Side) ?body.PartIndex {
+pub fn resolvePartIndex(bod: *const body.Body, tag: body.PartTag, side: body.Side) ?body.PartIndex {
     // Search for matching part - TODO: could precompute (tag,side) → index map
     for (bod.parts.items, 0..) |part, i| {
         if (part.tag == tag and part.side == side) {
@@ -230,13 +283,35 @@ pub const AbsorptionResult = struct {
     remaining: damage.Packet, // damage that reached the body
     gap_found: bool, // attack bypassed armour entirely
     layers_hit: u8, // number of armour layers damaged
-    deflected: bool, // hardness deflection stopped the attack
-    deflected_at_layer: ?u8, // which layer deflected (if any)
+    deflected: bool, // shielding reduced attack to negligible (effectively blocked)
+    deflected_at_layer: ?u8, // which layer blocked (if any)
     layers_destroyed: u8, // layers that hit 0 integrity this resolution
 };
 
+/// Derive rigidity coefficient from damage kind.
+/// Rigidity represents how concentrated/structurally-supported the striking surface is.
+/// Higher rigidity = force stays concentrated rather than spreading.
+fn deriveRigidity(kind: damage.Kind) f32 {
+    return switch (kind) {
+        // Physical damage kinds
+        .pierce => 1.0, // concentrated tip, fully supported
+        .slash => 0.7, // edge cuts but less concentrated than pierce
+        .bludgeon => 0.8, // blunt impact, some spread
+        .crush => 1.0, // overwhelming concentrated force
+        .shatter => 1.0, // brittle fracturing, high concentration
+        // Non-physical kinds have no rigidity component
+        else => 0.0,
+    };
+}
+
 /// Process a damage packet through armour layers, returning what reaches the body.
 /// Mutates layer integrity as armour is damaged.
+///
+/// Uses 3-axis physics model:
+/// - Geometry (penetration): reduced by deflection
+/// - Momentum (amount): reduced by absorption
+/// - Rigidity (from damage kind): affects susceptibility calculations
+///
 /// NOTE: For production use resolveThroughArmourWithEvents which uses World.drawRandom
 /// and emits events. This function is public for testing with controlled RNG.
 pub fn resolveThroughArmour(
@@ -263,57 +338,61 @@ pub fn resolveThroughArmour(
 
         const integrity_before = layer.integrity.*;
 
-        // Gap check - attack might find a hole
+        // Gap check - attack might find a hole in coverage
         if (rng.float(f32) < layer.totality.gapChance()) {
             continue; // slipped through
         }
 
         layers_hit += 1;
 
-        // Hardness check - glancing blow deflection
-        if (rng.float(f32) < layer.material.hardness) {
-            // Deflected - minimal damage to armour, attack stopped
-            layer.integrity.* -= remaining.amount * 0.1;
-            remaining.amount = 0;
-            deflected = true;
-            deflected_at_layer = @intCast(layer_idx);
-            if (integrity_before > 0 and layer.integrity.* <= 0) {
-                layers_destroyed += 1;
-            }
-            break;
-        }
+        // === Derive axes from current packet ===
+        const geometry = remaining.penetration;
+        const momentum = remaining.amount;
+        const rigidity = deriveRigidity(remaining.kind);
+        const mat = layer.material;
 
-        // Material resistance reduces damage
-        const resistance = getMaterialResistance(layer.material, remaining.kind);
-        if (remaining.amount < resistance.threshold) {
-            // Below threshold - no penetration, minor armour wear
-            layer.integrity.* -= remaining.amount * 0.05;
-            remaining.amount = 0;
-            if (integrity_before > 0 and layer.integrity.* <= 0) {
-                layers_destroyed += 1;
-            }
-            break;
-        }
+        // === Susceptibility: compute damage to this layer ===
+        // Layer takes damage when incoming axes exceed its thresholds
+        const geo_excess = @max(0.0, geometry - mat.geometry_threshold);
+        const mom_excess = @max(0.0, momentum - mat.momentum_threshold);
+        const rig_excess = @max(0.0, rigidity - mat.rigidity_threshold);
 
-        // Damage that gets through
-        const effective_damage = (remaining.amount - resistance.threshold) * resistance.ratio;
-        const absorbed = remaining.amount - effective_damage;
+        const layer_damage =
+            geo_excess * mat.geometry_ratio +
+            mom_excess * mat.momentum_ratio +
+            rig_excess * mat.rigidity_ratio;
 
-        // Armour takes damage
-        layer.integrity.* -= absorbed * 0.5;
+        layer.integrity.* -= layer_damage;
         if (integrity_before > 0 and layer.integrity.* <= 0) {
             layers_destroyed += 1;
         }
 
-        // Penetration reduced by thickness
-        remaining.penetration -= layer.material.thickness;
-        remaining.amount = effective_damage;
+        // === Shielding: compute what passes through to next layer ===
+        // Deflection reduces geometry (blunts/redirects penetrating edges)
+        // Absorption reduces momentum (soaks energy into layer)
+        // Thickness is a flat geometry reduction (material path to cut through)
+        const deflection_coeff = mat.effectiveDeflection();
+        const absorption_coeff = mat.effectiveAbsorption();
 
-        // If penetration exhausted, stop (for piercing/slashing)
+        remaining.penetration = geometry * (1.0 - deflection_coeff) - mat.thickness;
+        remaining.penetration = @max(0.0, remaining.penetration);
+        remaining.amount = momentum * (1.0 - absorption_coeff);
+
+        // Penetration exhausted - piercing/slashing attacks stop
         if (remaining.penetration <= 0 and
             (remaining.kind == .pierce or remaining.kind == .slash))
         {
             remaining.amount = 0;
+            deflected = true;
+            deflected_at_layer = @intCast(layer_idx);
+            break;
+        }
+
+        // Attack fully absorbed - negligible damage remains
+        if (remaining.amount < 0.05) {
+            remaining.amount = 0;
+            deflected = true;
+            deflected_at_layer = @intCast(layer_idx);
             break;
         }
     }
@@ -329,6 +408,7 @@ pub fn resolveThroughArmour(
 }
 
 /// Production wrapper: resolves armour using World.drawRandom and emits events.
+/// Uses same 3-axis physics model as resolveThroughArmour.
 pub fn resolveThroughArmourWithEvents(
     w: *world.World,
     agent_id: entity.ID,
@@ -357,7 +437,7 @@ pub fn resolveThroughArmourWithEvents(
         const integrity_before = layer.integrity.*;
         const layer_u8: u8 = @intCast(layer_idx);
 
-        // Gap check
+        // Gap check - attack might find a hole in coverage
         const gap_roll = try w.drawRandom(.combat);
         if (gap_roll < layer.totality.gapChance()) {
             try w.events.push(.{ .attack_found_gap = .{
@@ -372,56 +452,23 @@ pub fn resolveThroughArmourWithEvents(
 
         layers_hit += 1;
 
-        // Hardness check
-        const hardness_roll = try w.drawRandom(.combat);
-        if (hardness_roll < layer.material.hardness) {
-            layer.integrity.* -= remaining.amount * 0.1;
-            remaining.amount = 0;
-            deflected = true;
-            deflected_at_layer = layer_u8;
+        // === Derive axes from current packet ===
+        const geometry = remaining.penetration;
+        const momentum = remaining.amount;
+        const rigidity = deriveRigidity(remaining.kind);
+        const mat = layer.material;
 
-            try w.events.push(.{ .armour_deflected = .{
-                .agent_id = agent_id,
-                .part_idx = part_idx,
-                .part_tag = part_tag,
-                .part_side = part_side,
-                .layer = layer_u8,
-            } });
+        // === Susceptibility: compute damage to this layer ===
+        const geo_excess = @max(0.0, geometry - mat.geometry_threshold);
+        const mom_excess = @max(0.0, momentum - mat.momentum_threshold);
+        const rig_excess = @max(0.0, rigidity - mat.rigidity_threshold);
 
-            if (integrity_before > 0 and layer.integrity.* <= 0) {
-                layers_destroyed += 1;
-                try w.events.push(.{ .armour_layer_destroyed = .{
-                    .agent_id = agent_id,
-                    .part_idx = part_idx,
-                    .part_tag = part_tag,
-                    .part_side = part_side,
-                    .layer = layer_u8,
-                } });
-            }
-            break;
-        }
+        const layer_damage =
+            geo_excess * mat.geometry_ratio +
+            mom_excess * mat.momentum_ratio +
+            rig_excess * mat.rigidity_ratio;
 
-        const resistance = getMaterialResistance(layer.material, remaining.kind);
-        if (remaining.amount < resistance.threshold) {
-            layer.integrity.* -= remaining.amount * 0.05;
-            remaining.amount = 0;
-            if (integrity_before > 0 and layer.integrity.* <= 0) {
-                layers_destroyed += 1;
-                try w.events.push(.{ .armour_layer_destroyed = .{
-                    .agent_id = agent_id,
-                    .part_idx = part_idx,
-                    .part_tag = part_tag,
-                    .part_side = part_side,
-                    .layer = layer_u8,
-                } });
-            }
-            break;
-        }
-
-        const effective_damage = (remaining.amount - resistance.threshold) * resistance.ratio;
-        const absorbed = remaining.amount - effective_damage;
-
-        layer.integrity.* -= absorbed * 0.5;
+        layer.integrity.* -= layer_damage;
         if (integrity_before > 0 and layer.integrity.* <= 0) {
             layers_destroyed += 1;
             try w.events.push(.{ .armour_layer_destroyed = .{
@@ -433,13 +480,43 @@ pub fn resolveThroughArmourWithEvents(
             } });
         }
 
-        remaining.penetration -= layer.material.thickness;
-        remaining.amount = effective_damage;
+        // === Shielding: compute what passes through to next layer ===
+        const deflection_coeff = mat.effectiveDeflection();
+        const absorption_coeff = mat.effectiveAbsorption();
 
+        remaining.penetration = geometry * (1.0 - deflection_coeff) - mat.thickness;
+        remaining.penetration = @max(0.0, remaining.penetration);
+        remaining.amount = momentum * (1.0 - absorption_coeff);
+
+        // Penetration exhausted - piercing/slashing attacks stop
         if (remaining.penetration <= 0 and
             (remaining.kind == .pierce or remaining.kind == .slash))
         {
             remaining.amount = 0;
+            deflected = true;
+            deflected_at_layer = layer_u8;
+            try w.events.push(.{ .armour_deflected = .{
+                .agent_id = agent_id,
+                .part_idx = part_idx,
+                .part_tag = part_tag,
+                .part_side = part_side,
+                .layer = layer_u8,
+            } });
+            break;
+        }
+
+        // Attack fully absorbed - negligible damage remains
+        if (remaining.amount < 0.05) {
+            remaining.amount = 0;
+            deflected = true;
+            deflected_at_layer = layer_u8;
+            try w.events.push(.{ .armour_deflected = .{
+                .agent_id = agent_id,
+                .part_idx = part_idx,
+                .part_tag = part_tag,
+                .part_side = part_side,
+                .layer = layer_u8,
+            } });
             break;
         }
     }
@@ -467,14 +544,6 @@ pub fn resolveThroughArmourWithEvents(
     };
 }
 
-fn getMaterialResistance(material: *const Material, kind: damage.Kind) Resistance {
-    for (material.self_resistances) |res| {
-        if (res.damage == kind) return res;
-    }
-    // No specific resistance - use defaults
-    return .{ .damage = kind, .threshold = 0, .ratio = 1.0 };
-}
-
 // =============================================================================
 // Tests
 // =============================================================================
@@ -482,69 +551,94 @@ fn getMaterialResistance(material: *const Material, kind: damage.Kind) Resistanc
 // --- Test fixtures ---
 
 const TestMaterials = struct {
-    // Cloth: soft, flexible, minimal protection
+    // Cloth/gambeson: soft padding, absorbs energy, poor vs geometry
     pub const cloth = Material{
         .name = "cloth",
-        .resistances = &.{},
-        .vulnerabilities = &.{},
-        .self_resistances = &.{
-            .{ .damage = .slash, .threshold = 0.0, .ratio = 0.9 },
-        },
-        .self_vulnerabilities = &.{},
         .quality = .common,
-        .durability = 0.5,
+        // Shielding: absorbs well, doesn't deflect or disperse
+        .deflection = 0.1,
+        .absorption = 0.5,
+        .dispersion = 0.3,
+        // Susceptibility: easily cut/pierced, resists blunt better
+        .geometry_threshold = 0.02,
+        .geometry_ratio = 0.9,
+        .momentum_threshold = 0.1,
+        .momentum_ratio = 0.6,
+        .rigidity_threshold = 0.05,
+        .rigidity_ratio = 0.7,
+        // Shape
+        .shape = .quilted,
+        .shape_absorption_bonus = 0.1,
+        .shape_dispersion_bonus = 0.1,
+        // Physical
         .thickness = 0.2,
-        .hardness = 0.0,
-        .flexibility = 0.9,
+        .durability = 50,
     };
 
-    // Mail: good vs slash, weak vs pierce, medium hardness
+    // Mail: mesh of rings, good vs slash (geometry), weak vs thrust, poor vs blunt
     pub const mail = Material{
         .name = "chainmail",
-        .resistances = &.{},
-        .vulnerabilities = &.{},
-        .self_resistances = &.{
-            .{ .damage = .slash, .threshold = 0.3, .ratio = 0.3 },
-            .{ .damage = .pierce, .threshold = 0.1, .ratio = 0.7 },
-        },
-        .self_vulnerabilities = &.{},
         .quality = .common,
-        .durability = 1.0,
+        // Shielding: deflects edges, minimal absorption
+        .deflection = 0.55,
+        .absorption = 0.25,
+        .dispersion = 0.15,
+        // Susceptibility: rings stop cuts, thrusts can slip through, blunt transfers
+        .geometry_threshold = 0.15,
+        .geometry_ratio = 0.5,
+        .momentum_threshold = 0.2,
+        .momentum_ratio = 0.7,
+        .rigidity_threshold = 0.2,
+        .rigidity_ratio = 0.6,
+        // Shape
+        .shape = .mesh,
+        .shape_absorption_bonus = 0.05,
+        .shape_dispersion_bonus = -0.05,
+        // Physical
         .thickness = 0.5,
-        .hardness = 0.3,
-        .flexibility = 0.5,
+        .durability = 100,
     };
 
-    // Plate: high hardness, high threshold, excellent protection
+    // Plate: rigid surface, excellent deflection, transmits blunt force
     pub const plate = Material{
         .name = "steel plate",
-        .resistances = &.{},
-        .vulnerabilities = &.{},
-        .self_resistances = &.{
-            .{ .damage = .slash, .threshold = 0.5, .ratio = 0.2 },
-            .{ .damage = .pierce, .threshold = 0.4, .ratio = 0.3 },
-            .{ .damage = .bludgeon, .threshold = 0.2, .ratio = 0.6 },
-        },
-        .self_vulnerabilities = &.{},
         .quality = .excellent,
-        .durability = 2.0,
+        // Shielding: great deflection, poor absorption, some dispersion
+        .deflection = 0.85,
+        .absorption = 0.2,
+        .dispersion = 0.35,
+        // Susceptibility: hard to damage, but concentrated force gets through
+        .geometry_threshold = 0.3,
+        .geometry_ratio = 0.3,
+        .momentum_threshold = 0.4,
+        .momentum_ratio = 0.5,
+        .rigidity_threshold = 0.35,
+        .rigidity_ratio = 0.4,
+        // Shape
+        .shape = .solid,
+        .shape_absorption_bonus = -0.05,
+        .shape_dispersion_bonus = 0.1,
+        // Physical
         .thickness = 1.0,
-        .hardness = 0.8,
-        .flexibility = 0.1,
+        .durability = 200,
     };
 
-    // For tests that need no resistances
+    // Bare: no protection at all
     pub const bare = Material{
         .name = "bare",
-        .resistances = &.{},
-        .vulnerabilities = &.{},
-        .self_resistances = &.{},
-        .self_vulnerabilities = &.{},
         .quality = .common,
-        .durability = 1.0,
-        .thickness = 0.0,
-        .hardness = 0.0,
-        .flexibility = 1.0,
+        .deflection = 0,
+        .absorption = 0,
+        .dispersion = 0,
+        .geometry_threshold = 0,
+        .geometry_ratio = 1.0,
+        .momentum_threshold = 0,
+        .momentum_ratio = 1.0,
+        .rigidity_threshold = 0,
+        .rigidity_ratio = 1.0,
+        .shape = .solid,
+        .thickness = 0,
+        .durability = 0,
     };
 };
 
@@ -706,30 +800,6 @@ test "Totality.gapChance returns expected values" {
     try std.testing.expectEqual(@as(f32, 0.50), Totality.minimal.gapChance());
 }
 
-test "getMaterialResistance returns specific resistance when defined" {
-    // Mail has specific slash resistance
-    const res = getMaterialResistance(&TestMaterials.mail, .slash);
-    try std.testing.expectEqual(@as(f32, 0.3), res.threshold);
-    try std.testing.expectEqual(@as(f32, 0.3), res.ratio);
-
-    // Plate has different pierce resistance
-    const plate_res = getMaterialResistance(&TestMaterials.plate, .pierce);
-    try std.testing.expectEqual(@as(f32, 0.4), plate_res.threshold);
-    try std.testing.expectEqual(@as(f32, 0.3), plate_res.ratio);
-}
-
-test "getMaterialResistance returns default for undefined damage type" {
-    // Mail has no fire resistance defined
-    const res = getMaterialResistance(&TestMaterials.mail, .fire);
-    try std.testing.expectEqual(@as(f32, 0.0), res.threshold);
-    try std.testing.expectEqual(@as(f32, 1.0), res.ratio);
-
-    // Bare material has no resistances at all
-    const bare_res = getMaterialResistance(&TestMaterials.bare, .slash);
-    try std.testing.expectEqual(@as(f32, 0.0), bare_res.threshold);
-    try std.testing.expectEqual(@as(f32, 1.0), bare_res.ratio);
-}
-
 test "Stack.buildFromEquipped populates coverage map" {
     const alloc = std.testing.allocator;
 
@@ -873,11 +943,10 @@ test "resolveThroughArmour: gap found bypasses layer" {
     try std.testing.expect(found_gap);
 }
 
-test "resolveThroughArmour: hardness deflects attack" {
+test "resolveThroughArmour: high deflection reduces penetration" {
     const alloc = std.testing.allocator;
 
-    // Plate has hardness = 0.8, totality = .intimidating (5% gap)
-    // Use .total totality to eliminate gap chance
+    // Plate has deflection=0.85, high deflection should significantly reduce geometry
     const solid_pattern = Pattern{
         .coverage = &.{.{
             .part_tags = &.{.torso},
@@ -905,35 +974,34 @@ test "resolveThroughArmour: hardness deflects attack" {
     try stack.buildFromEquipped(&bod, &equipped);
 
     const torso_idx = resolvePartIndex(&bod, .torso, .center).?;
+    // Slash with moderate penetration - plate should reduce it significantly
     const packet = damage.Packet{ .amount = 1.0, .kind = .slash, .penetration = 1.0 };
 
-    // Find a seed that deflects (second float < 0.8 hardness)
-    var seed: u64 = 0;
-    while (seed < 100) : (seed += 1) {
-        var prng = testRng(seed);
-        var rng = prng.random();
+    var prng = testRng(42);
+    var rng = prng.random();
 
-        const initial_integrity = armor.coverage[0].integrity;
-        const result = resolveThroughArmour(&stack, torso_idx, packet, &rng);
+    const initial_integrity = armor.coverage[0].integrity;
+    const result = resolveThroughArmour(&stack, torso_idx, packet, &rng);
 
-        // If deflected: amount=0, layers_hit=1, minor armor damage
-        if (result.remaining.amount == 0 and result.layers_hit == 1) {
-            // Armor took 10% of original damage
-            const integrity_loss = initial_integrity - armor.coverage[0].integrity;
-            try std.testing.expect(integrity_loss > 0);
-            try std.testing.expect(integrity_loss <= packet.amount * 0.15); // some tolerance
-            break;
-        }
+    // Penetration reduced: 1.0 * (1 - 0.85) - 1.0 (thickness) = -0.85 -> clamped to 0
+    // Slash attack with 0 penetration is stopped (deflected)
+    try std.testing.expectEqual(@as(f32, 0), result.remaining.penetration);
+    try std.testing.expect(result.deflected);
 
-        // Reset for next attempt
-        armor.coverage[0].integrity = TestMaterials.plate.durability * Quality.excellent.durabilityMult();
-    }
+    // Layer should take susceptibility damage based on incoming axes
+    // geometry=1.0, excess = 1.0 - 0.3 = 0.7, damage = 0.7 * 0.3 = 0.21
+    // momentum=1.0, excess = 1.0 - 0.4 = 0.6, damage = 0.6 * 0.5 = 0.30
+    // rigidity=0.7 (slash), excess = 0.7 - 0.35 = 0.35, damage = 0.35 * 0.4 = 0.14
+    // total ~= 0.65
+    const integrity_loss = initial_integrity - armor.coverage[0].integrity;
+    try std.testing.expect(integrity_loss > 0.5);
+    try std.testing.expect(integrity_loss < 0.8);
 }
 
-test "resolveThroughArmour: resistance threshold blocks weak attacks" {
+test "resolveThroughArmour: absorption reduces momentum" {
     const alloc = std.testing.allocator;
 
-    // Plate has slash threshold=0.5 - attacks below this are blocked
+    // Test that absorption reduces the amount (momentum) that passes through
     const solid_pattern = Pattern{
         .coverage = &.{.{
             .part_tags = &.{.torso},
@@ -943,33 +1011,33 @@ test "resolveThroughArmour: resistance threshold blocks weak attacks" {
         }},
     };
 
-    // Create material with 0 hardness to skip deflection
-    const soft_plate = Material{
-        .name = "soft plate",
-        .resistances = &.{},
-        .vulnerabilities = &.{},
-        .self_resistances = &.{
-            .{ .damage = .slash, .threshold = 0.5, .ratio = 0.2 },
-        },
-        .self_vulnerabilities = &.{},
-        .quality = .common,
-        .durability = 2.0,
-        .thickness = 1.0,
-        .hardness = 0.0, // no deflection
-        .flexibility = 0.1,
+    // Material with high absorption, no deflection, no thickness
+    const absorbing_material = Material{
+        .name = "absorbing",
+        .deflection = 0.0,
+        .absorption = 0.6, // 60% absorption
+        .dispersion = 0.0,
+        .geometry_threshold = 10.0, // high thresholds = no layer damage
+        .geometry_ratio = 0.0,
+        .momentum_threshold = 10.0,
+        .momentum_ratio = 0.0,
+        .rigidity_threshold = 10.0,
+        .rigidity_ratio = 0.0,
+        .thickness = 0.0,
+        .durability = 200,
     };
 
-    const soft_template = Template{
+    const absorbing_template = Template{
         .id = 102,
-        .name = "soft plate",
-        .material = &soft_plate,
+        .name = "absorbing",
+        .material = &absorbing_material,
         .pattern = &solid_pattern,
     };
 
     var bod = try makeTestBody(alloc);
     defer bod.deinit();
 
-    var armor = try Instance.init(alloc, &soft_template, null);
+    var armor = try Instance.init(alloc, &absorbing_template, null);
     defer armor.deinit(alloc);
 
     var stack = Stack.init(alloc);
@@ -979,28 +1047,22 @@ test "resolveThroughArmour: resistance threshold blocks weak attacks" {
 
     const torso_idx = resolvePartIndex(&bod, .torso, .center).?;
 
-    // Attack below threshold
-    const weak_packet = damage.Packet{ .amount = 0.3, .kind = .slash, .penetration = 1.0 };
+    // Bludgeon attack - not affected by penetration exhaustion
+    const packet = damage.Packet{ .amount = 1.0, .kind = .bludgeon, .penetration = 0.5 };
     var prng = testRng(42);
     var rng = prng.random();
 
-    const initial_integrity = armor.coverage[0].integrity;
-    const result = resolveThroughArmour(&stack, torso_idx, weak_packet, &rng);
+    const result = resolveThroughArmour(&stack, torso_idx, packet, &rng);
 
-    // Attack blocked
-    try std.testing.expectEqual(@as(f32, 0), result.remaining.amount);
+    // Amount reduced by 60% absorption: 1.0 * (1 - 0.6) = 0.4
+    try std.testing.expectApproxEqAbs(@as(f32, 0.4), result.remaining.amount, 0.01);
     try std.testing.expectEqual(@as(u8, 1), result.layers_hit);
-
-    // Minor armor wear (5% of attack)
-    const integrity_loss = initial_integrity - armor.coverage[0].integrity;
-    try std.testing.expect(integrity_loss > 0);
-    try std.testing.expect(integrity_loss <= weak_packet.amount * 0.1);
 }
 
-test "resolveThroughArmour: damage reduction applies correctly" {
+test "resolveThroughArmour: susceptibility damages layer" {
     const alloc = std.testing.allocator;
 
-    // Material with threshold=0.1, ratio=0.7 for pierce (mail)
+    // Test that incoming axes above thresholds damage the layer
     const solid_pattern = Pattern{
         .coverage = &.{.{
             .part_tags = &.{.torso},
@@ -1010,20 +1072,20 @@ test "resolveThroughArmour: damage reduction applies correctly" {
         }},
     };
 
-    // Use mail but with 0 hardness for predictable test
+    // Material with specific susceptibility values for predictable damage
     const test_mail = Material{
         .name = "test mail",
-        .resistances = &.{},
-        .vulnerabilities = &.{},
-        .self_resistances = &.{
-            .{ .damage = .pierce, .threshold = 0.1, .ratio = 0.7 },
-        },
-        .self_vulnerabilities = &.{},
-        .quality = .common,
-        .durability = 1.0,
-        .thickness = 0.5,
-        .hardness = 0.0,
-        .flexibility = 0.5,
+        .deflection = 0.0, // no reduction to geometry
+        .absorption = 0.0, // no reduction to momentum
+        .dispersion = 0.0,
+        .geometry_threshold = 0.5, // pierce at 2.0 penetration exceeds this
+        .geometry_ratio = 0.5, // 50% of excess becomes damage
+        .momentum_threshold = 0.5, // amount 1.0 exceeds this
+        .momentum_ratio = 0.4, // 40% of excess becomes damage
+        .rigidity_threshold = 0.5, // pierce rigidity 1.0 exceeds this
+        .rigidity_ratio = 0.3, // 30% of excess becomes damage
+        .thickness = 0.0,
+        .durability = 100,
     };
 
     const test_template = Template{
@@ -1046,16 +1108,25 @@ test "resolveThroughArmour: damage reduction applies correctly" {
 
     const torso_idx = resolvePartIndex(&bod, .torso, .center).?;
 
-    // Attack: amount=1.0, threshold=0.1, ratio=0.7
-    // Expected: (1.0 - 0.1) * 0.7 = 0.63 passes through
+    // Pierce attack: geometry=2.0, momentum=1.0, rigidity=1.0
     const packet = damage.Packet{ .amount = 1.0, .kind = .pierce, .penetration = 2.0 };
     var prng = testRng(42);
     var rng = prng.random();
 
+    const initial_integrity = armor.coverage[0].integrity;
     const result = resolveThroughArmour(&stack, torso_idx, packet, &rng);
 
-    const expected = (1.0 - 0.1) * 0.7;
-    try std.testing.expectApproxEqAbs(expected, result.remaining.amount, 0.01);
+    // Expected layer damage:
+    // geo: (2.0 - 0.5) * 0.5 = 0.75
+    // mom: (1.0 - 0.5) * 0.4 = 0.20
+    // rig: (1.0 - 0.5) * 0.3 = 0.15
+    // total = 1.10
+    const expected_damage: f32 = 0.75 + 0.20 + 0.15;
+    const integrity_loss = initial_integrity - armor.coverage[0].integrity;
+    try std.testing.expectApproxEqAbs(expected_damage, integrity_loss, 0.01);
+
+    // With no absorption/deflection, attack passes through at full strength
+    try std.testing.expectApproxEqAbs(@as(f32, 1.0), result.remaining.amount, 0.01);
 }
 
 test "resolveThroughArmour: penetration reduced by thickness" {
@@ -1123,18 +1194,20 @@ test "resolveThroughArmour: pierce stops when penetration exhausted" {
         }},
     };
 
-    // Material with 0 hardness and minimal resistance for predictable behavior
+    // Material with 0 deflection and minimal resistance for predictable behavior
     const thick_material = Material{
         .name = "thick",
-        .resistances = &.{},
-        .vulnerabilities = &.{},
-        .self_resistances = &.{},
-        .self_vulnerabilities = &.{},
-        .quality = .common,
-        .durability = 2.0,
+        .deflection = 0.0,
+        .absorption = 0.2,
+        .dispersion = 0.3,
+        .geometry_threshold = 0.0,
+        .geometry_ratio = 1.0,
+        .momentum_threshold = 0.0,
+        .momentum_ratio = 1.0,
+        .rigidity_threshold = 0.0,
+        .rigidity_ratio = 1.0,
         .thickness = 1.5,
-        .hardness = 0.0,
-        .flexibility = 0.1,
+        .durability = 200,
     };
 
     const test_template = Template{
@@ -1181,18 +1254,20 @@ test "resolveThroughArmour: bludgeon ignores penetration" {
         }},
     };
 
-    // Material with high thickness but 0 hardness
+    // Material with high thickness but 0 deflection
     const thick_material = Material{
         .name = "thick",
-        .resistances = &.{},
-        .vulnerabilities = &.{},
-        .self_resistances = &.{},
-        .self_vulnerabilities = &.{},
-        .quality = .common,
-        .durability = 2.0,
+        .deflection = 0.0,
+        .absorption = 0.2,
+        .dispersion = 0.3,
+        .geometry_threshold = 0.0,
+        .geometry_ratio = 1.0,
+        .momentum_threshold = 0.0,
+        .momentum_ratio = 1.0,
+        .rigidity_threshold = 0.0,
+        .rigidity_ratio = 1.0,
         .thickness = 5.0, // very thick - would stop pierce
-        .hardness = 0.0,
-        .flexibility = 0.1,
+        .durability = 200,
     };
 
     const test_template = Template{
@@ -1326,20 +1401,20 @@ test "resolveThroughArmour: layer integrity degrades" {
         }},
     };
 
-    // Material with no hardness for predictable test
+    // Material with no deflection for predictable test
     const soft_mail = Material{
         .name = "soft mail",
-        .resistances = &.{},
-        .vulnerabilities = &.{},
-        .self_resistances = &.{
-            .{ .damage = .slash, .threshold = 0.0, .ratio = 0.5 },
-        },
-        .self_vulnerabilities = &.{},
-        .quality = .common,
-        .durability = 2.0,
+        .deflection = 0.0,
+        .absorption = 0.25,
+        .dispersion = 0.15,
+        .geometry_threshold = 0.0,
+        .geometry_ratio = 0.5,
+        .momentum_threshold = 0.15,
+        .momentum_ratio = 0.6,
+        .rigidity_threshold = 0.15,
+        .rigidity_ratio = 0.5,
         .thickness = 0.5,
-        .hardness = 0.0,
-        .flexibility = 0.5,
+        .durability = 200,
     };
 
     const test_template = Template{
@@ -1390,20 +1465,20 @@ test "full flow: armor absorption then body damage" {
         }},
     };
 
-    // Material with 0 hardness for predictable test
+    // Material with 0 deflection for predictable test
     const test_mail = Material{
         .name = "test mail",
-        .resistances = &.{},
-        .vulnerabilities = &.{},
-        .self_resistances = &.{
-            .{ .damage = .slash, .threshold = 0.2, .ratio = 0.5 },
-        },
-        .self_vulnerabilities = &.{},
-        .quality = .common,
-        .durability = 1.0,
+        .deflection = 0.0,
+        .absorption = 0.25,
+        .dispersion = 0.15,
+        .geometry_threshold = 0.2,
+        .geometry_ratio = 0.5,
+        .momentum_threshold = 0.15,
+        .momentum_ratio = 0.6,
+        .rigidity_threshold = 0.15,
+        .rigidity_ratio = 0.5,
         .thickness = 0.3,
-        .hardness = 0.0,
-        .flexibility = 0.5,
+        .durability = 100,
     };
 
     const test_template = Template{
@@ -1436,29 +1511,30 @@ test "full flow: armor absorption then body damage" {
 
     const armor_result = resolveThroughArmour(&stack, torso_idx, initial_packet, &rng);
 
-    // Damage should be reduced: (10.0 - 0.2) * 0.5 = 4.9
-    const expected_remaining = (10.0 - 0.2) * 0.5;
+    // 3-axis model: momentum reduced by absorption (25%)
+    // remaining.amount = 10.0 * (1 - 0.25) = 7.5
+    const expected_remaining = 10.0 * (1.0 - 0.25);
     try std.testing.expectApproxEqAbs(expected_remaining, armor_result.remaining.amount, 0.01);
     try std.testing.expectEqual(@as(u8, 1), armor_result.layers_hit);
 
     // 5. Apply remaining damage to body
     const body_result = try bod.applyDamageToPart(torso_idx, armor_result.remaining);
 
-    // Should have created a wound with reduced severity compared to unarmored hit
+    // Should have created a wound
     try std.testing.expect(body_result.wound.len > 0);
-
-    // The wound severity should be lower than if we'd taken full damage
     const wound_severity = body_result.wound.worstSeverity();
-    try std.testing.expect(@intFromEnum(wound_severity) < @intFromEnum(body.Severity.disabled));
 
-    // Compare with unarmored damage
+    // 6. Compare with unarmored damage - armor should reduce or equal severity
     var unarmored_bod = try body.Body.fromPlan(alloc, &body.HumanoidPlan);
     defer unarmored_bod.deinit();
 
     const unarmored_torso_idx = unarmored_bod.indexOf("torso").?;
     const unarmored_result = try unarmored_bod.applyDamageToPart(unarmored_torso_idx, initial_packet);
 
-    // Unarmored should take more severe damage
+    // Unarmored should take at least as severe damage (armor helps or is neutral)
     const unarmored_severity = unarmored_result.wound.worstSeverity();
     try std.testing.expect(@intFromEnum(unarmored_severity) >= @intFromEnum(wound_severity));
+
+    // Verify armor actually reduced the damage amount
+    try std.testing.expect(armor_result.remaining.amount < initial_packet.amount);
 }

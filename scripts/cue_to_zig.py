@@ -389,6 +389,130 @@ def emit_body_plans(plans: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def flatten_armour_materials(root: Dict[str, Any]) -> List[Tuple[str, Dict[str, Any]]]:
+    """Extract armour materials from materials.armour."""
+    armour_mats = root.get("materials", {}).get("armour", {})
+    results: List[Tuple[str, Dict[str, Any]]] = []
+    for key, value in armour_mats.items():
+        if isinstance(value, dict) and "name" in value:
+            results.append((key, value))
+    return sorted(results, key=lambda x: x[0])
+
+
+def flatten_armour_pieces(root: Dict[str, Any]) -> List[Tuple[str, Dict[str, Any]]]:
+    """Extract armour pieces from armour_pieces."""
+    pieces = root.get("armour_pieces", {})
+    results: List[Tuple[str, Dict[str, Any]]] = []
+    for key, value in pieces.items():
+        if isinstance(value, dict) and "id" in value:
+            results.append((value["id"], value))
+    return sorted(results, key=lambda x: x[0])
+
+
+def format_totality(totality: str) -> str:
+    valid = {"total", "intimidating", "comprehensive", "frontal", "minimal"}
+    if totality in valid:
+        return f"armour.Totality.{totality}"
+    return "armour.Totality.frontal"
+
+
+def format_armour_layer(layer: str) -> str:
+    # Maps CUE layer types to inventory.Layer equipment slots
+    mapping = {
+        "padding": "Gambeson",
+        "outer": "Plate",
+        "cloak": "Cloak",
+    }
+    return f"inventory.Layer.{mapping.get(layer, 'Plate')}"
+
+
+def emit_armour_materials(materials: List[Tuple[str, Dict[str, Any]]]) -> str:
+    lines: List[str] = []
+    lines.append("pub const ArmourMaterialDefinition = struct {")
+    lines.append("    id: []const u8,")
+    lines.append("    name: []const u8,")
+    lines.append("    deflection: f32,")
+    lines.append("    absorption: f32,")
+    lines.append("    dispersion: f32,")
+    lines.append("    geometry_threshold: f32,")
+    lines.append("    geometry_ratio: f32,")
+    lines.append("    momentum_threshold: f32,")
+    lines.append("    momentum_ratio: f32,")
+    lines.append("    rigidity_threshold: f32,")
+    lines.append("    rigidity_ratio: f32,")
+    lines.append("    shape_profile: []const u8 = \"solid\",")
+    lines.append("    shape_dispersion_bonus: f32 = 0,")
+    lines.append("    shape_absorption_bonus: f32 = 0,")
+    lines.append("};")
+    lines.append("")
+    lines.append("pub const GeneratedArmourMaterials = [_]ArmourMaterialDefinition{")
+    for mat_id, data in materials:
+        shielding = data.get("shielding", {})
+        suscept = data.get("susceptibility", {})
+        shape = data.get("shape", {})
+        lines.append("    .{")
+        lines.append(f'        .id = "{mat_id}",')
+        lines.append(f'        .name = "{data.get("name", mat_id)}",')
+        lines.append(f'        .deflection = {zig_float(shielding.get("deflection", 0.0))},')
+        lines.append(f'        .absorption = {zig_float(shielding.get("absorption", 0.0))},')
+        lines.append(f'        .dispersion = {zig_float(shielding.get("dispersion", 0.0))},')
+        lines.append(f'        .geometry_threshold = {zig_float(suscept.get("geometry_threshold", 0.0))},')
+        lines.append(f'        .geometry_ratio = {zig_float(suscept.get("geometry_ratio", 1.0))},')
+        lines.append(f'        .momentum_threshold = {zig_float(suscept.get("momentum_threshold", 0.0))},')
+        lines.append(f'        .momentum_ratio = {zig_float(suscept.get("momentum_ratio", 1.0))},')
+        lines.append(f'        .rigidity_threshold = {zig_float(suscept.get("rigidity_threshold", 0.0))},')
+        lines.append(f'        .rigidity_ratio = {zig_float(suscept.get("rigidity_ratio", 1.0))},')
+        if shape:
+            lines.append(f'        .shape_profile = "{shape.get("profile", "solid")}",')
+            lines.append(f'        .shape_dispersion_bonus = {zig_float(shape.get("dispersion_bonus", 0.0))},')
+            lines.append(f'        .shape_absorption_bonus = {zig_float(shape.get("absorption_bonus", 0.0))},')
+        lines.append("    },")
+    lines.append("};")
+    return "\n".join(lines)
+
+
+def emit_armour_pieces(pieces: List[Tuple[str, Dict[str, Any]]]) -> str:
+    lines: List[str] = []
+    lines.append("pub const ArmourCoverageEntry = struct {")
+    lines.append("    part_tags: []const body.PartTag,")
+    lines.append("    side: body.Side = body.Side.center,")
+    lines.append("    layer: inventory.Layer,")
+    lines.append("    totality: armour.Totality,")
+    lines.append("};")
+    lines.append("")
+    lines.append("pub const ArmourPieceDefinition = struct {")
+    lines.append("    id: []const u8,")
+    lines.append("    name: []const u8,")
+    lines.append("    material_id: []const u8,")
+    lines.append("    coverage: []const ArmourCoverageEntry,")
+    lines.append("};")
+    lines.append("")
+    lines.append("pub const GeneratedArmourPieces = [_]ArmourPieceDefinition{")
+    for piece_id, data in pieces:
+        lines.append("    .{")
+        lines.append(f'        .id = "{piece_id}",')
+        lines.append(f'        .name = "{data.get("name", piece_id)}",')
+        lines.append(f'        .material_id = "{data.get("material", "")}",')
+        coverage = data.get("coverage", [])
+        lines.append("        .coverage = &.{")
+        for cov in coverage:
+            part_tags = cov.get("part_tags", [])
+            tags_str = ", ".join(f"body.PartTag.{t}" for t in part_tags)
+            side = format_side(cov.get("side", "center"))
+            layer = format_armour_layer(cov.get("layer", "outer"))
+            totality = format_totality(cov.get("totality", "frontal"))
+            lines.append("            .{")
+            lines.append(f"                .part_tags = &.{{ {tags_str} }},")
+            lines.append(f"                .side = {side},")
+            lines.append(f"                .layer = {layer},")
+            lines.append(f"                .totality = {totality},")
+            lines.append("            },")
+        lines.append("        },")
+        lines.append("    },")
+    lines.append("};")
+    return "\n".join(lines)
+
+
 def emit_species(species_map: Dict[str, Any]) -> str:
     lines: List[str] = []
     lines.append("pub const NaturalWeaponRef = struct {")
@@ -492,6 +616,8 @@ def main() -> None:
                 print("Unexpected techniques in CUE:", ", ".join(extra), file=sys.stderr)
             sys.exit(1)
     technique_ids: List[str] = sorted(cue_ids)
+    armour_materials = flatten_armour_materials(data)
+    armour_pieces = flatten_armour_pieces(data)
     output: List[str] = [
         "// AUTO-GENERATED BY scripts/cue_to_zig.py",
         "// DO NOT EDIT MANUALLY.",
@@ -499,6 +625,8 @@ def main() -> None:
         "const damage = @import(\"../domain/damage.zig\");",
         "const stats = @import(\"../domain/stats.zig\");",
         "const body = @import(\"../domain/body.zig\");",
+        "const armour = @import(\"../domain/armour.zig\");",
+        "const inventory = @import(\"../domain/inventory.zig\");",
         "",
     ]
     if technique_ids:
@@ -525,8 +653,18 @@ def main() -> None:
     species_root = data.get("species", {})
     if species_root:
         output.append(emit_species(species_root))
-    if not weapons and not techniques and not tissue_templates and not body_plans_root and not species_root:
-        output.append("// No weapons, techniques, or biological data found in input JSON.")
+        output.append("")
+    if armour_materials:
+        output.append(emit_armour_materials(armour_materials))
+        output.append("")
+    if armour_pieces:
+        output.append(emit_armour_pieces(armour_pieces))
+    has_data = (
+        weapons or techniques or tissue_templates or body_plans_root
+        or species_root or armour_materials or armour_pieces
+    )
+    if not has_data:
+        output.append("// No weapons, techniques, biological, or armour data found in input JSON.")
     sys.stdout.write("\n".join(output))
 
 

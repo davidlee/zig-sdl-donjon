@@ -4,6 +4,8 @@
 const damage = @import("../domain/damage.zig");
 const stats = @import("../domain/stats.zig");
 const body = @import("../domain/body.zig");
+const armour = @import("../domain/armour.zig");
+const inventory = @import("../domain/inventory.zig");
 
 pub const GeneratedTechniqueID = enum {
     advance,
@@ -1498,6 +1500,117 @@ pub const GeneratedSpecies = [_]SpeciesDefinition{
         .natural_weapons = &.{
             .{ .weapon_id = "natural.fist", .required_part = body.PartTag.hand },
             .{ .weapon_id = "natural.bite", .required_part = body.PartTag.head },
+        },
+    },
+};
+
+pub const ArmourMaterialDefinition = struct {
+    id: []const u8,
+    name: []const u8,
+    deflection: f32,
+    absorption: f32,
+    dispersion: f32,
+    geometry_threshold: f32,
+    geometry_ratio: f32,
+    momentum_threshold: f32,
+    momentum_ratio: f32,
+    rigidity_threshold: f32,
+    rigidity_ratio: f32,
+    shape_profile: []const u8 = "solid",
+    shape_dispersion_bonus: f32 = 0,
+    shape_absorption_bonus: f32 = 0,
+};
+
+pub const GeneratedArmourMaterials = [_]ArmourMaterialDefinition{
+    .{
+        .id = "chainmail",
+        .name = "chainmail",
+        .deflection = 0.55,
+        .absorption = 0.3,
+        .dispersion = 0.2,
+        .geometry_threshold = 0.15,
+        .geometry_ratio = 0.5,
+        .momentum_threshold = 0.25,
+        .momentum_ratio = 0.6,
+        .rigidity_threshold = 0.25,
+        .rigidity_ratio = 0.5,
+        .shape_profile = "mesh",
+        .shape_dispersion_bonus = -0.05,
+        .shape_absorption_bonus = 0.05,
+    },
+    .{
+        .id = "gambeson",
+        .name = "gambeson",
+        .deflection = 0.2,
+        .absorption = 0.65,
+        .dispersion = 0.4,
+        .geometry_threshold = 0.05,
+        .geometry_ratio = 0.8,
+        .momentum_threshold = 0.15,
+        .momentum_ratio = 0.5,
+        .rigidity_threshold = 0.1,
+        .rigidity_ratio = 0.7,
+        .shape_profile = "quilted",
+        .shape_dispersion_bonus = 0.2,
+        .shape_absorption_bonus = 0.1,
+    },
+    .{
+        .id = "steel_plate",
+        .name = "steel plate",
+        .deflection = 0.85,
+        .absorption = 0.25,
+        .dispersion = 0.35,
+        .geometry_threshold = 0.3,
+        .geometry_ratio = 0.3,
+        .momentum_threshold = 0.5,
+        .momentum_ratio = 0.4,
+        .rigidity_threshold = 0.45,
+        .rigidity_ratio = 0.3,
+        .shape_profile = "solid",
+        .shape_dispersion_bonus = 0.1,
+        .shape_absorption_bonus = -0.05,
+    },
+};
+
+pub const ArmourCoverageEntry = struct {
+    part_tags: []const body.PartTag,
+    side: body.Side = body.Side.center,
+    layer: inventory.Layer,
+    totality: armour.Totality,
+};
+
+pub const ArmourPieceDefinition = struct {
+    id: []const u8,
+    name: []const u8,
+    material_id: []const u8,
+    coverage: []const ArmourCoverageEntry,
+};
+
+pub const GeneratedArmourPieces = [_]ArmourPieceDefinition{
+    .{
+        .id = "gambeson_jacket",
+        .name = "Gambeson Jacket",
+        .material_id = "gambeson",
+        .coverage = &.{
+            .{
+                .part_tags = &.{ body.PartTag.torso, body.PartTag.abdomen, body.PartTag.shoulder },
+                .side = body.Side.center,
+                .layer = inventory.Layer.Gambeson,
+                .totality = armour.Totality.frontal,
+            },
+        },
+    },
+    .{
+        .id = "steel_breastplate",
+        .name = "Steel Breastplate",
+        .material_id = "steel_plate",
+        .coverage = &.{
+            .{
+                .part_tags = &.{ body.PartTag.torso, body.PartTag.abdomen },
+                .side = body.Side.center,
+                .layer = inventory.Layer.Plate,
+                .totality = armour.Totality.comprehensive,
+            },
         },
     },
 };

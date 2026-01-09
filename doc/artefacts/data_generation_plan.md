@@ -181,6 +181,8 @@ Species reference by enum; Zig resolvers switch on enum. Missing cases cause cle
 
 **Decision:** Implement C now as safety net. Target B as the end state when weapon schemas mature.
 
+**Status (2026-01-09):** Option C implemented. Resolvers in `species.zig` now emit clear `@compileError` messages with the offending ID and remediation guidance when CUE/Zig disagree.
+
 ---
 
 ## Appendix: Bootstrap Commands
