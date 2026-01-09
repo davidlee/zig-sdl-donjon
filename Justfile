@@ -17,6 +17,10 @@ format:
 run:
   ./zig-out/bin/cardigan
 
+regenerate:
+  (cue export data/materials.cue data/weapons.cue data/techniques.cue --out json | ./scripts/cue_to_zig.py > src/gen/generated_data.zig)
+
+
 # Test targets
 [group('test')]
 test-unit flags="":

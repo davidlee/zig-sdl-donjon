@@ -26,6 +26,7 @@
           vulkan-validation-layers
           zls-overlay.packages.x86_64-linux."0.15.0"
           zigPackage
+          cue
         ];
         LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath (with pkgs; [
           mesa

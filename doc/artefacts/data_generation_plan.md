@@ -15,6 +15,7 @@
 | Domain | Current Files | Schema Needs |
 | --- | --- | --- |
 | Weapons & natural weapons | `src/domain/weapon_list.zig`, `src/domain/species.zig` | Physical dimensions, mass properties, offensive profiles, derived axes |
+| Techniques & grips | `src/domain/card_list.zig`, `src/domain/weapon.zig` | Attack modes, axis conversion factors/biases, grip mixins (half-sword, murder-stroke), tags for hooks/draw cuts |
 | Armour materials & pieces | `src/domain/armour.zig`, `src/domain/inventory.zig` | Material properties (Deflection/Absorption/Dispersion, self-thresholds), coverage patterns |
 | Tissue/body templates | `src/domain/body.zig` | Reference to shared tissue materials, per-part scale factors (thickness/area) |
 | Species definitions | `src/domain/species.zig` | Body plan selection, size modifiers, natural weapons |
@@ -49,9 +50,40 @@
    - `data/bodies/*.cue` – tissue presets and body plans
 2. **Validation**
    - `cue vet` / `cue export` ensures schema constraints are satisfied (e.g., required coverage, normalized reach tags).
-3. **Export**
-   - `cue export ... --out json` feeding a Zig generator script (`scripts/cue_to_zig.zig` or Python) that maps CUE structs to existing Zig const structures.
-   - Generator enforces deterministic ordering and emits helpful comments linking back to source files.
+3. **Export format**
+   - `cue export ... --out json` produces a normalized JSON structure. Proposed shape:
+
+```jsonc
+{
+  "materials": {
+    "tissues": { "muscle": { ...shared fields... } },
+    "armour": { "steel_plate": { ... } }
+  },
+  "weapons": {
+    "swords": {
+      "knights_sword": {
+        "name": "Knight's Sword",
+        "category": "sword",
+        "physics": {
+          "weight_kg": 1.4,
+          "length_m": 0.95,
+          "balance": 0.55,
+          "energy_j": 18.2,
+          "geometry_coeff": 0.6,
+          "rigidity_coeff": 0.7
+        },
+        "profiles": {
+          "swing": { "reach": "medium" },
+          "thrust": { "reach": "medium" }
+        }
+      }
+    }
+  }
+}
+```
+
+   - This JSON feeds a Zig/Python generator (`scripts/cue_to_zig.py` in the prototype) that maps directly to existing structs (`weapon.Template`, `armour.Material`, etc.).
+   - Generator enforces deterministic ordering and emits helpful comments linking back to CUE sources. The current prototype produces a `GeneratedWeapons` table to validate the flow before wiring in the rest of the systems.
 4. **Build integration**
    - Add `just generate-data` invoked by `just check` before Zig compilation (guarded by file timestamps).
    - Generated Zig files remain checked in initially to keep diffs reviewable; once stable, consider `build.zig` hooks.
@@ -62,6 +94,8 @@
 - **Hooks / serrations / draw cuts**: express via boolean tags or embedded structs that tweak derived Geometry/Momentum splits for specific offensive profiles.
 - **Species scaling**: allow per-species overrides for baseline part thickness (e.g., Dwarf torso thickness multiplier) so materials aren’t redefined per species.
 - **Manual overrides**: everything derived should still permit explicit overrides for exceptional artefacts (ancient relics, magical materials).
+- **Armour pieces**: in addition to raw materials, define `#ArmourPiece` schemas that assemble layers (`padding + plate`) with coverage templates so equipment can be generated alongside weapons and techniques.
+- **Technique validation**: the converter must validate that every technique ID exported from CUE maps to a Zig enum variant (and ideally generate the enum) to prevent silent mismatches.
 
 ## 6. Open Questions
 
@@ -73,6 +107,30 @@
 ## 7. Next Steps
 
 1. Prototype the shared `#Material` schema (armour + tissue presets) in CUE.
-2. Map existing `weapon_list.zig` entries into CUE to test derivation formulas.
-3. Build the minimal `cue export → Zig` converter and integrate into `just generate-data`.
-4. Document authoring workflow (how to add a new weapon, how to adjust a tissue material).
+2. Map existing `weapon_list.zig` entries into CUE to test derivation formulas. (Initial prototypes in `data/weapons.cue` cover swords and improvised rocks.)
+3. Extend the schema to cover techniques/grips with the conversion metadata required by the Geometry/Energy/Rigidity model (draw cuts, hooks, half-sword, etc.).
+4. Add `#ArmourPiece` schemas (layer stacks, coverage templates) and extend the converter so armour items are generated alongside weapons/techniques.
+5. Update the converter to validate technique IDs against the Zig enum (or generate the enum) so typos fail early.
+6. Build the minimal `cue export → Zig` converter and integrate into `just generate-data`.
+7. Document authoring workflow (how to add a new weapon or technique, how to adjust a tissue/armour material).
+
+---
+
+## Appendix: Bootstrap Commands
+
+- Author materials in `data/materials.cue` and validate via:
+
+```bash
+cue eval data/materials.cue
+```
+
+- Export to JSON (input for forthcoming Zig generator):
+
+```bash
+cue export data/materials.cue data/weapons.cue data/techniques.cue --out json \
+  | ./scripts/cue_to_zig.py > src/gen/generated_data.zig
+```
+
+These commands provide immediate feedback before the full generation pipeline is wired into `just generate-data`.
+
+> **Tooling note:** the commands above require the [`cue`](https://cuelang.org/) CLI to be installed on the path. Install instructions vary by platform (`brew install cue-lang/tap/cue`, `go install cuelang.org/go/cmd/cue@latest`, etc.). Until `cue` is available locally the export/generation pipeline cannot run.
