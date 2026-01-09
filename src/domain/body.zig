@@ -986,7 +986,7 @@ const PartStats = struct {
     trauma_mult: f32,
 };
 
-fn defaultStats(tag: PartTag) PartStats {
+pub fn defaultStats(tag: PartTag) PartStats {
     return switch (tag) {
         // Large targets, high durability
         .torso => .{ .hit_chance = 0.30, .durability = 2.0, .trauma_mult = 1.0 },

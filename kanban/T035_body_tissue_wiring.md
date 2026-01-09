@@ -318,15 +318,15 @@ Already complete in CUE. Wire to runtime:
 - [x] **1.4** Build static `TissueStacks` lookup table at comptime
 - [x] **1.5** Add `getTissueStack(id: []const u8)` lookup function
 
-### Phase 2: Body Plan Wiring
+### Phase 2: Body Plan Wiring ✓
 
 - [x] **2.1** Update `BodyPartDefinition` to include parent/enclosing string fields (done in Phase 0)
-- [ ] **2.2** Implement `buildPartDef()` - convert generated def to runtime `PartDef`
+- [x] **2.2** Implement `buildPartDef()` - convert generated def to runtime `PartDef`
   - Resolve parent/enclosing strings to `PartId` (comptime validation)
   - Call `defaultStats(tag)` for hit_chance/durability/trauma_mult
   - Resolve tissue_template string to `TissueStacks` reference
-- [ ] **2.3** Build static `BodyPlans` lookup table at comptime
-- [ ] **2.4** Add `getBodyPlan(id: []const u8)` lookup function
+- [x] **2.3** Build static `BodyPlans` lookup table at comptime
+- [x] **2.4** Add `getBodyPlan(id: []const u8)` lookup function
 
 ### Phase 3: Runtime Integration
 
@@ -454,4 +454,26 @@ Ready for Phase 1: Tissue Stack Wiring
 - Added 9 unit tests for tissue stack wiring
 - All tests pass
 
+**Terminology fix:** Renamed `momentum_threshold`/`momentum_ratio` → `energy_threshold`/`energy_ratio` across CUE, Python generator, and Zig code. This aligns with the design doc (`geometry_momentum_rigidity_review.md` §3) which specifies **Geometry / Energy / Rigidity** as the 3-axis model, not "momentum".
+
 Ready for Phase 2: Body Plan Wiring
+
+**2026-01-09**: Phase 2 complete - Body plan wiring.
+- [x] **2.2** Implemented `buildPartDef()` in `body_list.zig:169-208`
+  - `stringToTissueTemplate()` converts string ID → TissueTemplate enum with helpful comptime error
+  - `findPartIndexInPlan()` resolves part references within a body plan
+  - Parent/enclosing strings validated and converted to `PartId` at comptime
+  - Stats derived via `body.defaultStats(tag)` (made public)
+- [x] **2.3** Built `PartDefData` + `BodyPlans` lookup tables following armour_list pattern
+- [x] **2.4** Added `getBodyPlan()` (comptime) and `getBodyPlanRuntime()` (runtime) lookups
+- Added `BodyPlan` struct with id, name, parts slice
+- Added `validateAllPartReferences()` comptime validation
+- Added 10 unit tests for body plan wiring
+- All tests pass
+
+Key implementation notes:
+- `PartDef.tissue` still uses `TissueTemplate` enum (not string ID) - deferred to Phase 5
+- Humanoid plan has 67 parts (CUE includes `tongue` which original `HumanoidPlan` lacked)
+- Comptime errors include helpful file references (e.g., "Check data/bodies.cue")
+
+Ready for Phase 3: Runtime Integration

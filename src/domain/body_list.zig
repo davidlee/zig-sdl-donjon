@@ -145,6 +145,148 @@ pub fn getTissueStackRuntime(id: []const u8) ?*const TissueStack {
 }
 
 // ============================================================================
+// Body Plan Wiring
+// ============================================================================
+
+/// Convert a tissue template string ID to the TissueTemplate enum.
+/// Fails at comptime with a helpful error if the ID doesn't match any enum variant.
+fn stringToTissueTemplate(comptime id: []const u8) body.TissueTemplate {
+    return std.meta.stringToEnum(body.TissueTemplate, id) orelse
+        @compileError("Unknown tissue template ID: '" ++ id ++ "'. Valid values are: limb, digit, joint, facial, organ, core. Check data/bodies.cue tissue_template field.");
+}
+
+/// Find a part's index within a body plan by name.
+/// Returns null if not found (caller should emit appropriate error).
+fn findPartIndexInPlan(comptime plan: *const BodyPlanDef, comptime name: []const u8) ?usize {
+    for (plan.parts, 0..) |*part, i| {
+        if (std.mem.eql(u8, part.name, name)) {
+            return i;
+        }
+    }
+    return null;
+}
+
+/// Build a runtime PartDef from a generated definition.
+/// Resolves parent/enclosing references and applies default stats.
+fn buildPartDef(
+    comptime part: *const BodyPartDef,
+    comptime plan: *const BodyPlanDef,
+) body.PartDef {
+    // Resolve parent reference
+    const parent_id: ?body.PartId = if (part.parent) |parent_name| blk: {
+        if (findPartIndexInPlan(plan, parent_name) == null) {
+            @compileError("Body part '" ++ part.name ++ "' references unknown parent '" ++ parent_name ++ "'. Check data/bodies.cue - parent must be another part in the same body plan.");
+        }
+        break :blk body.PartId.init(parent_name);
+    } else null;
+
+    // Resolve enclosing reference
+    const enclosing_id: ?body.PartId = if (part.enclosing) |enclosing_name| blk: {
+        if (findPartIndexInPlan(plan, enclosing_name) == null) {
+            @compileError("Body part '" ++ part.name ++ "' references unknown enclosing part '" ++ enclosing_name ++ "'. Check data/bodies.cue - enclosing must be another part in the same body plan.");
+        }
+        break :blk body.PartId.init(enclosing_name);
+    } else null;
+
+    // Get default stats for this part type
+    const stats = body.defaultStats(part.tag);
+
+    return .{
+        .id = body.PartId.init(part.name),
+        .parent = parent_id,
+        .enclosing = enclosing_id,
+        .tag = part.tag,
+        .side = part.side,
+        .name = part.name,
+        .base_hit_chance = stats.hit_chance,
+        .base_durability = stats.durability,
+        .trauma_mult = stats.trauma_mult,
+        .flags = part.flags,
+        .tissue = stringToTissueTemplate(part.tissue_template_id),
+        .has_major_artery = part.has_major_artery,
+    };
+}
+
+/// Build runtime PartDef array from a generated body plan.
+fn buildBodyPlan(comptime plan: *const BodyPlanDef) [plan.parts.len]body.PartDef {
+    var result: [plan.parts.len]body.PartDef = undefined;
+    for (plan.parts, 0..) |*part, i| {
+        result[i] = buildPartDef(part, plan);
+    }
+    return result;
+}
+
+// ============================================================================
+// Body Plan Lookup Tables
+// ============================================================================
+
+/// Get max part count across all body plans (for static allocation).
+fn getMaxParts() usize {
+    var max: usize = 0;
+    for (&body_plan_defs) |*plan| {
+        if (plan.parts.len > max) max = plan.parts.len;
+    }
+    return if (max == 0) 1 else max;
+}
+
+/// Static part data for each body plan, to avoid comptime local refs.
+const PartDefData = blk: {
+    var data: [body_plan_defs.len]struct {
+        parts: [getMaxParts()]body.PartDef,
+        len: usize,
+    } = undefined;
+    for (&body_plan_defs, 0..) |*plan, i| {
+        const converted = buildBodyPlan(plan);
+        for (converted, 0..) |part, j| {
+            data[i].parts[j] = part;
+        }
+        data[i].len = plan.parts.len;
+    }
+    break :blk data;
+};
+
+/// Runtime body plan with ID and part slice.
+pub const BodyPlan = struct {
+    id: []const u8,
+    name: []const u8,
+    parts: []const body.PartDef,
+};
+
+/// Comptime-built body plans indexed by generated order.
+pub const BodyPlans = blk: {
+    var plans: [body_plan_defs.len]BodyPlan = undefined;
+    for (&body_plan_defs, 0..) |*def, i| {
+        plans[i] = .{
+            .id = def.id,
+            .name = def.name,
+            .parts = PartDefData[i].parts[0..PartDefData[i].len],
+        };
+    }
+    break :blk plans;
+};
+
+/// Look up a runtime body plan by ID at comptime.
+pub fn getBodyPlan(comptime id: []const u8) *const BodyPlan {
+    for (&BodyPlans, 0..) |*plan, i| {
+        if (std.mem.eql(u8, body_plan_defs[i].id, id)) {
+            return plan;
+        }
+    }
+    @compileError("Unknown body plan ID: '" ++ id ++ "'. Add it to data/bodies.cue under body_plans or check the ID spelling.");
+}
+
+/// Look up a runtime body plan by ID at runtime.
+/// Returns null if not found.
+pub fn getBodyPlanRuntime(id: []const u8) ?*const BodyPlan {
+    for (&BodyPlans, 0..) |*plan, i| {
+        if (std.mem.eql(u8, body_plan_defs[i].id, id)) {
+            return plan;
+        }
+    }
+    return null;
+}
+
+// ============================================================================
 // Comptime Validation
 // ============================================================================
 
@@ -157,8 +299,27 @@ fn validateAllBodyParts() void {
     }
 }
 
+/// Validate all parent/enclosing references resolve correctly.
+fn validateAllPartReferences() void {
+    for (&body_plan_defs) |*plan| {
+        for (plan.parts) |*part| {
+            if (part.parent) |parent_name| {
+                if (findPartIndexInPlan(plan, parent_name) == null) {
+                    @compileError("Body part '" ++ part.name ++ "' references unknown parent '" ++ parent_name ++ "'");
+                }
+            }
+            if (part.enclosing) |enclosing_name| {
+                if (findPartIndexInPlan(plan, enclosing_name) == null) {
+                    @compileError("Body part '" ++ part.name ++ "' references unknown enclosing '" ++ enclosing_name ++ "'");
+                }
+            }
+        }
+    }
+}
+
 comptime {
     validateAllBodyParts();
+    validateAllPartReferences();
 }
 
 // ============================================================================
@@ -224,6 +385,125 @@ test "all body parts have valid tissue templates" {
         inline for (plan.parts) |*part| {
             const stack = comptime getTissueStack(part.tissue_template_id);
             try std.testing.expect(stack.layers.len > 0);
+        }
+    }
+}
+
+// ============================================================================
+// Body Plan Wiring Tests
+// ============================================================================
+
+test "stringToTissueTemplate converts valid IDs" {
+    try std.testing.expectEqual(body.TissueTemplate.core, comptime stringToTissueTemplate("core"));
+    try std.testing.expectEqual(body.TissueTemplate.limb, comptime stringToTissueTemplate("limb"));
+    try std.testing.expectEqual(body.TissueTemplate.digit, comptime stringToTissueTemplate("digit"));
+    try std.testing.expectEqual(body.TissueTemplate.organ, comptime stringToTissueTemplate("organ"));
+}
+
+test "BodyPlans table is populated" {
+    try std.testing.expect(BodyPlans.len == body_plan_defs.len);
+    try std.testing.expect(BodyPlans.len > 0);
+    // First plan should match first definition
+    try std.testing.expectEqualStrings(body_plan_defs[0].id, BodyPlans[0].id);
+}
+
+test "getBodyPlan returns correct runtime plan" {
+    const plan = comptime getBodyPlan("humanoid");
+    try std.testing.expectEqualStrings("humanoid", plan.id);
+    try std.testing.expectEqualStrings("Humanoid Plan", plan.name);
+    try std.testing.expect(plan.parts.len > 0);
+}
+
+test "getBodyPlanRuntime returns correct plan" {
+    const plan = getBodyPlanRuntime("humanoid");
+    try std.testing.expect(plan != null);
+    try std.testing.expectEqualStrings("humanoid", plan.?.id);
+}
+
+test "getBodyPlanRuntime returns null for unknown ID" {
+    const plan = getBodyPlanRuntime("nonexistent");
+    try std.testing.expect(plan == null);
+}
+
+test "humanoid plan has expected part count" {
+    const plan = comptime getBodyPlan("humanoid");
+    // CUE humanoid has 67 parts (includes tongue)
+    try std.testing.expect(plan.parts.len >= 60);
+}
+
+test "buildPartDef produces correct PartDef" {
+    const plan = comptime getBodyPlan("humanoid");
+    // Find torso
+    var torso: ?*const body.PartDef = null;
+    for (plan.parts) |*part| {
+        if (part.tag == .torso) {
+            torso = part;
+            break;
+        }
+    }
+    try std.testing.expect(torso != null);
+    const t = torso.?;
+    try std.testing.expectEqualStrings("torso", t.name);
+    try std.testing.expectEqual(body.PartTag.torso, t.tag);
+    try std.testing.expectEqual(body.Side.center, t.side);
+    try std.testing.expect(t.parent == null); // torso is root
+    try std.testing.expect(t.flags.is_vital);
+    try std.testing.expectEqual(body.TissueTemplate.core, t.tissue);
+    // Stats from defaultStats
+    try std.testing.expectApproxEqAbs(@as(f32, 0.30), t.base_hit_chance, 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 2.0), t.base_durability, 0.001);
+}
+
+test "buildPartDef resolves parent reference" {
+    const plan = comptime getBodyPlan("humanoid");
+    // Find neck - should have torso as parent
+    var neck: ?*const body.PartDef = null;
+    for (plan.parts) |*part| {
+        if (part.tag == .neck) {
+            neck = part;
+            break;
+        }
+    }
+    try std.testing.expect(neck != null);
+    const n = neck.?;
+    try std.testing.expect(n.parent != null);
+    // Parent should be torso's PartId
+    const expected_parent = body.PartId.init("torso");
+    try std.testing.expectEqual(expected_parent.hash, n.parent.?.hash);
+}
+
+test "buildPartDef resolves enclosing reference for organs" {
+    const plan = comptime getBodyPlan("humanoid");
+    // Find brain - should be enclosed by head
+    var brain: ?*const body.PartDef = null;
+    for (plan.parts) |*part| {
+        if (part.tag == .brain) {
+            brain = part;
+            break;
+        }
+    }
+    try std.testing.expect(brain != null);
+    const b = brain.?;
+    try std.testing.expect(b.enclosing != null);
+    const expected_enclosing = body.PartId.init("head");
+    try std.testing.expectEqual(expected_enclosing.hash, b.enclosing.?.hash);
+    // Brain should also have head as parent
+    try std.testing.expect(b.parent != null);
+    try std.testing.expectEqual(expected_enclosing.hash, b.parent.?.hash);
+}
+
+test "all parts have valid parent/enclosing references" {
+    // This test verifies comptime validation worked
+    inline for (&BodyPlans) |*plan| {
+        for (plan.parts) |*part| {
+            // Every non-root part should have a parent
+            if (part.parent) |parent_id| {
+                // Parent ID should be non-zero hash
+                try std.testing.expect(parent_id.hash != 0);
+            }
+            if (part.enclosing) |enclosing_id| {
+                try std.testing.expect(enclosing_id.hash != 0);
+            }
         }
     }
 }
