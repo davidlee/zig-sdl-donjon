@@ -310,13 +310,13 @@ Already complete in CUE. Wire to runtime:
 - [x] **0.4** Change `tissue_template` from enum to string ID in generated code
 - [x] **0.5** Run `just generate`, verify output
 
-### Phase 1: Tissue Stack Wiring
+### Phase 1: Tissue Stack Wiring ✓
 
-- [ ] **1.1** Add `TissueLayerMaterial` and `TissueStack` types to `body.zig`
-- [ ] **1.2** Create `body_list.zig` skeleton (following `armour_list.zig` pattern)
-- [ ] **1.3** Implement `buildTissueStack()` - convert generated def to runtime type
-- [ ] **1.4** Build static `TissueStacks` lookup table at comptime
-- [ ] **1.5** Add `getTissueStack(id: []const u8)` lookup function
+- [x] **1.1** Add `TissueLayerMaterial` and `TissueStack` types to `body.zig`
+- [x] **1.2** Create `body_list.zig` skeleton (following `armour_list.zig` pattern)
+- [x] **1.3** Implement `buildTissueStack()` - convert generated def to runtime type
+- [x] **1.4** Build static `TissueStacks` lookup table at comptime
+- [x] **1.5** Add `getTissueStack(id: []const u8)` lookup function
 
 ### Phase 2: Body Plan Wiring
 
@@ -441,3 +441,17 @@ Generated data now includes:
 - `BodyPartGeometry` and `BodyPartDefinition` now public (`pub const`)
 
 Ready for Phase 1: Tissue Stack Wiring
+
+**2026-01-09**: Phase 1 complete - Tissue stack wiring.
+- [x] **1.1** Added `TissueLayerMaterial` and `TissueStack` types to `body.zig:186-217`
+  - `TissueLayerMaterial`: material_id, thickness_ratio, 3-axis shielding, 3-axis susceptibility
+  - `TissueStack`: id, layers[], `hasMaterial()` helper
+- [x] **1.2** Created `body_list.zig` following `armour_list.zig` pattern
+- [x] **1.3** Implemented `buildTissueLayer()` and `convertLayers()` converters
+- [x] **1.4** Built static `TissueStacks` lookup table at comptime with `LayerData` backing
+- [x] **1.5** Added `getTissueStack()` (comptime) and `getTissueStackRuntime()` (runtime) lookups
+- Added comptime validation: `validateAllBodyParts()` checks all tissue_template_id references
+- Added 9 unit tests for tissue stack wiring
+- All tests pass
+
+Ready for Phase 2: Body Plan Wiring

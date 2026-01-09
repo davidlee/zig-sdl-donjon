@@ -183,6 +183,39 @@ pub const TissueTemplate = enum {
     }
 };
 
+/// Runtime tissue layer with 3-axis physics coefficients.
+/// Built from generated TissueLayerDefinition at comptime.
+pub const TissueLayerMaterial = struct {
+    material_id: []const u8,
+    thickness_ratio: f32,
+    // Shielding - how much this layer protects layers beneath it
+    deflection: f32, // redirects attack energy away
+    absorption: f32, // absorbs/dissipates attack energy
+    dispersion: f32, // spreads impact over larger area
+    // Susceptibility - how vulnerable this layer is to damage on each axis
+    geometry_threshold: f32,
+    geometry_ratio: f32,
+    momentum_threshold: f32,
+    momentum_ratio: f32,
+    rigidity_threshold: f32,
+    rigidity_ratio: f32,
+};
+
+/// Runtime tissue stack - collection of tissue layers for a body part type.
+/// Built from generated TissueTemplateDefinition at comptime.
+pub const TissueStack = struct {
+    id: []const u8,
+    layers: []const TissueLayerMaterial,
+
+    /// Check if this stack contains a layer with the given material ID.
+    pub fn hasMaterial(self: *const TissueStack, material_id: []const u8) bool {
+        for (self.layers) |layer| {
+            if (std.mem.eql(u8, layer.material_id, material_id)) return true;
+        }
+        return false;
+    }
+};
+
 pub const Part = struct {
     name_hash: u64, // hash of name for runtime lookups
     def_index: u16, // index into the plan this was built from
