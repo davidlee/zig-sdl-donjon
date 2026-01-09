@@ -16,6 +16,7 @@ const tick = @import("domain/tick.zig");
 const apply = @import("domain/apply.zig");
 const CommandHandler = apply.CommandHandler;
 const CommandError = apply.CommandError;
+const audit_log = @import("domain/audit_log.zig");
 
 // const coordinator = @import("presentation/coordinator.zig");
 const presentation = @import("presentation/mod.zig");
@@ -78,6 +79,9 @@ pub fn main() !void {
 
         // swap event streams
         world.events.swap_buffers();
+
+        // audit log for damage packet analysis
+        audit_log.drainPacketEvents(&world.events);
 
         // read this frame's events
         try coordinator.processWorldEvents();
