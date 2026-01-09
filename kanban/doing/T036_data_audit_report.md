@@ -90,31 +90,31 @@ Cons: Duplicates some JSON loading/parsing
 
 ### Phase 1: Report infrastructure
 
-- [ ] **1.1** Add `--audit-report` CLI flag to cue_to_zig.py
-- [ ] **1.2** Create `AuditReport` class to accumulate entries and warnings
-- [ ] **1.3** Add `emit_audit_report(path)` function for Markdown output
-- [ ] **1.4** Wire into main() to run after flattening, before Zig emission
+- [x] **1.1** Add `--audit-report` CLI flag to cue_to_zig.py
+- [x] **1.2** Create `AuditReport` class to accumulate entries and warnings
+- [x] **1.3** Add `emit_audit_report(path)` function for Markdown output (via `to_markdown()`)
+- [x] **1.4** Wire into main() to run after flattening, before Zig emission
 
 ### Phase 2: Dataset auditing
 
-- [ ] **2.1** `audit_weapons()` - report derived fields, flag zeroes
-- [ ] **2.2** `audit_techniques()` - report axis_bias, flag defaults
-- [ ] **2.3** `audit_armour_materials()` - report coefficients, flag inconsistencies
-- [ ] **2.4** `audit_armour_pieces()` - report coverage, validate material refs
-- [ ] **2.5** `audit_tissue_templates()` - report layers, validate thickness sums
-- [ ] **2.6** `audit_body_plans()` - report part count, validate tissue refs
+- [x] **2.1** `audit_weapons()` - report derived fields, flag zeroes
+- [x] **2.2** `audit_techniques()` - report axis_bias, flag defaults
+- [x] **2.3** `audit_armour_materials()` - report coefficients, flag inconsistencies
+- [x] **2.4** `audit_armour_pieces()` - report coverage, validate material refs
+- [x] **2.5** `audit_tissue_templates()` - report layers, validate thickness sums
+- [x] **2.6** `audit_body_plans()` - report part count, validate tissue refs
 
 ### Phase 3: Cross-reference validation
 
-- [ ] **3.1** Build ID sets from each dataset during flattening
-- [ ] **3.2** Add cross-reference checks (technique→weapon, piece→material, etc.)
-- [ ] **3.3** Report unresolved references as errors
+- [x] **3.1** Build ID sets from each dataset during flattening
+- [x] **3.2** Add cross-reference checks (technique→weapon, piece→material, etc.)
+- [x] **3.3** Report unresolved references as errors
 
 ### Phase 4: Just target & CI
 
-- [ ] **4.1** Add `just audit-data` target in justfile
-- [ ] **4.2** Make script exit non-zero on critical warnings
-- [ ] **4.3** Commit initial report as `doc/artefacts/data_audit_report.md`
+- [x] **4.1** Add `just audit-data` target in justfile
+- [x] **4.2** Make script exit non-zero on critical warnings (errors cause exit 1)
+- [x] **4.3** Commit initial report as `doc/artefacts/data_audit_report.md`
 
 ## Test / Verification Strategy
 
@@ -140,3 +140,30 @@ Cons: Duplicates some JSON loading/parsing
 ## Progress Log / Notes
 
 **2026-01-10**: Task created from §9.4 #4 of geometry review doc.
+
+**2026-01-10**: Implementation complete.
+
+Changes to `scripts/cue_to_zig.py`:
+- Added `argparse` CLI with `--audit-report PATH` and `--audit-only` flags
+- Added `AuditEntry` and `AuditReport` dataclasses for accumulating findings
+- Added audit functions for each dataset type:
+  - `audit_weapons()` - flags zero derived fields (MoI, effective_mass, ref_energy, etc.)
+  - `audit_techniques()` - flags missing/partial axis_bias definitions
+  - `audit_armour_materials()` - checks shielding coefficient sums, threshold/ratio consistency
+  - `audit_armour_pieces()` - validates material references and coverage entries
+  - `audit_tissue_templates()` - validates thickness ratio sums (±0.05 tolerance)
+  - `audit_body_plans()` - validates tissue template references and geometry completeness
+- Added `validate_cross_references()` for inter-dataset validation
+- Refactored `main()` to separate `generate_zig()` function
+
+Added to `Justfile`:
+- `just audit-data` target that generates `doc/artefacts/data_audit_report.md`
+
+Initial audit results (17 warnings, 0 errors):
+- 14 techniques missing explicit `axis_bias` (using defaults)
+- 3 tissue templates with thickness ratios not summing to 1.0 (digit=0.70, joint=0.83, facial=0.90)
+- All cross-references valid
+- All weapons have derived physics data
+- All armour pieces reference valid materials
+
+`just check` passes - all tests and build succeed.

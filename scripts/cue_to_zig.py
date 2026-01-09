@@ -5,19 +5,231 @@ Simple prototype converter that turns CUE-exported JSON into Zig data tables.
 Usage:
     cue export data/materials.cue data/weapons.cue --out json | \
         ./scripts/cue_to_zig.py > src/gen/generated_data.zig
+
+    # Generate audit report only:
+    cue export data/*.cue --out json | \
+        ./scripts/cue_to_zig.py --audit-report doc/artefacts/data_audit_report.md
 """
 
+import argparse
 import json
 import sys
-from typing import Any, Dict, List, Tuple, Set
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any, Dict, List, Tuple, Set, Optional
 
 TECHNIQUE_ENUM_PATH = "src/domain/cards.zig"
 
 
-def load_json() -> Dict[str, Any]:
-    if len(sys.argv) == 2:
-        path = sys.argv[1]
-        with open(path, "r", encoding="utf-8") as f:
+@dataclass
+class AuditEntry:
+    """A single entry in the audit report."""
+    dataset: str
+    id: str
+    fields: Dict[str, Any] = field(default_factory=dict)
+    warnings: List[str] = field(default_factory=list)
+    errors: List[str] = field(default_factory=list)
+
+
+@dataclass
+class AuditReport:
+    """Accumulates audit entries and produces a report."""
+    entries: List[AuditEntry] = field(default_factory=list)
+    cross_ref_errors: List[str] = field(default_factory=list)
+    summary: Dict[str, Dict[str, int]] = field(default_factory=dict)
+
+    # ID sets for cross-reference validation
+    weapon_ids: Set[str] = field(default_factory=set)
+    technique_ids: Set[str] = field(default_factory=set)
+    armour_material_ids: Set[str] = field(default_factory=set)
+    armour_piece_ids: Set[str] = field(default_factory=set)
+    tissue_template_ids: Set[str] = field(default_factory=set)
+    tissue_material_ids: Set[str] = field(default_factory=set)
+    body_plan_ids: Set[str] = field(default_factory=set)
+
+    def add_entry(self, entry: AuditEntry) -> None:
+        self.entries.append(entry)
+        ds = entry.dataset
+        if ds not in self.summary:
+            self.summary[ds] = {"total": 0, "warnings": 0, "errors": 0}
+        self.summary[ds]["total"] += 1
+        if entry.warnings:
+            self.summary[ds]["warnings"] += 1
+        if entry.errors:
+            self.summary[ds]["errors"] += 1
+
+    def add_cross_ref_error(self, msg: str) -> None:
+        self.cross_ref_errors.append(msg)
+
+    def has_errors(self) -> bool:
+        for entry in self.entries:
+            if entry.errors:
+                return True
+        return bool(self.cross_ref_errors)
+
+    def warning_count(self) -> int:
+        return sum(1 for e in self.entries if e.warnings)
+
+    def error_count(self) -> int:
+        return sum(1 for e in self.entries if e.errors) + len(self.cross_ref_errors)
+
+    def to_markdown(self) -> str:
+        lines: List[str] = []
+        lines.append("# Data Audit Report")
+        lines.append("")
+        lines.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        lines.append("")
+
+        # Summary
+        lines.append("## Summary")
+        lines.append("")
+        lines.append("| Dataset | Total | With Warnings | With Errors |")
+        lines.append("|---------|-------|---------------|-------------|")
+        for ds, counts in sorted(self.summary.items()):
+            lines.append(f"| {ds} | {counts['total']} | {counts['warnings']} | {counts['errors']} |")
+        lines.append("")
+
+        total_warnings = self.warning_count()
+        total_errors = self.error_count()
+        if total_errors > 0:
+            lines.append(f"**STATUS: FAILED** - {total_errors} error(s), {total_warnings} warning(s)")
+        elif total_warnings > 0:
+            lines.append(f"**STATUS: PASSED with warnings** - {total_warnings} warning(s)")
+        else:
+            lines.append("**STATUS: PASSED** - All validations passed")
+        lines.append("")
+
+        # Cross-reference errors
+        if self.cross_ref_errors:
+            lines.append("## Cross-Reference Errors")
+            lines.append("")
+            for err in self.cross_ref_errors:
+                lines.append(f"- {err}")
+            lines.append("")
+
+        # Per-dataset details
+        datasets_order = [
+            "weapons", "techniques", "armour_materials",
+            "armour_pieces", "tissue_templates", "body_plans"
+        ]
+        for ds in datasets_order:
+            ds_entries = [e for e in self.entries if e.dataset == ds]
+            if not ds_entries:
+                continue
+
+            lines.append(f"## {ds.replace('_', ' ').title()}")
+            lines.append("")
+
+            # Entries with issues first
+            issues = [e for e in ds_entries if e.warnings or e.errors]
+            clean = [e for e in ds_entries if not e.warnings and not e.errors]
+
+            if issues:
+                lines.append("### Issues")
+                lines.append("")
+                for entry in issues:
+                    lines.append(f"#### `{entry.id}`")
+                    lines.append("")
+                    if entry.errors:
+                        for err in entry.errors:
+                            lines.append(f"- **ERROR**: {err}")
+                    if entry.warnings:
+                        for warn in entry.warnings:
+                            lines.append(f"- WARNING: {warn}")
+                    lines.append("")
+                    # Show relevant fields
+                    if entry.fields:
+                        lines.append("Fields:")
+                        lines.append("```")
+                        for k, v in entry.fields.items():
+                            lines.append(f"  {k}: {v}")
+                        lines.append("```")
+                        lines.append("")
+
+            # Summary table for clean entries
+            if clean:
+                lines.append("### Valid Entries")
+                lines.append("")
+                lines.append(self._format_dataset_table(ds, clean))
+                lines.append("")
+
+        return "\n".join(lines)
+
+    def _format_dataset_table(self, dataset: str, entries: List[AuditEntry]) -> str:
+        """Format a summary table for valid entries."""
+        if not entries:
+            return "_None_"
+
+        lines: List[str] = []
+        if dataset == "weapons":
+            lines.append("| ID | MoI | Eff.Mass | RefEnergy | Geometry | Rigidity |")
+            lines.append("|----|-----|----------|-----------|----------|----------|")
+            for e in entries:
+                f = e.fields
+                lines.append(f"| {e.id} | {f.get('moment_of_inertia', 0):.3f} | {f.get('effective_mass', 0):.2f} | {f.get('reference_energy_j', 0):.1f} | {f.get('geometry_coeff', 0):.2f} | {f.get('rigidity_coeff', 0):.2f} |")
+        elif dataset == "techniques":
+            lines.append("| ID | Mode | Geo | Energy | Rigid | Channels |")
+            lines.append("|----|------|-----|--------|-------|----------|")
+            for e in entries:
+                f = e.fields
+                ch = f.get('channels', {})
+                ch_str = ",".join(k for k, v in ch.items() if v)
+                lines.append(f"| {e.id} | {f.get('attack_mode', '-')} | {f.get('axis_geometry_mult', 1):.2f} | {f.get('axis_energy_mult', 1):.2f} | {f.get('axis_rigidity_mult', 1):.2f} | {ch_str or '-'} |")
+        elif dataset == "armour_materials":
+            lines.append("| ID | Defl | Abs | Disp | GeoThr | EnerThr | RigThr |")
+            lines.append("|----|------|-----|------|--------|---------|--------|")
+            for e in entries:
+                f = e.fields
+                lines.append(f"| {e.id} | {f.get('deflection', 0):.2f} | {f.get('absorption', 0):.2f} | {f.get('dispersion', 0):.2f} | {f.get('geometry_threshold', 0):.1f} | {f.get('energy_threshold', 0):.1f} | {f.get('rigidity_threshold', 0):.1f} |")
+        elif dataset == "armour_pieces":
+            lines.append("| ID | Material | Coverage Count |")
+            lines.append("|----|----------|----------------|")
+            for e in entries:
+                f = e.fields
+                lines.append(f"| {e.id} | {f.get('material_id', '-')} | {f.get('coverage_count', 0)} |")
+        elif dataset == "tissue_templates":
+            lines.append("| ID | Layers | Thickness Sum |")
+            lines.append("|----|--------|---------------|")
+            for e in entries:
+                f = e.fields
+                lines.append(f"| {e.id} | {f.get('layer_count', 0)} | {f.get('thickness_sum', 0):.3f} |")
+        elif dataset == "body_plans":
+            lines.append("| ID | Parts | Height | Mass |")
+            lines.append("|----|-------|--------|------|")
+            for e in entries:
+                f = e.fields
+                lines.append(f"| {e.id} | {f.get('part_count', 0)} | {f.get('base_height_cm', 0):.0f}cm | {f.get('base_mass_kg', 0):.1f}kg |")
+        else:
+            lines.append(f"_{len(entries)} entries_")
+
+        return "\n".join(lines)
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Convert CUE-exported JSON to Zig data tables, with optional audit report."
+    )
+    parser.add_argument(
+        "input_file",
+        nargs="?",
+        help="JSON input file (reads from stdin if not provided)"
+    )
+    parser.add_argument(
+        "--audit-report",
+        metavar="PATH",
+        help="Generate audit report to specified path (skips Zig generation)"
+    )
+    parser.add_argument(
+        "--audit-only",
+        action="store_true",
+        help="Only run audit, don't generate Zig (report goes to stdout if --audit-report not set)"
+    )
+    return parser.parse_args()
+
+
+def load_json(args: argparse.Namespace) -> Dict[str, Any]:
+    if args.input_file:
+        with open(args.input_file, "r", encoding="utf-8") as f:
             return json.load(f)
     data = sys.stdin.read()
     return json.loads(data)
@@ -640,8 +852,343 @@ def load_existing_technique_ids() -> Set[str]:
     return ids
 
 
-def main() -> None:
-    data = load_json()
+# =============================================================================
+# Audit Functions
+# =============================================================================
+
+
+def audit_weapons(
+    weapons: List[Tuple[str, Dict[str, Any]]], report: AuditReport
+) -> None:
+    """Audit weapon definitions for missing/zero derived fields."""
+    for weapon_id, data in weapons:
+        report.weapon_ids.add(weapon_id)
+        phys = data.get("derived", {})
+
+        entry = AuditEntry(
+            dataset="weapons",
+            id=weapon_id,
+            fields={
+                "name": data.get("name", ""),
+                "weight_kg": data.get("weight_kg", 0),
+                "length_m": data.get("length_m", 0),
+                "balance": data.get("balance", 0),
+                "moment_of_inertia": phys.get("moment_of_inertia", 0),
+                "effective_mass": phys.get("effective_mass", 0),
+                "reference_energy_j": phys.get("reference_energy_j", 0),
+                "geometry_coeff": phys.get("geometry_coeff", 0),
+                "rigidity_coeff": phys.get("rigidity_coeff", 0),
+            },
+        )
+
+        # Check for zero derived fields
+        if phys.get("moment_of_inertia", 0) == 0:
+            entry.warnings.append("moment_of_inertia is 0")
+        if phys.get("effective_mass", 0) == 0:
+            entry.warnings.append("effective_mass is 0")
+        if phys.get("reference_energy_j", 0) == 0:
+            entry.warnings.append("reference_energy_j is 0")
+        if phys.get("geometry_coeff", 0) == 0:
+            entry.warnings.append("geometry_coeff is 0")
+        if phys.get("rigidity_coeff", 0) == 0:
+            entry.warnings.append("rigidity_coeff is 0")
+
+        # Check for missing base data
+        if data.get("weight_kg", 0) == 0:
+            entry.warnings.append("weight_kg is 0 (base data)")
+        if data.get("length_m", 0) == 0:
+            entry.warnings.append("length_m is 0 (base data)")
+
+        report.add_entry(entry)
+
+
+def audit_techniques(
+    techniques: List[Dict[str, Any]], report: AuditReport
+) -> None:
+    """Audit technique definitions for axis_bias and channel validity."""
+    for tech in techniques:
+        tech_id = tech.get("id", "")
+        report.technique_ids.add(tech_id)
+
+        axis = tech.get("axis_bias", {})
+        channels = tech.get("channels", {})
+
+        entry = AuditEntry(
+            dataset="techniques",
+            id=tech_id,
+            fields={
+                "name": tech.get("name", ""),
+                "attack_mode": tech.get("attack_mode", "none"),
+                "axis_geometry_mult": axis.get("geometry_mult", 1.0),
+                "axis_energy_mult": axis.get("energy_mult", 1.0),
+                "axis_rigidity_mult": axis.get("rigidity_mult", 1.0),
+                "channels": channels,
+            },
+        )
+
+        # Check if axis_bias is explicitly defined or using defaults
+        if not axis:
+            entry.warnings.append("axis_bias not defined (using defaults)")
+        else:
+            # Check if all three axes are explicitly set
+            if "geometry_mult" not in axis:
+                entry.warnings.append("axis_bias.geometry_mult not set (default 1.0)")
+            if "energy_mult" not in axis:
+                entry.warnings.append("axis_bias.energy_mult not set (default 1.0)")
+            if "rigidity_mult" not in axis:
+                entry.warnings.append("axis_bias.rigidity_mult not set (default 1.0)")
+
+        # Check channels - at least one should be true for combat techniques
+        attack_mode = tech.get("attack_mode", "none")
+        if attack_mode != "none":
+            has_channel = any(channels.values())
+            if not has_channel:
+                entry.warnings.append("No channels defined for combat technique")
+
+        report.add_entry(entry)
+
+
+def audit_armour_materials(
+    materials: List[Tuple[str, Dict[str, Any]]], report: AuditReport
+) -> None:
+    """Audit armour materials for coefficient consistency."""
+    for mat_id, data in materials:
+        report.armour_material_ids.add(mat_id)
+
+        shielding = data.get("shielding", {})
+        suscept = data.get("susceptibility", {})
+
+        deflection = shielding.get("deflection", 0)
+        absorption = shielding.get("absorption", 0)
+        dispersion = shielding.get("dispersion", 0)
+
+        entry = AuditEntry(
+            dataset="armour_materials",
+            id=mat_id,
+            fields={
+                "name": data.get("name", ""),
+                "deflection": deflection,
+                "absorption": absorption,
+                "dispersion": dispersion,
+                "geometry_threshold": suscept.get("geometry_threshold", 0),
+                "geometry_ratio": suscept.get("geometry_ratio", 1),
+                "energy_threshold": suscept.get("energy_threshold", 0),
+                "energy_ratio": suscept.get("energy_ratio", 1),
+                "rigidity_threshold": suscept.get("rigidity_threshold", 0),
+                "rigidity_ratio": suscept.get("rigidity_ratio", 1),
+            },
+        )
+
+        # Check for suspicious coefficient values
+        shield_sum = deflection + absorption + dispersion
+        if shield_sum > 1.5:
+            entry.warnings.append(
+                f"Shielding coefficients sum to {shield_sum:.2f} (deflection+absorption+dispersion > 1.5)"
+            )
+
+        # Check for zero thresholds with non-zero ratios (may be intentional)
+        for axis in ["geometry", "energy", "rigidity"]:
+            thr = suscept.get(f"{axis}_threshold", 0)
+            ratio = suscept.get(f"{axis}_ratio", 1)
+            if thr == 0 and ratio < 1:
+                entry.warnings.append(
+                    f"{axis}_threshold=0 with {axis}_ratio={ratio:.2f} means all damage is reduced"
+                )
+
+        report.add_entry(entry)
+
+
+def audit_armour_pieces(
+    pieces: List[Tuple[str, Dict[str, Any]]], report: AuditReport
+) -> None:
+    """Audit armour pieces for coverage and material references."""
+    for piece_id, data in pieces:
+        report.armour_piece_ids.add(piece_id)
+
+        material_id = data.get("material", "")
+        coverage = data.get("coverage", [])
+
+        entry = AuditEntry(
+            dataset="armour_pieces",
+            id=piece_id,
+            fields={
+                "name": data.get("name", ""),
+                "material_id": material_id,
+                "coverage_count": len(coverage),
+            },
+        )
+
+        # Check material reference
+        if not material_id:
+            entry.errors.append("No material specified")
+
+        # Check coverage
+        if not coverage:
+            entry.errors.append("No coverage entries defined")
+        else:
+            for i, cov in enumerate(coverage):
+                tags = cov.get("part_tags", [])
+                if not tags:
+                    entry.warnings.append(f"Coverage entry {i} has no part_tags")
+
+        report.add_entry(entry)
+
+
+def audit_tissue_templates(
+    templates: Dict[str, Any], report: AuditReport
+) -> None:
+    """Audit tissue templates for layer completeness and thickness sums."""
+    for tpl_id, tpl in templates.items():
+        report.tissue_template_ids.add(tpl_id)
+
+        layers = tpl.get("layers", [])
+        thickness_sum = sum(layer.get("thickness_ratio", 0) for layer in layers)
+
+        entry = AuditEntry(
+            dataset="tissue_templates",
+            id=tpl_id,
+            fields={
+                "notes": tpl.get("notes", ""),
+                "layer_count": len(layers),
+                "thickness_sum": thickness_sum,
+                "materials": [layer.get("material_id", "") for layer in layers],
+            },
+        )
+
+        # Collect material IDs
+        for layer in layers:
+            mat_id = layer.get("material_id", "")
+            if mat_id:
+                report.tissue_material_ids.add(mat_id)
+
+        # Check thickness sum
+        if abs(thickness_sum - 1.0) > 0.05:
+            entry.warnings.append(
+                f"Thickness ratios sum to {thickness_sum:.3f} (expected ~1.0, tolerance ±0.05)"
+            )
+
+        # Check for empty layers
+        if not layers:
+            entry.errors.append("No layers defined")
+
+        # Check each layer has a material
+        for i, layer in enumerate(layers):
+            if not layer.get("material_id"):
+                entry.errors.append(f"Layer {i} has no material_id")
+
+        report.add_entry(entry)
+
+
+def audit_body_plans(
+    plans: Dict[str, Any],
+    report: AuditReport,
+) -> None:
+    """Audit body plans for tissue template references and geometry."""
+    for plan_id, plan in plans.items():
+        report.body_plan_ids.add(plan_id)
+
+        parts = plan.get("parts", {})
+
+        entry = AuditEntry(
+            dataset="body_plans",
+            id=plan_id,
+            fields={
+                "name": plan.get("name", ""),
+                "base_height_cm": plan.get("base_height_cm", 0),
+                "base_mass_kg": plan.get("base_mass_kg", 0),
+                "part_count": len(parts),
+            },
+        )
+
+        # Check each part
+        missing_geometry = []
+        missing_tissue = []
+        tissue_refs: Set[str] = set()
+
+        for part_name, part in parts.items():
+            tissue_tpl = part.get("tissue_template", "")
+            if tissue_tpl:
+                tissue_refs.add(tissue_tpl)
+            else:
+                missing_tissue.append(part_name)
+
+            geom = part.get("geometry", {})
+            if not geom or geom.get("thickness_cm", 0) == 0:
+                missing_geometry.append(part_name)
+
+        if missing_tissue:
+            entry.errors.append(
+                f"Parts missing tissue_template: {', '.join(missing_tissue[:5])}"
+                + (f" (+{len(missing_tissue)-5} more)" if len(missing_tissue) > 5 else "")
+            )
+
+        if missing_geometry:
+            entry.warnings.append(
+                f"Parts with zero/missing geometry: {', '.join(missing_geometry[:5])}"
+                + (f" (+{len(missing_geometry)-5} more)" if len(missing_geometry) > 5 else "")
+            )
+
+        entry.fields["tissue_templates_used"] = list(tissue_refs)
+
+        report.add_entry(entry)
+
+
+def validate_cross_references(report: AuditReport) -> None:
+    """Check cross-references between datasets."""
+    # Armour pieces -> materials
+    for entry in report.entries:
+        if entry.dataset == "armour_pieces":
+            mat_id = entry.fields.get("material_id", "")
+            if mat_id and mat_id not in report.armour_material_ids:
+                report.add_cross_ref_error(
+                    f"Armour piece '{entry.id}' references unknown material '{mat_id}'"
+                )
+
+    # Body plans -> tissue templates
+    for entry in report.entries:
+        if entry.dataset == "body_plans":
+            for tpl_id in entry.fields.get("tissue_templates_used", []):
+                if tpl_id not in report.tissue_template_ids:
+                    report.add_cross_ref_error(
+                        f"Body plan '{entry.id}' references unknown tissue template '{tpl_id}'"
+                    )
+
+    # Future: techniques -> weapons (when technique defines weapon requirements)
+
+
+def run_audit(data: Dict[str, Any]) -> AuditReport:
+    """Run full audit on loaded CUE data."""
+    report = AuditReport()
+
+    # Flatten data
+    weapons = flatten_weapons(data.get("weapons", {}))
+    techniques = flatten_techniques(data.get("techniques", {}))
+    armour_materials = flatten_armour_materials(data)
+    armour_pieces = flatten_armour_pieces(data)
+    tissue_templates = data.get("tissue_templates", {})
+    body_plans = data.get("body_plans", {})
+
+    # Run audits
+    audit_weapons(weapons, report)
+    audit_techniques(techniques, report)
+    audit_armour_materials(armour_materials, report)
+    audit_armour_pieces(armour_pieces, report)
+    audit_tissue_templates(tissue_templates, report)
+    audit_body_plans(body_plans, report)
+
+    # Cross-reference validation
+    validate_cross_references(report)
+
+    return report
+
+
+# =============================================================================
+# Main
+# =============================================================================
+
+
+def generate_zig(data: Dict[str, Any]) -> str:
+    """Generate Zig code from CUE data."""
     weapons_root = data.get("weapons", {})
     weapons = flatten_weapons(weapons_root)
     techniques_root = data.get("techniques", {})
@@ -707,7 +1254,48 @@ def main() -> None:
     )
     if not has_data:
         output.append("// No weapons, techniques, biological, or armour data found in input JSON.")
-    sys.stdout.write("\n".join(output))
+    return "\n".join(output)
+
+
+def main() -> None:
+    args = parse_args()
+    data = load_json(args)
+
+    # Audit mode
+    if args.audit_report or args.audit_only:
+        report = run_audit(data)
+        markdown = report.to_markdown()
+
+        if args.audit_report:
+            with open(args.audit_report, "w", encoding="utf-8") as f:
+                f.write(markdown)
+                f.write("\n")
+            print(f"Audit report written to: {args.audit_report}", file=sys.stderr)
+        else:
+            print(markdown)
+
+        # Exit with error code if there are errors
+        if report.has_errors():
+            print(
+                f"Audit failed: {report.error_count()} error(s), {report.warning_count()} warning(s)",
+                file=sys.stderr
+            )
+            sys.exit(1)
+        elif report.warning_count() > 0:
+            print(
+                f"Audit passed with {report.warning_count()} warning(s)",
+                file=sys.stderr
+            )
+        else:
+            print("Audit passed: all validations succeeded", file=sys.stderr)
+
+        # If audit-only, don't generate Zig
+        if args.audit_only or args.audit_report:
+            return
+
+    # Generate Zig code
+    zig_code = generate_zig(data)
+    sys.stdout.write(zig_code)
 
 
 if __name__ == "__main__":

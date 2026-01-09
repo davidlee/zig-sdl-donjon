@@ -23,6 +23,10 @@ run:
 generate:
   (cue export data/materials.cue data/weapons.cue data/techniques.cue data/armour.cue data/bodies.cue --out json | ./scripts/cue_to_zig.py > src/gen/generated_data.zig)
 
+# Audit CUE data completeness and consistency
+audit-data:
+  cue export data/materials.cue data/weapons.cue data/techniques.cue data/armour.cue data/bodies.cue --out json | ./scripts/cue_to_zig.py --audit-report doc/artefacts/data_audit_report.md
+
 
 # Test targets
 [group('test')]

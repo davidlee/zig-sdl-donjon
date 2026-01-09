@@ -175,7 +175,7 @@ Answering these will position us to draft the full specification confidently ins
 1. ✅ **Done** - Add minimal packet logging (`audit_log.zig` exists).
 2. ✅ **CUE done, wiring pending** - `data/bodies.cue` complete with tissues/body plans/species. Generates `GeneratedBodyPlans` and `GeneratedTissueTemplates`. Runtime wiring tracked in T035.
 3. ✅ **Done** - T033 complete. Armour uses 3-axis model.
-4. Produce an audit script/report (likely via the Python converter) that lists every weapon/technique/armour/tissue entry with derived axis values and flags missing parameters.
+4. ✅ **Done** - T036 complete. `just audit-data` generates `doc/artefacts/data_audit_report.md` with per-dataset validation. Initial audit: 17 warnings (axis_bias defaults, thickness ratio deltas), 0 errors.
 
 ### 9.5 Event-System Instrumentation Plan
 - The existing event bus (`src/domain/events.zig`, see `events_system_overview` memory) already broadcasts key combat resolution milestones (technique resolved, armour deflected, wound inflicted). Rather than inventing a parallel logger, add a new packet-centric event (e.g., `combat_packet_resolved`) carrying the packet inputs/outputs, layer stack summary, and attacker/defender IDs.
