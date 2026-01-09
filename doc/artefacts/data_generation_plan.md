@@ -8,6 +8,7 @@
 - `scripts/cue_to_zig.py` exports weapons (with `moment_of_inertia`, `effective_mass`, `reference_energy_j`) and techniques (channels, damage instances, scaling, overlays, axis bias, etc.), validates technique IDs, and emits `src/gen/generated_data.zig`.
 - `just generate` (wired into `just check`) runs the export pipeline automatically; generated files live under `src/gen/`.
 - `src/domain/card_list.zig` imports `generated_data.zig`, builds `TechniqueEntries` from the generated definitions at comptime, and retains all overlay/axis metadata.
+- `data/bodies.cue` now captures shared tissue templates (referencing the same material presets as armour), per-part geometry metadata for the humanoid plan, and species definitions (body plan selection, resource baselines, natural weapon references). The converter emits `GeneratedTissueTemplates`, `GeneratedBodyPlans`, and `GeneratedSpecies` tables for audit/visualisation.
 - Immediate next wiring targets: plug generated armour pieces into runtime resolution and extend the converter to emit material stacks for armour coverage.
 
 ## 1. Goals

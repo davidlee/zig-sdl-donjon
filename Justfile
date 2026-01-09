@@ -18,7 +18,7 @@ run:
   ./zig-out/bin/cardigan
 
 generate:
-  (cue export data/materials.cue data/weapons.cue data/techniques.cue --out json | ./scripts/cue_to_zig.py > src/gen/generated_data.zig)
+  (cue export data/materials.cue data/weapons.cue data/techniques.cue data/armour.cue data/bodies.cue --out json | ./scripts/cue_to_zig.py > src/gen/generated_data.zig)
 
 
 # Test targets

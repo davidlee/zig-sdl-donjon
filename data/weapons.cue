@@ -88,4 +88,53 @@ weapons: {
             }
         }
     }
+
+    natural: {
+        fist: #Weapon & {
+            name: "Fist"
+            category: "natural"
+            weight_kg: 0.5
+            length_m: 0.10
+            balance: 0.5
+            reach: "clinch"
+            swing: true
+            thrust: false
+            curvature: 0.0
+            base_geometry: 0.15
+            base_rigidity: 0.3
+            angular_speed_rad_s: 5.5
+        }
+
+        bite: #Weapon & {
+            name: "Bite"
+            category: "natural"
+            weight_kg: 0.3
+            length_m: 0.05
+            balance: 0.5
+            reach: "clinch"
+            swing: false
+            thrust: true
+            curvature: 0.0
+            base_geometry: 0.45
+            base_rigidity: 0.45
+            angular_speed_rad_s: 4.0
+            linear_speed_m_s: 2.5
+        }
+
+        headbutt: #Weapon & {
+            name: "Headbutt"
+            category: "natural"
+            weight_kg: 1.0
+            length_m: 0.15
+            balance: 0.5
+            reach: "clinch"
+            swing: false
+            thrust: true
+            curvature: 0.0
+            base_geometry: 0.1
+            base_rigidity: 0.5
+            angular_speed_rad_s: 3.0
+            linear_speed_m_s: 1.5
+        }
+    }
 }

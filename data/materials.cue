@@ -46,6 +46,7 @@ materials: {
     tissues: {
         muscle: #Material & {
             name: "muscle"
+            category: "tissue"
             shielding: {
                 deflection: 0.05
                 absorption: 0.45
@@ -65,6 +66,7 @@ materials: {
 
         bone: #Material & {
             name: "bone"
+            category: "tissue"
             shielding: {
                 deflection: 0.25
                 absorption: 0.10
@@ -84,6 +86,7 @@ materials: {
 
         fat: #Material & {
             name: "fat"
+            category: "tissue"
             shielding: {
                 deflection: 0.02
                 absorption: 0.55
@@ -99,6 +102,106 @@ materials: {
             }
             density: 0.90
             notes: "Adipose tissue"
+        }
+
+        skin: #Material & {
+            name: "skin"
+            category: "tissue"
+            shielding: {
+                deflection: 0.10
+                absorption: 0.25
+                dispersion: 0.10
+            }
+            susceptibility: {
+                geometry_threshold: 0.02
+                geometry_ratio: 0.85
+                momentum_threshold: 0.05
+                momentum_ratio: 0.9
+                rigidity_threshold: 0.02
+                rigidity_ratio: 0.95
+            }
+            density: 1.0
+            notes: "Dermis and epidermis layers"
+        }
+
+        cartilage: #Material & {
+            name: "cartilage"
+            category: "tissue"
+            shielding: {
+                deflection: 0.15
+                absorption: 0.35
+                dispersion: 0.15
+            }
+            susceptibility: {
+                geometry_threshold: 0.10
+                geometry_ratio: 0.6
+                momentum_threshold: 0.20
+                momentum_ratio: 0.5
+                rigidity_threshold: 0.15
+                rigidity_ratio: 0.55
+            }
+            density: 1.1
+            notes: "Elastic cartilage"
+        }
+
+        tendon: #Material & {
+            name: "tendon"
+            category: "tissue"
+            shielding: {
+                deflection: 0.20
+                absorption: 0.20
+                dispersion: 0.10
+            }
+            susceptibility: {
+                geometry_threshold: 0.08
+                geometry_ratio: 0.7
+                momentum_threshold: 0.18
+                momentum_ratio: 0.6
+                rigidity_threshold: 0.15
+                rigidity_ratio: 0.5
+            }
+            density: 1.1
+            notes: "Dense collagen bundles"
+        }
+
+        nerve: #Material & {
+            name: "nerve"
+            category: "tissue"
+            shielding: {
+                deflection: 0.05
+                absorption: 0.30
+                dispersion: 0.05
+            }
+            susceptibility: {
+                geometry_threshold: 0.01
+                geometry_ratio: 0.95
+                momentum_threshold: 0.03
+                momentum_ratio: 0.9
+                rigidity_threshold: 0.01
+                rigidity_ratio: 0.95
+            }
+            density: 1.0
+            notes: "Peripheral nerve bundle"
+        }
+
+        organ: #Material & {
+            name: "organ"
+            category: "tissue"
+            shielding: {
+                deflection: 0.05
+                absorption: 0.60
+                dispersion: 0.10
+            }
+            susceptibility: {
+                geometry_threshold: 0.02
+                geometry_ratio: 0.9
+                momentum_threshold: 0.08
+                momentum_ratio: 0.7
+                rigidity_threshold: 0.03
+                rigidity_ratio: 0.85
+            }
+            density: 1.05
+            notes: "Generic soft organ tissue"
         }
     }
 

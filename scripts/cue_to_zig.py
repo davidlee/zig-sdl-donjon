@@ -49,6 +49,13 @@ def zig_float(value: float) -> str:
     return f"{value:.4f}".rstrip("0").rstrip(".")
 
 
+def zig_string_list(values: List[str]) -> str:
+    if not values:
+        return "&.{}"
+    inner = ", ".join(f"\"{v}\"" for v in values)
+    return f"&.{{ {inner} }}"
+
+
 def emit_weapons(weapons: List[Tuple[str, Dict[str, Any]]]) -> str:
     lines: List[str] = []
     lines.append("const WeaponDefinition = struct {")
@@ -97,6 +104,8 @@ def flatten_techniques(root: Dict[str, Any]) -> List[Dict[str, Any]]:
             entry.setdefault("id", key)
             results.append(entry)
     return results
+
+
 def format_height(value: Any) -> str:
     if not value:
         return "null"
@@ -223,6 +232,224 @@ def emit_techniques(techniques: List[Dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def emit_tissue_templates(templates: Dict[str, Any]) -> str:
+    def material_field(layer: Dict[str, Any], key: str, field: str) -> float:
+        material = layer.get("material", {})
+        section = material.get(key, {})
+        return float(section.get(field, 0.0))
+
+    lines: List[str] = []
+    lines.append("const TissueLayerDefinition = struct {")
+    lines.append("    material_id: []const u8,")
+    lines.append("    thickness_ratio: f32,")
+    lines.append("    deflection: f32,")
+    lines.append("    absorption: f32,")
+    lines.append("    dispersion: f32,")
+    lines.append("    geometry_threshold: f32,")
+    lines.append("    geometry_ratio: f32,")
+    lines.append("    momentum_threshold: f32,")
+    lines.append("    momentum_ratio: f32,")
+    lines.append("    rigidity_threshold: f32,")
+    lines.append("    rigidity_ratio: f32,")
+    lines.append("};")
+    lines.append("")
+    lines.append("pub const TissueTemplateDefinition = struct {")
+    lines.append("    id: []const u8,")
+    lines.append("    notes: []const u8 = \"\",")
+    lines.append("    layers: []const TissueLayerDefinition,")
+    lines.append("};")
+    lines.append("")
+    lines.append("pub const GeneratedTissueTemplates = [_]TissueTemplateDefinition{")
+    for template_id, template in sorted(templates.items()):
+        lines.append("    .{")
+        lines.append(f'        .id = "{template_id}",')
+        notes = template.get("notes", "")
+        if notes:
+            lines.append(f'        .notes = "{notes}",')
+        layers = template.get("layers", [])
+        lines.append("        .layers = &.{")
+        for layer in layers:
+            lines.append("            .{")
+            lines.append(f'                .material_id = "{layer.get("material_id", "")}",')
+            lines.append(f'                .thickness_ratio = {zig_float(layer.get("thickness_ratio", 0.0))},')
+            lines.append(f'                .deflection = {zig_float(material_field(layer, "shielding", "deflection"))},')
+            lines.append(f'                .absorption = {zig_float(material_field(layer, "shielding", "absorption"))},')
+            lines.append(f'                .dispersion = {zig_float(material_field(layer, "shielding", "dispersion"))},')
+            lines.append(f'                .geometry_threshold = {zig_float(material_field(layer, "susceptibility", "geometry_threshold"))},')
+            lines.append(f'                .geometry_ratio = {zig_float(material_field(layer, "susceptibility", "geometry_ratio"))},')
+            lines.append(f'                .momentum_threshold = {zig_float(material_field(layer, "susceptibility", "momentum_threshold"))},')
+            lines.append(f'                .momentum_ratio = {zig_float(material_field(layer, "susceptibility", "momentum_ratio"))},')
+            lines.append(f'                .rigidity_threshold = {zig_float(material_field(layer, "susceptibility", "rigidity_threshold"))},')
+            lines.append(f'                .rigidity_ratio = {zig_float(material_field(layer, "susceptibility", "rigidity_ratio"))},')
+            lines.append("            },")
+        lines.append("        },")
+        lines.append("    },")
+    lines.append("};")
+    return "\n".join(lines)
+
+
+def format_part_tag(tag: str) -> str:
+    return f"body.PartTag.{tag}"
+
+
+def format_side(side: str) -> str:
+    mapping = {
+        "left": "body.Side.left",
+        "right": "body.Side.right",
+        "center": "body.Side.center",
+        "none": "body.Side.none",
+    }
+    return mapping.get(side, "body.Side.center")
+
+
+def format_tissue_template(tpl: str) -> str:
+    return f"body.TissueTemplate.{tpl}"
+
+
+def format_part_flags(flags: Dict[str, Any]) -> str:
+    if not flags:
+        return ".{}"
+    mapping = [
+        ("vital", "vital"),
+        ("internal", "internal"),
+        ("grasp", "can_grasp"),
+        ("stand", "can_stand"),
+        ("see", "can_see"),
+        ("hear", "can_hear"),
+    ]
+    entries = []
+    for key, field in mapping:
+        if flags.get(key, False):
+            entries.append(f".{field} = true")
+    if not entries:
+        return ".{}"
+    return ".{ " + ", ".join(entries) + " }"
+
+
+def emit_body_plans(plans: Dict[str, Any]) -> str:
+    lines: List[str] = []
+    lines.append("const BodyPartGeometry = struct {")
+    lines.append("    thickness_cm: f32,")
+    lines.append("    length_cm: f32,")
+    lines.append("    area_cm2: f32,")
+    lines.append("};")
+    lines.append("")
+    lines.append("const BodyPartDefinition = struct {")
+    lines.append("    name: []const u8,")
+    lines.append("    tag: body.PartTag,")
+    lines.append("    side: body.Side = body.Side.center,")
+    lines.append("    tissue_template: body.TissueTemplate,")
+    lines.append("    has_major_artery: bool = false,")
+    lines.append("    flags: body.PartDef.Flags = .{},")
+    lines.append("    geometry: BodyPartGeometry,")
+    lines.append("};")
+    lines.append("")
+    lines.append("pub const BodyPlanDefinition = struct {")
+    lines.append("    id: []const u8,")
+    lines.append("    name: []const u8,")
+    lines.append("    base_height_cm: f32,")
+    lines.append("    base_mass_kg: f32,")
+    lines.append("    parts: []const BodyPartDefinition,")
+    lines.append("};")
+    lines.append("")
+    lines.append("pub const GeneratedBodyPlans = [_]BodyPlanDefinition{")
+    for plan_id, plan in sorted(plans.items()):
+        lines.append("    .{")
+        lines.append(f'        .id = "{plan_id}",')
+        lines.append(f'        .name = "{plan.get("name", plan_id)}",')
+        lines.append(f'        .base_height_cm = {zig_float(plan.get("base_height_cm", 0.0))},')
+        lines.append(f'        .base_mass_kg = {zig_float(plan.get("base_mass_kg", 0.0))},')
+        parts = plan.get("parts", {})
+        lines.append("        .parts = &.{")
+        for part_name, part in sorted(parts.items()):
+            lines.append("            .{")
+            lines.append(f'                .name = "{part_name}",')
+            lines.append(f"                .tag = {format_part_tag(part.get('tag', 'torso'))},")
+            lines.append(f"                .side = {format_side(part.get('side', 'center'))},")
+            lines.append(
+                f"                .tissue_template = {format_tissue_template(part.get('tissue_template', 'limb'))},"
+            )
+            if part.get("has_major_artery"):
+                lines.append("                .has_major_artery = true,")
+            flags = format_part_flags(part.get("flags", {}))
+            lines.append(f"                .flags = {flags},")
+            geom = part.get("geometry", {})
+            geom_line = (
+                "                .geometry = .{ "
+                + f".thickness_cm = {zig_float(geom.get('thickness_cm', 0.0))}, "
+                + f".length_cm = {zig_float(geom.get('length_cm', 0.0))}, "
+                + f".area_cm2 = {zig_float(geom.get('area_cm2', 0.0))} "
+                + "},"
+            )
+            lines.append(geom_line)
+            lines.append("            },")
+        lines.append("        },")
+        lines.append("    },")
+    lines.append("};")
+    return "\n".join(lines)
+
+
+def emit_species(species_map: Dict[str, Any]) -> str:
+    lines: List[str] = []
+    lines.append("const NaturalWeaponRef = struct {")
+    lines.append("    weapon_id: []const u8,")
+    lines.append("    required_part: body.PartTag,")
+    lines.append("};")
+    lines.append("")
+    lines.append("pub const SpeciesDefinition = struct {")
+    lines.append("    id: []const u8,")
+    lines.append("    name: []const u8,")
+    lines.append("    body_plan: []const u8,")
+    lines.append("    base_blood: f32,")
+    lines.append("    base_stamina: f32,")
+    lines.append("    base_focus: f32,")
+    lines.append("    stamina_recovery: ?f32 = null,")
+    lines.append("    focus_recovery: ?f32 = null,")
+    lines.append("    blood_recovery: ?f32 = null,")
+    lines.append("    size_height: f32 = 1.0,")
+    lines.append("    size_mass: f32 = 1.0,")
+    lines.append("    tags: []const []const u8 = &.{},")
+    lines.append("    natural_weapons: []const NaturalWeaponRef = &.{},")
+    lines.append("};")
+    lines.append("")
+    lines.append("pub const GeneratedSpecies = [_]SpeciesDefinition{")
+    for species_id, entry in sorted(species_map.items()):
+        lines.append("    .{")
+        lines.append(f'        .id = "{species_id}",')
+        lines.append(f'        .name = "{entry.get("name", species_id)}",')
+        lines.append(f'        .body_plan = "{entry.get("body_plan", "")}",')
+        lines.append(f'        .base_blood = {zig_float(entry.get("base_blood", 0.0))},')
+        lines.append(f'        .base_stamina = {zig_float(entry.get("base_stamina", 0.0))},')
+        lines.append(f'        .base_focus = {zig_float(entry.get("base_focus", 0.0))},')
+        if entry.get("stamina_recovery") is not None:
+            lines.append(f'        .stamina_recovery = {zig_float(entry["stamina_recovery"])},')
+        if entry.get("focus_recovery") is not None:
+            lines.append(f'        .focus_recovery = {zig_float(entry["focus_recovery"])},')
+        if entry.get("blood_recovery") is not None:
+            lines.append(f'        .blood_recovery = {zig_float(entry["blood_recovery"])},')
+        size = entry.get("size_modifiers", {})
+        if size.get("height") is not None:
+            lines.append(f'        .size_height = {zig_float(size["height"])},')
+        if size.get("mass") is not None:
+            lines.append(f'        .size_mass = {zig_float(size["mass"])},')
+        tags = entry.get("tags", [])
+        lines.append(f"        .tags = {zig_string_list(tags)},")
+        naturals = entry.get("natural_weapons", [])
+        lines.append("        .natural_weapons = &.{")
+        for natural in naturals:
+            part_expr = format_part_tag(natural.get("required_part", "hand"))
+            lines.append(
+                "            .{ "
+                + f'.weapon_id = "{natural.get("weapon_id", "")}", '
+                + f".required_part = {part_expr} "
+                + "},"
+            )
+        lines.append("        },")
+        lines.append("    },")
+    lines.append("};")
+    return "\n".join(lines)
+
+
 def load_existing_technique_ids() -> Set[str]:
     ids: Set[str] = set()
     try:
@@ -286,8 +513,20 @@ def main() -> None:
         output.append("")
     if techniques:
         output.append(emit_techniques(techniques))
-    if not weapons and not techniques:
-        output.append("// No weapons or techniques found in input JSON.")
+        output.append("")
+    tissue_templates = data.get("tissue_templates", {})
+    if tissue_templates:
+        output.append(emit_tissue_templates(tissue_templates))
+        output.append("")
+    body_plans_root = data.get("body_plans", {})
+    if body_plans_root:
+        output.append(emit_body_plans(body_plans_root))
+        output.append("")
+    species_root = data.get("species", {})
+    if species_root:
+        output.append(emit_species(species_root))
+    if not weapons and not techniques and not tissue_templates and not body_plans_root and not species_root:
+        output.append("// No weapons, techniques, or biological data found in input JSON.")
     sys.stdout.write("\n".join(output))
 
 
