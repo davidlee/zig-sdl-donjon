@@ -71,8 +71,8 @@ combat_tests: {
     expected: {
       // Steel plate has deflection 0.85 and geometry_threshold 0.30
       // Sword geometry_coeff is 0.6, which should be substantially deflected
-      // Note: armour not yet wired, so deflected may not trigger
-      damage_dealt_max: 6.0  // Severity-based (0-5 scale)
+      armour_deflected: true
+      damage_dealt_max: 1.0  // Should be near zero (bruising only)
     }
   }
 

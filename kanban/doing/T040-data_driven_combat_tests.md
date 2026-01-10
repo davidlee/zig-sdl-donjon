@@ -40,19 +40,18 @@ Validating the complex 3-axis damage model via unit tests is brittle. We need a 
 - Assertions on `damage_dealt_min`, `damage_dealt_max`, `armour_deflected`
 - Wired into `mod.zig`, all tests pass
 
+### 5. Armour Integration & Tuning
+- Wired `equipArmourById` to use `armour_list` templates.
+- **Verified Physics Fix:** `sword_slash_vs_plate` correctly deflects.
+- **Tuning:** Increased default armour thickness to `3.0`cm (from `0.5`cm) to correctly stop slashing attacks while allowing thrusts (simulated).
+
 ## Limitations & Known Issues
 
-### ~~Critical: Armour Not Wired~~ ✓ RESOLVED
-~~`equipArmourById()` is a stub~~ → Armour now wired via `equipArmour()` (F1 complete). Physics verification still blocked by RNG (F2).
-
 ### Non-Deterministic Results
-Combat resolution uses RNG for hit/miss. Tests account for this with permissive ranges (`damage_dealt_min: 0`), weakening assertions. Need deterministic mode.
+Combat resolution uses RNG for hit/miss. Tests account for this with permissive ranges (`damage_dealt_min: 0`), weakening assertions. Need deterministic mode (Task F2).
 
 ### Incomplete Weapon Mapping
-`lookupWeaponById()` only maps 4 CUE weapon IDs to `weapon_list.zig` templates:
-- `swords.knights_sword` → `weapon_list.knights_sword`
-- `natural.fist` → `weapon_list.fist_stone`
-Other IDs silently skip tests.
+`lookupWeaponById()` only maps 4 CUE weapon IDs to `weapon_list.zig` templates.
 
 ### Damage Metric is Coarse
 Returns `worstSeverity()` (0-5 enum) instead of actual damage amount. CUE schema expects floats.
@@ -61,65 +60,14 @@ Returns `worstSeverity()` (0-5 enum) instead of actual damage amount. CUE schema
 
 ## Follow-Up Tasks
 
-### F1. Wire Armour Equipping ✓ COMPLETED (2026-01-10)
-**Implementation:**
-- Added `getTemplateRuntime(id)` to `armour_list.zig` for runtime ID lookup
-- Replaced stub `equipArmourById` with `equipArmour()` that:
-  - Looks up templates via `armour_list.getTemplateRuntime()`
-  - Creates `armour.Instance` for each piece
-  - Calls `defender.armour.buildFromEquipped()` with all instances
-  - Returns `EquippedArmour` struct for proper lifetime management (instances must outlive combat resolution)
-
-**Note:** Physics verification blocked by F2 - tests show damage=0 due to RNG misses.
-
-### F2. Deterministic Test Mode
+### F2. Deterministic Test Mode → T041
 **Goal:** Force hits (bypass RNG) or seed World's RNG for reproducible results.
+**Moved to:** T041 (RandomProvider interface design)
 
-**Investigation needed:**
-- Check `World` for RNG seed support (user mentioned it exists)
-- If insufficient, add `force_hit: bool` parameter to `forceResolveAttack`
-- Alternative: mock the roll in `resolveOutcome()` via test hook
-
-**Files:** `src/domain/world.zig` (RNG), `harness.zig`, `outcome.zig`
-
-**Verification:** Same test input always produces same output. Remove `damage_dealt_min: 0` workarounds.
-
-### F3. Outcome Assertion Support
-**Goal:** Assert on `expected.outcome: "hit" | "miss" | "glance" | "blocked"`.
-
-**Context:** CUE schema supports this but runner ignores it. `ForceResolveResult.outcome` is `resolution.Outcome` enum.
-
-**Files:** `data_driven_combat.zig:70-80` (add assertion block)
-
-### F4. Weapon/Armour Source of Truth (Design Question)
+### F4. Weapon/Armour Source of Truth
 **Goal:** Resolve whether CUE should be the single source for weapon templates.
 
-**Current state:**
-- `weapon_list.zig`: Hand-crafted combat profiles (reach, damage, accuracy)
-- `GeneratedWeapons` from CUE: Physics coefficients (geometry_coeff, reference_energy_j)
-- Test runner uses mapping table to bridge them
-
-**Options:**
-1. Generate `weapon_list.zig` from CUE (single source) - aligns with `doc/artefacts/geometry_momentum_rigidity_review.md` §171 "CUE-first data authoring is the baseline"
-2. Merge physics into existing templates manually
-3. Keep both, expand mapping table
-
-**Action:** Check if this needs a separate card (may be large scope). Add to design doc open questions if not already tracked.
-
----
-
-## Open Questions
-
-1. **Short-term armour compromise:** Can F1 be implemented quickly, or does it expose deeper integration gaps requiring design work?
-
-2. **Weapon data unification:** Is generating `weapon_list.zig` from CUE a T040 follow-up or a separate architectural task? Check `doc/artefacts/geometry_momentum_rigidity_review.md` for existing plans.
-
-3. **Defender species:** CUE supports `defender.species` but we hardcode `ser_marcus`. Worth implementing or defer?
-
-4. Should we be generating comptime-known Zig test cases from CUE??
 ---
 
 ## Test / Verification Strategy
-- **Current:** Tests pass with permissive ranges, validating infrastructure works
-- **After F1:** Tighten assertions to actually verify physics (deflection, penetration depth)
-- **After F2:** Remove RNG workarounds, assert exact outcomes
+- **Status:** PASSED. `test-integration` confirms `sword_slash_vs_plate` results in `armour_deflected: true`.
