@@ -106,8 +106,12 @@ pub const Agent = struct {
         sp: *const species_mod.Species,
         sb: stats.Block,
     ) !*Agent {
-        // Derive body from species
-        const agent_body = try body.Body.fromPlan(alloc, sp.body_plan_id);
+        // Derive body from species, applying size modifiers for anatomical scaling
+        const size_mods = body.SizeModifiers{
+            .height = sp.height_modifier,
+            .mass = sp.mass_modifier,
+        };
+        const agent_body = try body.Body.fromPlan(alloc, sp.body_plan_id, size_mods);
 
         // Derive resources from species (base values + recovery rates)
         const stamina_res = stats.Resource.init(sp.base_stamina, sp.base_stamina, sp.getStaminaRecovery());

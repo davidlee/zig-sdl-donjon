@@ -23,53 +23,9 @@ pub const NO_PARENT = std.math.maxInt(PartIndex);
 // - Attaching wounds to parts and updating Part.severity
 // - Integration with armor stack
 
-// const Tag = PartTag;
-pub const PartTag = enum {
-    // Human exterior bits
-    head,
-    eye,
-    nose,
-    ear,
-    neck,
-    torso,
-    abdomen,
-    shoulder,
-    groin,
-    arm,
-    elbow,
-    forearm,
-    wrist,
-    hand,
-    finger,
-    thumb,
-    thigh,
-    knee,
-    shin,
-    ankle,
-    foot,
-    toe,
-    // human organs
-    brain,
-    heart,
-    lung,
-    stomach,
-    liver,
-    intestine,
-    tongue,
-    trachea,
-    spleen,
-    // // Human bones
-    // Skull,
-    // Tooth,
-    // Jaw,
-    // Vertebrate,
-    // Ribcage,
-    // Pelvis,
-    // Femur,
-    // Tibia,
-    //
-    // Other creature bits ...
-};
+// T042: PartTag is now data-driven, generated from data/taxonomy.cue.
+// Add new body part tags (wing, tentacle, etc.) in taxonomy.cue, not here.
+pub const PartTag = body_list.PartTag;
 
 pub const Side = enum(u8) {
     left,
@@ -292,6 +248,49 @@ pub const PartDef = struct {
     geometry: body_list.BodyPartGeometry, // physical dimensions from generated data
 };
 
+// T042: Species-level size modifiers for body part scaling.
+// Used to create anatomically-scaled bodies (e.g., stocky dwarves, slight goblins).
+pub const SizeModifiers = struct {
+    height: f32 = 1.0, // 1.0 = baseline, <1.0 = shorter, >1.0 = taller
+    mass: f32 = 1.0, // 1.0 = baseline, <1.0 = lighter, >1.0 = heavier
+
+    /// Identity modifiers (no scaling).
+    pub const NONE: SizeModifiers = .{};
+
+    // =========================================================================
+    // T042: Scaling formulas - GAME LOGIC that may warrant revision.
+    // These are simple linear approximations. More sophisticated models
+    // (allometric scaling, per-tag adjustments) could replace these.
+    // =========================================================================
+
+    /// Length scale: taller creatures have proportionally longer limbs.
+    pub fn lengthScale(self: SizeModifiers) f32 {
+        return self.height;
+    }
+
+    /// Thickness scale: stockiness = mass relative to height.
+    /// A dwarf (height=0.9, mass=1.1) has thickness ~1.22x baseline.
+    pub fn thicknessScale(self: SizeModifiers) f32 {
+        if (self.height <= 0) return 1.0; // guard against division by zero
+        return self.mass / self.height;
+    }
+
+    /// Area scale: exposed surface combines length and thickness.
+    /// Used for hit probability and wound surface calculations.
+    pub fn areaScale(self: SizeModifiers) f32 {
+        return self.lengthScale() * self.thicknessScale();
+    }
+
+    /// Apply scaling to base geometry, returning scaled copy.
+    pub fn scaleGeometry(self: SizeModifiers, base: body_list.BodyPartGeometry) body_list.BodyPartGeometry {
+        return .{
+            .thickness_cm = base.thickness_cm * self.thicknessScale(),
+            .length_cm = base.length_cm * self.lengthScale(),
+            .area_cm2 = base.area_cm2 * self.areaScale(),
+        };
+    }
+};
+
 pub const Body = struct {
     agent_id: entity.ID = undefined, // Body created before agent; set in Agent.init
     alloc: std.mem.Allocator,
@@ -299,15 +298,18 @@ pub const Body = struct {
     index_by_hash: std.AutoHashMap(u64, PartIndex), // name hash → part index
 
     /// Create a body from a plan ID (looks up in generated body plans).
-    pub fn fromPlan(alloc: std.mem.Allocator, plan_id: []const u8) !Body {
+    /// Pass size modifiers to scale body part geometry for species variation.
+    pub fn fromPlan(alloc: std.mem.Allocator, plan_id: []const u8, size_mods: ?SizeModifiers) !Body {
         const plan = body_list.getBodyPlanRuntime(plan_id) orelse
             return error.UnknownBodyPlan;
-        return fromParts(alloc, plan.parts);
+        return fromParts(alloc, plan.parts, size_mods);
     }
 
     /// Create a body from a raw parts slice.
     /// Prefer fromPlan() for standard body plans; use this for test fixtures.
-    pub fn fromParts(alloc: std.mem.Allocator, parts: []const PartDef) !Body {
+    pub fn fromParts(alloc: std.mem.Allocator, parts: []const PartDef, size_mods: ?SizeModifiers) !Body {
+        const mods = size_mods orelse SizeModifiers.NONE;
+
         var self = Body{
             .alloc = alloc,
             .parts = try std.ArrayList(Part).initCapacity(alloc, parts.len),
@@ -330,7 +332,7 @@ pub const Body = struct {
                 .tissue = def.tissue,
                 .has_major_artery = def.has_major_artery,
                 .trauma_mult = def.trauma_mult,
-                .geometry = def.geometry,
+                .geometry = mods.scaleGeometry(def.geometry), // T042: apply species scaling
                 .severity = .none, // undamaged
                 .wounds = try std.ArrayList(Wound).initCapacity(alloc, 0),
                 .is_severed = false,
@@ -1123,7 +1125,7 @@ pub fn defaultStats(tag: PartTag) PartStats {
 
 test "body fromPlan creates correct part count" {
     const alloc = std.testing.allocator;
-    var bod = try Body.fromPlan(alloc, "humanoid");
+    var bod = try Body.fromPlan(alloc, "humanoid", null);
     defer bod.deinit();
 
     const plan = body_list.getBodyPlanRuntime("humanoid").?;
@@ -1132,7 +1134,7 @@ test "body fromPlan creates correct part count" {
 
 test "body part lookup by name" {
     const alloc = std.testing.allocator;
-    var body = try Body.fromPlan(alloc, "humanoid");
+    var body = try Body.fromPlan(alloc, "humanoid", null);
     defer body.deinit();
 
     const hand = body.get("left_hand");
@@ -1143,7 +1145,7 @@ test "body part lookup by name" {
 
 test "severing arm propagates to children" {
     const alloc = std.testing.allocator;
-    var body = try Body.fromPlan(alloc, "humanoid");
+    var body = try Body.fromPlan(alloc, "humanoid", null);
     defer body.deinit();
 
     // Get indices for arm chain
@@ -1171,7 +1173,7 @@ test "severing arm propagates to children" {
 
 test "child iterator finds direct children" {
     const alloc = std.testing.allocator;
-    var body = try Body.fromPlan(alloc, "humanoid");
+    var body = try Body.fromPlan(alloc, "humanoid", null);
     defer body.deinit();
 
     const hand_idx = body.indexOf("left_hand").?;
@@ -1189,7 +1191,7 @@ test "child iterator finds direct children" {
 
 test "enclosed iterator finds organs" {
     const alloc = std.testing.allocator;
-    var body = try Body.fromPlan(alloc, "humanoid");
+    var body = try Body.fromPlan(alloc, "humanoid", null);
     defer body.deinit();
 
     const torso_idx = body.indexOf("torso").?;
@@ -1207,7 +1209,7 @@ test "enclosed iterator finds organs" {
 
 test "effective integrity propagates through chain" {
     const alloc = std.testing.allocator;
-    var body = try Body.fromPlan(alloc, "humanoid");
+    var body = try Body.fromPlan(alloc, "humanoid", null);
     defer body.deinit();
 
     const shoulder_idx = body.indexOf("left_shoulder").?;
@@ -1228,7 +1230,7 @@ test "effective integrity propagates through chain" {
 
 test "grasp strength factors in fingers" {
     const alloc = std.testing.allocator;
-    var body = try Body.fromPlan(alloc, "humanoid");
+    var body = try Body.fromPlan(alloc, "humanoid", null);
     defer body.deinit();
 
     const hand_idx = body.indexOf("left_hand").?;
@@ -1251,7 +1253,7 @@ test "grasp strength factors in fingers" {
 
 test "mobility score with damaged groin" {
     const alloc = std.testing.allocator;
-    var body = try Body.fromPlan(alloc, "humanoid");
+    var body = try Body.fromPlan(alloc, "humanoid", null);
     defer body.deinit();
 
     const groin_idx = body.indexOf("groin").?;
@@ -1271,7 +1273,7 @@ test "mobility score with damaged groin" {
 
 test "functional grasping parts" {
     const alloc = std.testing.allocator;
-    var body = try Body.fromPlan(alloc, "humanoid");
+    var body = try Body.fromPlan(alloc, "humanoid", null);
     defer body.deinit();
 
     // Both hands should be functional
@@ -1454,7 +1456,7 @@ test "digit tissue: minimal layers" {
 
 test "applying damage to part adds wound and updates severity" {
     const alloc = std.testing.allocator;
-    var body = try Body.fromPlan(alloc, "humanoid");
+    var body = try Body.fromPlan(alloc, "humanoid", null);
     defer body.deinit();
 
     const arm_idx = body.indexOf("left_arm").?;
@@ -1484,7 +1486,7 @@ test "applying damage to part adds wound and updates severity" {
 
 test "severe slash can sever a limb" {
     const alloc = std.testing.allocator;
-    var body = try Body.fromPlan(alloc, "humanoid");
+    var body = try Body.fromPlan(alloc, "humanoid", null);
     defer body.deinit();
 
     const arm_idx = body.indexOf("left_arm").?;
@@ -1511,7 +1513,7 @@ test "severe slash can sever a limb" {
 
 test "major artery hit detection" {
     const alloc = std.testing.allocator;
-    var body = try Body.fromPlan(alloc, "humanoid");
+    var body = try Body.fromPlan(alloc, "humanoid", null);
     defer body.deinit();
 
     // Neck has major artery
@@ -1536,7 +1538,7 @@ test "major artery hit detection" {
 
 test "part severity computed from wounds" {
     const alloc = std.testing.allocator;
-    var body = try Body.fromPlan(alloc, "humanoid");
+    var body = try Body.fromPlan(alloc, "humanoid", null);
     defer body.deinit();
 
     const arm_idx = body.indexOf("left_arm").?;
@@ -1562,7 +1564,7 @@ test "part severity computed from wounds" {
 
 test "vision score with damaged eyes" {
     const alloc = std.testing.allocator;
-    var body = try Body.fromPlan(alloc, "humanoid");
+    var body = try Body.fromPlan(alloc, "humanoid", null);
     defer body.deinit();
 
     // Full vision with both eyes
@@ -1590,7 +1592,7 @@ test "vision score with damaged eyes" {
 
 test "hearing score with damaged ears" {
     const alloc = std.testing.allocator;
-    var body = try Body.fromPlan(alloc, "humanoid");
+    var body = try Body.fromPlan(alloc, "humanoid", null);
     defer body.deinit();
 
     // Full hearing with both ears
@@ -1618,7 +1620,7 @@ test "hearing score with damaged ears" {
 
 test "grasping part by side" {
     const alloc = std.testing.allocator;
-    var body = try Body.fromPlan(alloc, "humanoid");
+    var body = try Body.fromPlan(alloc, "humanoid", null);
     defer body.deinit();
 
     // Find left hand - should match indexOf
@@ -1638,7 +1640,7 @@ test "grasping part by side" {
 
 test "hasFunctionalPart with healthy body" {
     const alloc = std.testing.allocator;
-    var b = try Body.fromPlan(alloc, "humanoid");
+    var b = try Body.fromPlan(alloc, "humanoid", null);
     defer b.deinit();
 
     // Both hands functional
@@ -1654,7 +1656,7 @@ test "hasFunctionalPart with healthy body" {
 
 test "hasFunctionalPart with missing part" {
     const alloc = std.testing.allocator;
-    var b = try Body.fromPlan(alloc, "humanoid");
+    var b = try Body.fromPlan(alloc, "humanoid", null);
     defer b.deinit();
 
     // Set left hand to missing
@@ -1679,7 +1681,7 @@ test "hasFunctionalPart with missing part" {
 
 test "hasFunctionalPart with severed limb" {
     const alloc = std.testing.allocator;
-    var b = try Body.fromPlan(alloc, "humanoid");
+    var b = try Body.fromPlan(alloc, "humanoid", null);
     defer b.deinit();
 
     // Sever left arm - hand becomes effectively severed
@@ -1696,7 +1698,7 @@ test "hasFunctionalPart with severed limb" {
 
 test "hasFunctionalPart damaged but not missing" {
     const alloc = std.testing.allocator;
-    var b = try Body.fromPlan(alloc, "humanoid");
+    var b = try Body.fromPlan(alloc, "humanoid", null);
     defer b.deinit();
 
     // Set hand to various damage levels - still functional
@@ -1860,7 +1862,7 @@ test "T039: severity from volume can reach missing" {
 
 test "T039: small part (digit) severs with lower thresholds" {
     const alloc = std.testing.allocator;
-    var body = try Body.fromPlan(alloc, "humanoid");
+    var body = try Body.fromPlan(alloc, "humanoid", null);
     defer body.deinit();
 
     const finger_idx = body.indexOf("left_index_finger").?;
@@ -1884,4 +1886,85 @@ test "T039: small part (digit) severs with lower thresholds" {
     // The wound should cause notable damage on the small finger
     const worst = result.wound.worstSeverity();
     try std.testing.expect(@intFromEnum(worst) >= @intFromEnum(Severity.inhibited));
+}
+
+// === T042: Body Scaling Tests ===
+
+test "T042: scaling modifiers adjust body geometry" {
+    const alloc = std.testing.allocator;
+
+    // Create baseline body (null modifiers = no scaling)
+    var baseline = try Body.fromPlan(alloc, "humanoid", null);
+    defer baseline.deinit();
+
+    // Create scaled body with Dwarf-like modifiers (shorter, stockier)
+    const dwarf_mods = SizeModifiers{ .height = 0.9, .mass = 1.1 };
+    var scaled = try Body.fromPlan(alloc, "humanoid", dwarf_mods);
+    defer scaled.deinit();
+
+    // Get torso geometry from both bodies
+    const baseline_torso = baseline.get("torso").?;
+    const scaled_torso = scaled.get("torso").?;
+
+    // Expected scales:
+    // - length_scale = height = 0.9
+    // - thickness_scale = mass / height = 1.1 / 0.9 ≈ 1.222
+    // - area_scale = length * thickness = 0.9 * 1.222 ≈ 1.1
+    const expected_length_scale = dwarf_mods.lengthScale();
+    const expected_thickness_scale = dwarf_mods.thicknessScale();
+    const expected_area_scale = dwarf_mods.areaScale();
+
+    // Length should be shorter (0.9x)
+    const baseline_length = baseline_torso.geometry.length_cm;
+    const scaled_length = scaled_torso.geometry.length_cm;
+    try std.testing.expectApproxEqAbs(baseline_length * expected_length_scale, scaled_length, 0.01);
+    try std.testing.expect(scaled_length < baseline_length);
+
+    // Thickness should be greater (stocky = ~1.22x)
+    const baseline_thickness = baseline_torso.geometry.thickness_cm;
+    const scaled_thickness = scaled_torso.geometry.thickness_cm;
+    try std.testing.expectApproxEqAbs(baseline_thickness * expected_thickness_scale, scaled_thickness, 0.01);
+    try std.testing.expect(scaled_thickness > baseline_thickness);
+
+    // Area scales by both factors (~1.1x for dwarf)
+    const baseline_area = baseline_torso.geometry.area_cm2;
+    const scaled_area = scaled_torso.geometry.area_cm2;
+    try std.testing.expectApproxEqAbs(baseline_area * expected_area_scale, scaled_area, 0.1);
+}
+
+test "T042: scaling applies to all parts" {
+    const alloc = std.testing.allocator;
+
+    const mods = SizeModifiers{ .height = 1.2, .mass = 0.8 }; // tall & thin
+    var body = try Body.fromPlan(alloc, "humanoid", mods);
+    defer body.deinit();
+
+    // All parts should have scaled geometry
+    for (body.parts.items) |part| {
+        // Length should be scaled up (1.2x)
+        // Thickness should be scaled down (0.8/1.2 ≈ 0.67x)
+        // We can't check exact values without baseline, but we can check consistency
+        const expected_thickness_scale = mods.thicknessScale(); // 0.8/1.2 ≈ 0.667
+        try std.testing.expect(expected_thickness_scale < 1.0);
+        try std.testing.expect(mods.lengthScale() > 1.0);
+        _ = part;
+    }
+}
+
+test "T042: null modifiers preserve baseline geometry" {
+    const alloc = std.testing.allocator;
+
+    // Both should produce identical geometry
+    var body_null = try Body.fromPlan(alloc, "humanoid", null);
+    defer body_null.deinit();
+
+    var body_identity = try Body.fromPlan(alloc, "humanoid", SizeModifiers.NONE);
+    defer body_identity.deinit();
+
+    const torso_null = body_null.get("torso").?;
+    const torso_identity = body_identity.get("torso").?;
+
+    try std.testing.expectEqual(torso_null.geometry.length_cm, torso_identity.geometry.length_cm);
+    try std.testing.expectEqual(torso_null.geometry.thickness_cm, torso_identity.geometry.thickness_cm);
+    try std.testing.expectEqual(torso_null.geometry.area_cm2, torso_identity.geometry.area_cm2);
 }

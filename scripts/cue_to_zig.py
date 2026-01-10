@@ -46,6 +46,7 @@ class AuditReport:
     tissue_template_ids: Set[str] = field(default_factory=set)
     tissue_material_ids: Set[str] = field(default_factory=set)
     body_plan_ids: Set[str] = field(default_factory=set)
+    body_plan_refs: Set[str] = field(default_factory=set)  # T042: species -> body_plan refs
 
     def add_entry(self, entry: AuditEntry) -> None:
         self.entries.append(entry)
@@ -742,7 +743,20 @@ def emit_tissue_templates(templates: Dict[str, Any]) -> str:
 
 
 def format_part_tag(tag: str) -> str:
-    return f"body.PartTag.{tag}"
+    # Use local PartTag since it's now generated in this file
+    return f"PartTag.{tag}"
+
+
+def emit_part_tags(tags: List[str]) -> str:
+    """Generate the PartTag enum from taxonomy.cue part_tags list."""
+    lines: List[str] = []
+    lines.append("// Body part taxonomy - generated from data/taxonomy.cue")
+    lines.append("// Add new tags (wing, tentacle, etc.) in taxonomy.cue, not here.")
+    lines.append("pub const PartTag = enum {")
+    for tag in tags:
+        lines.append(f"    {tag},")
+    lines.append("};")
+    return "\n".join(lines)
 
 
 def format_side(side: str) -> str:
@@ -823,7 +837,7 @@ def emit_body_plans(plans: Dict[str, Any]) -> str:
     lines.append("")
     lines.append("pub const BodyPartDefinition = struct {")
     lines.append("    name: []const u8,")
-    lines.append("    tag: body.PartTag,")
+    lines.append("    tag: PartTag,")
     lines.append("    side: body.Side = body.Side.center,")
     lines.append("    parent: ?[]const u8 = null,")
     lines.append("    enclosing: ?[]const u8 = null,")
@@ -969,7 +983,7 @@ def emit_armour_materials(materials: List[Tuple[str, Dict[str, Any]]]) -> str:
 def emit_armour_pieces(pieces: List[Tuple[str, Dict[str, Any]]]) -> str:
     lines: List[str] = []
     lines.append("pub const ArmourCoverageEntry = struct {")
-    lines.append("    part_tags: []const body.PartTag,")
+    lines.append("    part_tags: []const PartTag,")
     lines.append("    side: body.Side = body.Side.center,")
     lines.append("    layer: inventory.Layer,")
     lines.append("    totality: armour.Totality,")
@@ -992,7 +1006,7 @@ def emit_armour_pieces(pieces: List[Tuple[str, Dict[str, Any]]]) -> str:
         lines.append("        .coverage = &.{")
         for cov in coverage:
             part_tags = cov.get("part_tags", [])
-            tags_str = ", ".join(f"body.PartTag.{t}" for t in part_tags)
+            tags_str = ", ".join(f"PartTag.{t}" for t in part_tags)
             side = format_side(cov.get("side", "center"))
             layer = format_armour_layer(cov.get("layer", "outer"))
             totality = format_totality(cov.get("totality", "frontal"))
@@ -1134,7 +1148,7 @@ def emit_species(species_map: Dict[str, Any]) -> str:
     lines: List[str] = []
     lines.append("pub const NaturalWeaponRef = struct {")
     lines.append("    weapon_id: []const u8,")
-    lines.append("    required_part: body.PartTag,")
+    lines.append("    required_part: PartTag,")
     lines.append("};")
     lines.append("")
     lines.append("pub const SpeciesDefinition = struct {")
@@ -1495,6 +1509,50 @@ def audit_body_plans(
         report.add_entry(entry)
 
 
+def audit_species(
+    species: Dict[str, Any],
+    report: AuditReport,
+) -> None:
+    """Audit species for size_modifiers and body_plan references.
+
+    T042: Warns when species lacks size_modifiers (defaults applied at runtime).
+    """
+    for species_id, sp in species.items():
+        entry = AuditEntry(
+            dataset="species",
+            id=species_id,
+            fields={
+                "name": sp.get("name", ""),
+                "body_plan": sp.get("body_plan", ""),
+                "base_blood": sp.get("base_blood", 0),
+                "base_stamina": sp.get("base_stamina", 0),
+                "base_focus": sp.get("base_focus", 0),
+            },
+        )
+
+        # T042: Check for size_modifiers - warn if missing (defaults to 1.0)
+        size_mods = sp.get("size_modifiers")
+        if size_mods is None:
+            entry.warnings.append(
+                "Missing size_modifiers - body parts will use unscaled baseline geometry. "
+                "Add size_modifiers: { height: 1.0, mass: 1.0 } if intentional."
+            )
+            entry.fields["size_height"] = 1.0
+            entry.fields["size_mass"] = 1.0
+        else:
+            entry.fields["size_height"] = size_mods.get("height", 1.0)
+            entry.fields["size_mass"] = size_mods.get("mass", 1.0)
+
+        # Check body_plan reference
+        body_plan = sp.get("body_plan", "")
+        if not body_plan:
+            entry.errors.append("Missing body_plan reference")
+        else:
+            report.body_plan_refs.add(body_plan)
+
+        report.add_entry(entry)
+
+
 def validate_cross_references(report: AuditReport) -> None:
     """Check cross-references between datasets."""
     # Armour pieces -> materials
@@ -1515,6 +1573,13 @@ def validate_cross_references(report: AuditReport) -> None:
                         f"Body plan '{entry.id}' references unknown tissue template '{tpl_id}'"
                     )
 
+    # Species -> body_plans (T042)
+    for body_plan_ref in report.body_plan_refs:
+        if body_plan_ref not in report.body_plan_ids:
+            report.add_cross_ref_error(
+                f"Species references unknown body_plan '{body_plan_ref}'"
+            )
+
     # Future: techniques -> weapons (when technique defines weapon requirements)
 
 
@@ -1529,6 +1594,7 @@ def run_audit(data: Dict[str, Any]) -> AuditReport:
     armour_pieces = flatten_armour_pieces(data)
     tissue_templates = data.get("tissue_templates", {})
     body_plans = data.get("body_plans", {})
+    species = data.get("species", {})
 
     # Run audits
     audit_weapons(weapons, report)
@@ -1537,6 +1603,7 @@ def run_audit(data: Dict[str, Any]) -> AuditReport:
     audit_armour_pieces(armour_pieces, report)
     audit_tissue_templates(tissue_templates, report)
     audit_body_plans(body_plans, report)
+    audit_species(species, report)
 
     # Cross-reference validation
     validate_cross_references(report)
@@ -1569,10 +1636,23 @@ def generate_zig(data: Dict[str, Any]) -> str:
     technique_ids: List[str] = sorted(cue_ids)
     armour_materials = flatten_armour_materials(data)
     armour_pieces = flatten_armour_pieces(data)
+
+    # Extract part_tags from taxonomy.cue
+    part_tags = data.get("part_tags", [])
+
     output: List[str] = [
         "// AUTO-GENERATED BY scripts/cue_to_zig.py",
         "// DO NOT EDIT MANUALLY.",
         "",
+    ]
+
+    # Emit PartTag enum first (no dependencies, used by body.zig)
+    if part_tags:
+        output.append(emit_part_tags(part_tags))
+        output.append("")
+
+    # Now emit imports (body.zig will import PartTag back from this file via body_list)
+    output.extend([
         "const damage = @import(\"../domain/damage.zig\");",
         "const stats = @import(\"../domain/stats.zig\");",
         "const body = @import(\"../domain/body.zig\");",
@@ -1581,7 +1661,7 @@ def generate_zig(data: Dict[str, Any]) -> str:
         "const weapon = @import(\"../domain/weapon.zig\");",
         "const combat = @import(\"../domain/combat.zig\");",
         "",
-    ]
+    ])
     if technique_ids:
         output.append("pub const GeneratedTechniqueID = enum {")
         for tid in technique_ids:
@@ -1617,7 +1697,7 @@ def generate_zig(data: Dict[str, Any]) -> str:
     if combat_tests:
         output.append(emit_combat_tests(combat_tests))
     has_data = (
-        weapons or techniques or tissue_templates or body_plans_root
+        part_tags or weapons or techniques or tissue_templates or body_plans_root
         or species_root or armour_materials or armour_pieces or combat_tests
     )
     if not has_data:

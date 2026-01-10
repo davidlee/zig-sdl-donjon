@@ -69,6 +69,12 @@ pub const Species = struct {
     blood_recovery: ?f32 = null,
     tags: TagSet,
 
+    // T042: Size modifiers for body part scaling.
+    // Default 1.0 = baseline (e.g., human). Dwarf might be 0.9 height, 1.1 mass.
+    // These are used to scale body part geometry (thickness, length, area).
+    height_modifier: f32 = 1.0,
+    mass_modifier: f32 = 1.0,
+
     /// Get stamina recovery rate, using global default if not overridden.
     pub fn getStaminaRecovery(self: *const Species) f32 {
         return self.stamina_recovery orelse DEFAULT_STAMINA_RECOVERY;
@@ -241,6 +247,9 @@ fn buildSpecies(comptime id: []const u8) Species {
         .focus_recovery = gen.focus_recovery,
         .blood_recovery = gen.blood_recovery,
         .tags = buildTagSet(gen.tags),
+        // T042: Copy size modifiers from CUE-generated definition
+        .height_modifier = gen.size_height,
+        .mass_modifier = gen.size_mass,
     };
 }
 

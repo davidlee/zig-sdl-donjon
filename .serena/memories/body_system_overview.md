@@ -4,6 +4,7 @@
 - `src/domain/body.zig` - Body struct, Part, PartDef, damage application
 - `src/domain/body_list.zig` - Comptime wiring from CUE-generated data
 - `data/bodies.cue` - Body plan definitions (humanoid, etc.)
+- `data/taxonomy.cue` - T042: Data-driven PartTag enum values
 
 ## Creating Bodies
 Bodies are now created from CUE-generated plans via string ID:
@@ -18,6 +19,7 @@ The old `HumanoidPlan` constant still exists but is deprecated (Phase 5 cleanup)
 - `Body` - runtime body with ArrayList of Parts, hash index for lookups
 - `Part` - runtime instance with severity, wounds, parent/enclosing indices
 - `PartDef` - static definition (id, tag, side, flags, tissue, stats)
+- `PartTag` - T042: Now generated from `data/taxonomy.cue` into `generated_data.zig`, re-exported via `body_list.zig`
 - `TissueTemplate` - enum (limb, digit, joint, facial, organ, core)
 - `TissueStack` / `TissueLayerMaterial` - generated 3-axis coefficients
 
@@ -72,3 +74,7 @@ Rules:
 ## Species Integration
 `Species.body_plan_id: []const u8` references a body plan by ID.
 Agent.init looks up the plan: `Body.fromPlan(alloc, sp.body_plan_id)`
+
+T042: Species now has `height_modifier` and `mass_modifier` (default 1.0).
+These are used to scale body part geometry (thickness, length, area).
+Work in progress: `Body.fromPlan` needs updating to accept and apply scaling.

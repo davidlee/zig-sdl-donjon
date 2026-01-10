@@ -1,6 +1,6 @@
 # Data Audit Report
 
-Generated: 2026-01-10 18:36:49
+Generated: 2026-01-10 20:24:51
 
 ## Summary
 
@@ -9,6 +9,7 @@ Generated: 2026-01-10 18:36:49
 | armour_materials | 3 | 0 | 0 |
 | armour_pieces | 2 | 0 | 0 |
 | body_plans | 1 | 0 | 0 |
+| species | 2 | 0 | 0 |
 | techniques | 14 | 14 | 0 |
 | tissue_templates | 6 | 0 | 0 |
 | weapons | 12 | 0 | 0 |

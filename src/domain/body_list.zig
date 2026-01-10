@@ -18,6 +18,9 @@ pub const BodyPlanDef = generated.BodyPlanDefinition;
 pub const BodyPartDef = generated.BodyPartDefinition;
 pub const BodyPartGeometry = generated.BodyPartGeometry;
 
+// T042: Data-driven PartTag enum (generated from data/taxonomy.cue)
+pub const PartTag = generated.PartTag;
+
 // Runtime types (from body.zig)
 pub const TissueLayerMaterial = body.TissueLayerMaterial;
 pub const TissueStack = body.TissueStack;

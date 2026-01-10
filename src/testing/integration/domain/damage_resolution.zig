@@ -104,7 +104,7 @@ test "pierce vs unarmoured arm: penetrates through tissue layers" {
     const alloc = testing.allocator;
 
     // Setup: create body, get arm part
-    var bod = try body.Body.fromPlan(alloc, "humanoid");
+    var bod = try body.Body.fromPlan(alloc, "humanoid", null);
     defer bod.deinit();
 
     const arm_idx = bod.indexOf("left_arm").?;
@@ -139,7 +139,7 @@ test "pierce vs unarmoured arm: penetrates through tissue layers" {
 test "bludgeon vs unarmoured torso: energy transfers through layers" {
     const alloc = testing.allocator;
 
-    var bod = try body.Body.fromPlan(alloc, "humanoid");
+    var bod = try body.Body.fromPlan(alloc, "humanoid", null);
     defer bod.deinit();
 
     const torso_idx = bod.indexOf("torso").?;
@@ -167,7 +167,7 @@ test "bludgeon vs unarmoured torso: energy transfers through layers" {
 test "slash with insufficient penetration: stops at bone" {
     const alloc = testing.allocator;
 
-    var bod = try body.Body.fromPlan(alloc, "humanoid");
+    var bod = try body.Body.fromPlan(alloc, "humanoid", null);
     defer bod.deinit();
 
     const arm_idx = bod.indexOf("left_arm").?;
@@ -202,9 +202,9 @@ test "armour reduces damage severity" {
     const alloc = testing.allocator;
 
     // Create two bodies for comparison
-    var armoured_bod = try body.Body.fromPlan(alloc, "humanoid");
+    var armoured_bod = try body.Body.fromPlan(alloc, "humanoid", null);
     defer armoured_bod.deinit();
-    var unarmoured_bod = try body.Body.fromPlan(alloc, "humanoid");
+    var unarmoured_bod = try body.Body.fromPlan(alloc, "humanoid", null);
     defer unarmoured_bod.deinit();
 
     const torso_idx = armoured_bod.indexOf("torso").?;
@@ -267,7 +267,7 @@ test "armour reduces damage severity" {
 test "plate deflects pierce, padding absorbs bludgeon" {
     const alloc = testing.allocator;
 
-    var bod = try body.Body.fromPlan(alloc, "humanoid");
+    var bod = try body.Body.fromPlan(alloc, "humanoid", null);
     defer bod.deinit();
 
     const torso_idx = bod.indexOf("torso").?;
@@ -354,7 +354,7 @@ test "plate deflects pierce, padding absorbs bludgeon" {
 test "layer damage accumulates correctly through tissue stack" {
     const alloc = testing.allocator;
 
-    var bod = try body.Body.fromPlan(alloc, "humanoid");
+    var bod = try body.Body.fromPlan(alloc, "humanoid", null);
     defer bod.deinit();
 
     const arm_idx = bod.indexOf("left_arm").?;
