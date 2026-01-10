@@ -169,23 +169,10 @@ test "data-driven combat tests" {
 // Lookup Helpers
 // ============================================================================
 
-/// Map CUE weapon IDs to weapon_list templates.
+/// Look up weapon by CUE ID using unified weapon_list registry.
 /// CUE IDs use format like "swords.knights_sword", "natural.fist"
 fn lookupWeaponById(id: []const u8) ?*const weapon.Template {
-    // Map known CUE IDs to weapon_list entries
-    const mappings = .{
-        .{ "swords.knights_sword", &weapon_list.knights_sword },
-        .{ "swords.arming_sword", &weapon_list.knights_sword }, // Fallback
-        .{ "natural.fist", &weapon_list.fist_stone }, // Use fist_stone as proxy
-        .{ "improvised.fist_stone", &weapon_list.fist_stone },
-    };
-
-    inline for (mappings) |m| {
-        if (std.mem.eql(u8, id, m[0])) {
-            return m[1];
-        }
-    }
-    return null;
+    return weapon_list.getTemplateRuntime(id);
 }
 
 /// Equip armour piece to defender by ID.

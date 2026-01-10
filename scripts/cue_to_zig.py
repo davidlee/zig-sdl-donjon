@@ -268,42 +268,280 @@ def zig_string_list(values: List[str]) -> str:
     return f"&.{{ {inner} }}"
 
 
+def format_reach(reach: str) -> str:
+    """Map CUE reach string to combat.Reach enum."""
+    valid = {"clinch", "dagger", "mace", "sabre", "longsword", "spear", "near", "medium", "far"}
+    if reach in valid:
+        return f"combat.Reach.{reach}"
+    raise ValueError(f"Invalid reach: {reach}")
+
+
+def format_damage_kind(kind: str) -> str:
+    """Map CUE damage type to damage.Kind enum."""
+    valid = {"slash", "pierce", "bludgeon", "crush"}
+    if kind in valid:
+        return f"damage.Kind.{kind}"
+    raise ValueError(f"Invalid damage kind: {kind}")
+
+
+def format_weapon_category(cat: str) -> str:
+    """Map CUE category to weapon.Category enum."""
+    valid = {"sword", "axe", "mace", "club", "dagger", "polearm", "shield", "improvised", "unarmed", "bow", "crossbow", "throwing"}
+    if cat in valid:
+        return f"weapon.Category.{cat}"
+    raise ValueError(f"Invalid weapon category: {cat}")
+
+
+def format_projectile_type(ptype: str) -> str:
+    """Map CUE projectile type to weapon.ProjectileType enum."""
+    valid = {"arrow", "bolt", "dart", "bullet", "stone"}
+    if ptype in valid:
+        return f"weapon.ProjectileType.{ptype}"
+    raise ValueError(f"Invalid projectile type: {ptype}")
+
+
+def format_damage_types_list(types: List[str]) -> str:
+    """Format a list of damage types as a Zig slice literal."""
+    if not types:
+        return "&.{}"
+    inner = ", ".join(format_damage_kind(t) for t in types)
+    return f"&.{{ {inner} }}"
+
+
+def format_categories_list(cats: List[str]) -> str:
+    """Format a list of weapon categories as a Zig slice literal."""
+    if not cats:
+        return "&.{}"
+    inner = ", ".join(format_weapon_category(c) for c in cats)
+    return f"&.{{ {inner} }}"
+
+
+def emit_defender_modifiers(mods: Dict[str, Any], indent: str) -> List[str]:
+    """Emit DefenderModifiersDefinition inline."""
+    lines: List[str] = []
+    lines.append(f"{indent}.defender_modifiers = .{{")
+    lines.append(f"{indent}    .reach = {format_reach(mods.get('reach', 'clinch'))},")
+    lines.append(f"{indent}    .parry = {zig_float(mods.get('parry', 1.0))},")
+    lines.append(f"{indent}    .deflect = {zig_float(mods.get('deflect', 1.0))},")
+    lines.append(f"{indent}    .block = {zig_float(mods.get('block', 1.0))},")
+    lines.append(f"{indent}    .fragility = {zig_float(mods.get('fragility', 1.0))},")
+    lines.append(f"{indent}}},")
+    return lines
+
+
+def emit_offensive_profile(profile: Dict[str, Any], indent: str) -> List[str]:
+    """Emit OffensiveProfileDefinition inline."""
+    lines: List[str] = []
+    lines.append(f"{indent}.name = \"{profile.get('name', '')}\",")
+    lines.append(f"{indent}.reach = {format_reach(profile.get('reach', 'clinch'))},")
+    lines.append(f"{indent}.damage_types = {format_damage_types_list(profile.get('damage_types', []))},")
+    lines.append(f"{indent}.accuracy = {zig_float(profile.get('accuracy', 1.0))},")
+    lines.append(f"{indent}.speed = {zig_float(profile.get('speed', 1.0))},")
+    lines.append(f"{indent}.damage = {zig_float(profile.get('damage', 0.0))},")
+    lines.append(f"{indent}.penetration = {zig_float(profile.get('penetration', 0.0))},")
+    lines.append(f"{indent}.penetration_max = {zig_float(profile.get('penetration_max', 0.0))},")
+    lines.append(f"{indent}.fragility = {zig_float(profile.get('fragility', 1.0))},")
+    lines.extend(emit_defender_modifiers(profile.get('defender_modifiers', {}), indent))
+    return lines
+
+
+def emit_defensive_profile(profile: Dict[str, Any], indent: str) -> List[str]:
+    """Emit DefensiveProfileDefinition inline."""
+    lines: List[str] = []
+    lines.append(f"{indent}.name = \"{profile.get('name', '')}\",")
+    lines.append(f"{indent}.reach = {format_reach(profile.get('reach', 'clinch'))},")
+    lines.append(f"{indent}.parry = {zig_float(profile.get('parry', 0.0))},")
+    lines.append(f"{indent}.deflect = {zig_float(profile.get('deflect', 0.0))},")
+    lines.append(f"{indent}.block = {zig_float(profile.get('block', 0.0))},")
+    lines.append(f"{indent}.fragility = {zig_float(profile.get('fragility', 1.0))},")
+    return lines
+
+
 def emit_weapons(weapons: List[Tuple[str, Dict[str, Any]]]) -> str:
     lines: List[str] = []
-    lines.append("const WeaponDefinition = struct {")
+
+    # Struct definitions
+    lines.append("pub const DefenderModifiersDefinition = struct {")
+    lines.append("    reach: combat.Reach,")
+    lines.append("    parry: f32,")
+    lines.append("    deflect: f32,")
+    lines.append("    block: f32,")
+    lines.append("    fragility: f32,")
+    lines.append("};")
+    lines.append("")
+    lines.append("pub const OffensiveProfileDefinition = struct {")
+    lines.append("    name: []const u8,")
+    lines.append("    reach: combat.Reach,")
+    lines.append("    damage_types: []const damage.Kind,")
+    lines.append("    accuracy: f32,")
+    lines.append("    speed: f32,")
+    lines.append("    damage: f32,")
+    lines.append("    penetration: f32,")
+    lines.append("    penetration_max: f32,")
+    lines.append("    fragility: f32,")
+    lines.append("    defender_modifiers: DefenderModifiersDefinition,")
+    lines.append("};")
+    lines.append("")
+    lines.append("pub const DefensiveProfileDefinition = struct {")
+    lines.append("    name: []const u8,")
+    lines.append("    reach: combat.Reach,")
+    lines.append("    parry: f32,")
+    lines.append("    deflect: f32,")
+    lines.append("    block: f32,")
+    lines.append("    fragility: f32,")
+    lines.append("};")
+    lines.append("")
+    lines.append("pub const GripDefinition = struct {")
+    lines.append("    one_handed: bool = false,")
+    lines.append("    two_handed: bool = false,")
+    lines.append("    versatile: bool = false,")
+    lines.append("    bastard: bool = false,")
+    lines.append("    half_sword: bool = false,")
+    lines.append("    murder_stroke: bool = false,")
+    lines.append("};")
+    lines.append("")
+    lines.append("pub const FeaturesDefinition = struct {")
+    lines.append("    hooked: bool = false,")
+    lines.append("    spiked: bool = false,")
+    lines.append("    crossguard: bool = false,")
+    lines.append("    pommel: bool = false,")
+    lines.append("};")
+    lines.append("")
+    lines.append("pub const ThrownDefinition = struct {")
+    lines.append("    throw: OffensiveProfileDefinition,")
+    lines.append("    range: combat.Reach,")
+    lines.append("};")
+    lines.append("")
+    lines.append("pub const ProjectileDefinition = struct {")
+    lines.append("    ammunition: weapon.ProjectileType,")
+    lines.append("    range: combat.Reach,")
+    lines.append("    accuracy: f32,")
+    lines.append("    speed: f32,")
+    lines.append("    reload: f32,")
+    lines.append("};")
+    lines.append("")
+    lines.append("pub const RangedDefinition = struct {")
+    lines.append("    projectile: ?ProjectileDefinition = null,")
+    lines.append("    thrown: ?ThrownDefinition = null,")
+    lines.append("};")
+    lines.append("")
+    lines.append("pub const WeaponDefinition = struct {")
     lines.append("    id: []const u8,")
     lines.append("    name: []const u8,")
-    lines.append("    category: []const u8,")
-    lines.append("    weight_kg: f32,")
-    lines.append("    length_m: f32,")
+    lines.append("    categories: []const weapon.Category,")
+    lines.append("    features: FeaturesDefinition = .{},")
+    lines.append("    grip: GripDefinition = .{},")
+    lines.append("    length: f32,")
+    lines.append("    weight: f32,")
     lines.append("    balance: f32,")
-    lines.append("    swing: bool,")
-    lines.append("    thrust: bool,")
-    lines.append("    moment_of_inertia: f32 = 0,")
-    lines.append("    effective_mass: f32 = 0,")
-    lines.append("    reference_energy_j: f32 = 0,")
-    lines.append("    geometry_coeff: f32 = 0,")
-    lines.append("    rigidity_coeff: f32 = 0,")
+    lines.append("    integrity: f32,")
+    lines.append("    swing: ?OffensiveProfileDefinition = null,")
+    lines.append("    thrust: ?OffensiveProfileDefinition = null,")
+    lines.append("    defence: DefensiveProfileDefinition,")
+    lines.append("    ranged: ?RangedDefinition = null,")
+    lines.append("    moment_of_inertia: f32,")
+    lines.append("    effective_mass: f32,")
+    lines.append("    reference_energy_j: f32,")
+    lines.append("    geometry_coeff: f32,")
+    lines.append("    rigidity_coeff: f32,")
     lines.append("};")
     lines.append("")
     lines.append("pub const GeneratedWeapons = [_]WeaponDefinition{")
+
     for weapon_id, data in weapons:
-        phys = data.get("derived", {})
         lines.append("    .{")
         lines.append(f'        .id = "{weapon_id}",')
         lines.append(f'        .name = "{data.get("name", weapon_id)}",')
-        lines.append(f'        .category = "{data.get("category", "unknown")}",')
-        lines.append(f'        .weight_kg = {zig_float(data.get("weight_kg", 0.0))},')
-        lines.append(f'        .length_m = {zig_float(data.get("length_m", 0.0))},')
+        lines.append(f'        .categories = {format_categories_list(data.get("categories", []))},')
+
+        # Features
+        features = data.get("features", {})
+        lines.append("        .features = .{")
+        if features.get("hooked"):
+            lines.append("            .hooked = true,")
+        if features.get("spiked"):
+            lines.append("            .spiked = true,")
+        if features.get("crossguard"):
+            lines.append("            .crossguard = true,")
+        if features.get("pommel"):
+            lines.append("            .pommel = true,")
+        lines.append("        },")
+
+        # Grip
+        grip = data.get("grip", {})
+        lines.append("        .grip = .{")
+        if grip.get("one_handed"):
+            lines.append("            .one_handed = true,")
+        if grip.get("two_handed"):
+            lines.append("            .two_handed = true,")
+        if grip.get("versatile"):
+            lines.append("            .versatile = true,")
+        if grip.get("bastard"):
+            lines.append("            .bastard = true,")
+        if grip.get("half_sword"):
+            lines.append("            .half_sword = true,")
+        if grip.get("murder_stroke"):
+            lines.append("            .murder_stroke = true,")
+        lines.append("        },")
+
+        # Physical dimensions
+        lines.append(f'        .length = {zig_float(data.get("length_cm", 0.0))},')
+        lines.append(f'        .weight = {zig_float(data.get("weight_kg", 0.0))},')
         lines.append(f'        .balance = {zig_float(data.get("balance", 0.0))},')
-        lines.append(f'        .swing = {zig_bool(bool(data.get("swing", False)))},')
-        lines.append(f'        .thrust = {zig_bool(bool(data.get("thrust", False)))},')
-        lines.append(f'        .moment_of_inertia = {zig_float(phys.get("moment_of_inertia", 0.0))},')
-        lines.append(f'        .effective_mass = {zig_float(phys.get("effective_mass", 0.0))},')
-        lines.append(f'        .reference_energy_j = {zig_float(phys.get("reference_energy_j", 0.0))},')
-        lines.append(f'        .geometry_coeff = {zig_float(phys.get("geometry_coeff", 0.0))},')
-        lines.append(f'        .rigidity_coeff = {zig_float(phys.get("rigidity_coeff", 0.0))},')
+        lines.append(f'        .integrity = {zig_float(data.get("integrity", 100.0))},')
+
+        # Swing profile
+        swing = data.get("swing")
+        if swing:
+            lines.append("        .swing = .{")
+            lines.extend(emit_offensive_profile(swing, "            "))
+            lines.append("        },")
+
+        # Thrust profile
+        thrust = data.get("thrust")
+        if thrust:
+            lines.append("        .thrust = .{")
+            lines.extend(emit_offensive_profile(thrust, "            "))
+            lines.append("        },")
+
+        # Defence profile (required)
+        defence = data.get("defence", {})
+        lines.append("        .defence = .{")
+        lines.extend(emit_defensive_profile(defence, "            "))
+        lines.append("        },")
+
+        # Ranged
+        ranged = data.get("ranged")
+        if ranged:
+            lines.append("        .ranged = .{")
+            thrown = ranged.get("thrown")
+            if thrown:
+                lines.append("            .thrown = .{")
+                lines.append("                .throw = .{")
+                lines.extend(emit_offensive_profile(thrown.get("throw", {}), "                    "))
+                lines.append("                },")
+                lines.append(f"                .range = {format_reach(thrown.get('range', 'medium'))},")
+                lines.append("            },")
+            projectile = ranged.get("projectile")
+            if projectile:
+                lines.append("            .projectile = .{")
+                lines.append(f"                .ammunition = {format_projectile_type(projectile.get('ammunition', 'stone'))},")
+                lines.append(f"                .range = {format_reach(projectile.get('range', 'far'))},")
+                lines.append(f"                .accuracy = {zig_float(projectile.get('accuracy', 1.0))},")
+                lines.append(f"                .speed = {zig_float(projectile.get('speed', 1.0))},")
+                lines.append(f"                .reload = {zig_float(projectile.get('reload', 0.0))},")
+                lines.append("            },")
+            lines.append("        },")
+
+        # Physics
+        lines.append(f'        .moment_of_inertia = {zig_float(data.get("moment_of_inertia", 0.0))},')
+        lines.append(f'        .effective_mass = {zig_float(data.get("effective_mass", 0.0))},')
+        lines.append(f'        .reference_energy_j = {zig_float(data.get("reference_energy_j", 0.0))},')
+        lines.append(f'        .geometry_coeff = {zig_float(data.get("geometry_coeff", 0.0))},')
+        lines.append(f'        .rigidity_coeff = {zig_float(data.get("rigidity_coeff", 0.0))},')
+
         lines.append("    },")
+
     lines.append("};")
     return "\n".join(lines)
 
@@ -1338,6 +1576,8 @@ def generate_zig(data: Dict[str, Any]) -> str:
         "const body = @import(\"../domain/body.zig\");",
         "const armour = @import(\"../domain/armour.zig\");",
         "const inventory = @import(\"../domain/inventory.zig\");",
+        "const weapon = @import(\"../domain/weapon.zig\");",
+        "const combat = @import(\"../domain/combat.zig\");",
         "",
     ]
     if technique_ids:

@@ -398,14 +398,13 @@ Existing code referencing `weapon_list.knights_sword` etc. continues to work via
 
 - Changing weapon logic or combat resolution
 - Redesigning combat profiles (just migrate data)
-- Ranged weapon support (defer to future task)
 
 ## Checklist
 
-- [ ] CUE schema extended with combat profiles
-- [ ] Generator emits full WeaponDefinition
-- [ ] weapon_list.zig converted to loader pattern
-- [ ] All 9 weapons migrated to CUE
-- [ ] data_driven_combat.zig mapping removed
-- [ ] All tests pass
-- [ ] Audit report updated
+- [x] CUE schema extended with combat profiles
+- [x] Generator emits full WeaponDefinition
+- [x] weapon_list.zig converted to loader pattern
+- [x] All 12 weapons migrated to CUE (9 original + 3 natural)
+- [x] data_driven_combat.zig mapping removed
+- [x] All tests pass
+- [ ] Audit report updated (optional follow-up)

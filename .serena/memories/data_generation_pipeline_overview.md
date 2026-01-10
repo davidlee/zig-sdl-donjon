@@ -12,7 +12,7 @@
 3. Include the generated structs by importing `@import("../gen/generated_data.zig")` and using helper builders.
 
 ## Notes
-- Weapon exports include `moment_of_inertia`, `effective_mass`, and `reference_energy_j`; runtime damage should recompute energy from stats.
+- Weapon exports (T044) include complete combat profiles: `OffensiveProfileDefinition`, `DefensiveProfileDefinition`, physics coefficients, grip/features, and ranged data. `weapon_list.zig` builds runtime `weapon.Template` from generated `WeaponDefinition` structs.
 - Technique exports include channels, damage instances, scaling, overlays, and axis biases.
 - `scripts/cue_to_zig.py` validates technique IDs against the Zig enum before emitting data.
-- Armour piece schema stub exists; wiring armour data into runtime is the next step.
+- Armour piece exports include 3-axis shielding/susceptibility; `armour_list.zig` builds runtime types.

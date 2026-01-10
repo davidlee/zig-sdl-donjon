@@ -3,6 +3,15 @@
 - Offensive profiles describe reach, damage types, speed, accuracy, base damage, penetration curve, defender modifiers, and fragility. Defensive profiles capture parry/deflect/block ratings plus reach/fragility. Ranged profiles nest projectile or thrown descriptors with their own range/accuracy/reload data. Feature flags (hooked, spiked, crossguard) allow downstream rules/predicates to key off weapon traits.
 - Runtime `Instance` just binds an id to a template; attack resolution queries the template to compute stakes, modifiers, and condition interactions, keeping logic generic.
 
+## Data Source (T044)
+All weapon data is now authored in CUE (`data/weapons.cue`) and generated to Zig:
+- `scripts/cue_to_zig.py` generates `WeaponDefinition` structs with full combat profiles
+- `weapon_list.zig` is a loader (like `armour_list.zig`) that builds runtime `Template` from generated definitions
+- Lookup by CUE ID: `weapon_list.getTemplate("swords.knights_sword")` (comptime) or `getTemplateRuntime(id)` (runtime)
+- Legacy named exports (`weapon_list.knights_sword`) remain for backward compatibility
+
+12 weapons defined: swords (knights_sword, falchion), maces (horsemans_mace), axes (footmans_axe, greataxe), daggers (dirk), polearms (spear), shields (buckler), improvised (fist_stone), natural/unarmed (fist, bite, headbutt).
+
 ## Physics Fields (T037)
 `Template` now includes 3-axis physics for damage derivation:
 - `moment_of_inertia`: kg·m² for swing energy calculation
