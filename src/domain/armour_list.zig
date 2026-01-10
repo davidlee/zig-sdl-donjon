@@ -186,6 +186,17 @@ pub fn getTemplate(comptime id: []const u8) *const Template {
     @compileError("Unknown template ID: '" ++ id ++ "'");
 }
 
+/// Runtime lookup of template by string ID.
+/// Returns null if ID not found.
+pub fn getTemplateRuntime(id: []const u8) ?*const Template {
+    for (&piece_defs, 0..) |*def, i| {
+        if (std.mem.eql(u8, def.id, id)) {
+            return &Templates[i];
+        }
+    }
+    return null;
+}
+
 // ============================================================================
 // Comptime Validation
 // ============================================================================

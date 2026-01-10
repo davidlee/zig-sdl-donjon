@@ -17,6 +17,8 @@ const Harness = root.integration.harness.Harness;
 const personas = root.data.personas;
 const weapon = domain.weapon;
 const weapon_list = domain.weapon_list;
+const armour = domain.armour;
+const armour_list = @import("../../../domain/armour_list.zig");
 const gen = @import("../../../gen/generated_data.zig");
 
 // ============================================================================
@@ -54,9 +56,8 @@ test "data-driven combat tests" {
         const defender = try h.addEnemyFromTemplate(&personas.Agents.ser_marcus);
 
         // Equip armour to defender if specified
-        for (test_def.defender.armour_ids) |armour_id| {
-            try equipArmourById(defender, armour_id);
-        }
+        var equipped_armour = try equipArmour(alloc, defender, test_def.defender.armour_ids);
+        defer equipped_armour.deinit(alloc);
 
         // Begin encounter to establish engagement
         try h.beginSelection();
@@ -142,11 +143,48 @@ fn lookupWeaponById(id: []const u8) ?*const weapon.Template {
     return null;
 }
 
-/// Equip armour piece to defender by ID.
-/// Currently a stub - armour equipping not fully wired.
-fn equipArmourById(defender: *domain.combat.Agent, armour_id: []const u8) !void {
-    _ = defender;
-    _ = armour_id;
-    // TODO: Implement armour lookup and equipping from GeneratedArmourPieces
-    // For now, this is a no-op as armour system integration is pending
+/// Armour instances returned from equipArmour. Must be freed after combat resolution.
+const EquippedArmour = struct {
+    instances: std.ArrayList(*armour.Instance),
+
+    fn deinit(self: *EquippedArmour, alloc: std.mem.Allocator) void {
+        for (self.instances.items) |inst| {
+            inst.deinit(alloc);
+            alloc.destroy(inst);
+        }
+        self.instances.deinit(alloc);
+    }
+};
+
+/// Equip armour pieces to defender by CUE IDs.
+/// Returns owned instances that must be freed after combat resolution.
+fn equipArmour(
+    alloc: std.mem.Allocator,
+    defender: *domain.combat.Agent,
+    armour_ids: []const []const u8,
+) !EquippedArmour {
+    var instances: std.ArrayList(*armour.Instance) = .{};
+    errdefer {
+        for (instances.items) |inst| {
+            inst.deinit(alloc);
+            alloc.destroy(inst);
+        }
+        instances.deinit(alloc);
+    }
+
+    for (armour_ids) |armour_id| {
+        const template = armour_list.getTemplateRuntime(armour_id) orelse {
+            std.debug.print("Unknown armour ID: {s}\n", .{armour_id});
+            continue;
+        };
+
+        const inst = try alloc.create(armour.Instance);
+        inst.* = try armour.Instance.init(alloc, template, null);
+        try instances.append(alloc, inst);
+    }
+
+    // Build defender's armour stack from equipped instances
+    try defender.armour.buildFromEquipped(&defender.body, instances.items);
+
+    return .{ .instances = instances };
 }

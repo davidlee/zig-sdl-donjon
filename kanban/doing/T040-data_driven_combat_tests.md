@@ -61,19 +61,16 @@ Returns `worstSeverity()` (0-5 enum) instead of actual damage amount. CUE schema
 
 ## Follow-Up Tasks
 
-### F1. Wire Armour Equipping (HIGH PRIORITY - Blocks Physics Verification)
-**Goal:** `equipArmourById()` should look up armour from `armour_list.getTemplate(id)` and equip to defender.
+### F1. Wire Armour Equipping ✓ COMPLETED (2026-01-10)
+**Implementation:**
+- Added `getTemplateRuntime(id)` to `armour_list.zig` for runtime ID lookup
+- Replaced stub `equipArmourById` with `equipArmour()` that:
+  - Looks up templates via `armour_list.getTemplateRuntime()`
+  - Creates `armour.Instance` for each piece
+  - Calls `defender.armour.buildFromEquipped()` with all instances
+  - Returns `EquippedArmour` struct for proper lifetime management (instances must outlive combat resolution)
 
-**Context for implementer:**
-- `src/domain/armour_list.zig` has `getTemplate(id)` returning `*const armour.Template`
-- `armour.Instance.init(alloc, template)` creates runtime instance
-- `armour.Stack.buildFromEquipped(...)` or direct slot assignment needed
-- Agent has `armour: armour.Stack` field
-- Check `src/testing/integration/domain/damage_resolution.zig` for patterns
-
-**Files:** `data_driven_combat.zig:125` (stub), `harness.zig` (may need helper)
-
-**Verification:** After wiring, `sword_slash_vs_plate` test should show `armour_deflected: true` and low damage. Tighten expected values in `data/tests.cue`.
+**Note:** Physics verification blocked by F2 - tests show damage=0 due to RNG misses.
 
 ### F2. Deterministic Test Mode
 **Goal:** Force hits (bypass RNG) or seed World's RNG for reproducible results.
