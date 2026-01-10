@@ -386,9 +386,23 @@ pub const Category = enum {
 //  A cumulative model with material interactions:
 
 pub const Packet = struct {
+    // Legacy fields (retained for backward compatibility during migration)
     amount: f32,
     kind: Kind,
     penetration: f32, // cm of material it can punch through
+
+    // 3-axis physics model (T037)
+    // For physical damage: derived from weapon physics × stat scaling × technique bias
+    // For non-physical damage: all zero (bypasses 3-axis pipeline)
+    geometry: f32 = 0, // 0-1, penetration efficiency (blade/point geometry)
+    energy: f32 = 0, // joules, kinetic energy available
+    rigidity: f32 = 0, // 0-1, structural support of striking surface
+
+    /// Returns true if this packet carries physical damage that should use
+    /// the 3-axis pipeline. Non-physical damage bypasses geometry/energy/rigidity.
+    pub fn isPhysical(self: Packet) bool {
+        return self.kind.isPhysical();
+    }
 
     // After passing through a layer
     pub fn afterLayer(self: Packet, layer: *const armour.LayerProtection) Packet {

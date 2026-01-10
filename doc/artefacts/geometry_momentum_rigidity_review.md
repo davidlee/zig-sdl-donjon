@@ -148,14 +148,14 @@ Each phase should end with a written artefact (audit results, formal spec, inter
 - [x] **Data audit tooling.** `doc/artefacts/data_audit_report.md` plus `just audit-data` enumerate every weapon/technique/armour/tissue entry, emit derived axis values, and flag missing coefficients (currently 17 warnings: technique axis defaults + tissue thickness sums).
 
 ### Outstanding / Next Steps
-- [ ] **T035 Phase 3.3 – Body part geometry.** Extend `PartDef`/`Part` with `BodyPartGeometry`, copy from generated plans, and pass into `applyDamage(...)`. Unlocks penetration path-length math without inventing placeholder numbers.
+- [x] **T035 Phase 3.3 – Body part geometry.** Extend `PartDef`/`Part` with `BodyPartGeometry`, copy from generated plans, and pass into `applyDamage(...)`. Unlocks penetration path-length math without inventing placeholder numbers.
 - [ ] **T035 Phase 4 polish – Tissue resolution.**  
   • consume `layer.thickness_ratio × part_geometry.thickness_cm` when reducing Geometry;  
   • add a physical-only guard (non-physical packets bypass the 3-axis pipeline);  
   • remove the slash/pierce “geometry==0 stops everything” coupling so Energy/Rigidity still propagate;  
   • revisit severity mapping/tests once the per-axis contributions replace the legacy scalar thresholds.
-- [ ] **Damage-packet axis export (upstream card).** `damage.Packet` still exposes only `amount`/`penetration`. The weapon/technique resolver must emit Geometry/Energy/Rigidity so armour/tissue layers consume real axis data instead of deriving placeholders.
-- [ ] **Technique axis coverage (new card).** Audit flagged every baseline technique coasting on implicit `axis_bias`. Decide whether to make the field required in CUE or author deliberate defaults per technique group (swing, lunge, grapples) and document them.
+- [x] **Damage-packet axis export (T037 complete).** `damage.Packet` now carries `geometry`/`energy`/`rigidity` fields. `createDamagePacket` derives axes from weapon physics × technique multipliers × stats × stakes. Armour/tissue consumers use packet axes with legacy fallback for backward compat.
+- [x] **Technique axis coverage (T037 decision).** Allow 1.0/1.0/1.0 defaults. Weapon geometry/rigidity coefficients already differentiate swing vs thrust; technique-specific bias can refine later. No enforcement in generator.
 - [ ] **Tissue thickness normalisation (subtask under T035).** `digit`, `joint`, and `facial` templates sum to <0.95. Either adjust the ratios or annotate the intended scaling so audits stop flagging them.
 - [ ] **Event instrumentation (optional follow-up).** If `event.log` proves insufficient, revisit §9.5’s `combat_packet_resolved` event so audits and UI can subscribe to the same structured payloads.
 
@@ -166,8 +166,35 @@ Each phase should end with a written artefact (audit results, formal spec, inter
 
 ### Open Questions / Risks
 - [ ] **Per-part scale derivation.** Where do limb thickness/length/area values originate (plan defaults vs. species modifiers vs. agent overrides)? Needed before we compute lever arms and path lengths for axis derivation.
-- [ ] **Non-physical packet handling.** Beyond skipping the 3-axis pipeline, do we extend shared materials with thermal/conductive fields or leave fire/corrosion anchored to existing `damage.Kind` resistances?
-- [ ] **Weapon/technique axis formulas.** We have MoI/effective-mass derivations, but not the runtime formulas tying stats + grips + techniques into final axis magnitudes. Track under the upcoming damage-packet rewrite.
+- [x] **Non-physical packet handling.** T037 decision: zero out geometry/energy/rigidity when `kind.isPhysical() == false`. Armour/tissue short-circuit 3-axis logic on that guard. Thermal/conductive fields remain anchored to existing `damage.Kind` resistances for now.
+- [x] **Weapon/technique axis formulas.** T037 implements reference-energy scaling: `actual_energy = reference_energy_j × stat_scaling × stakes`. Full kinematic derivation (computing ω/v from stats, then ½Iω² or ½mv²) deferred as future calibration work. Technique axis multipliers (geometry/energy/rigidity) default to 1.0; weapon coefficients provide differentiation.
 - [ ] **Test coverage.** Once tissue resolution changes behaviour, which integration/unit tests replace the legacy slash/pierce/bludgeon expectations? Capture an explicit test plan before flipping the switch.
 
 Future edits should tick the checkboxes above (with kanban references such as T033, T035, forthcoming packet-axis task) instead of appending new ad-hoc status sections.
+
+### 9.9 Phase 3.3 Body Part Geometry - Complete (2026-01-10)
+
+Geometry is fully wired through the body system:
+- `BodyPartGeometry` (thickness_cm, length_cm, area_cm2) defined in generated data
+- `body_list.zig:19` re-exports from generated
+- `body.PartDef` and `body.Part` carry `.geometry` field
+- `body.zig:602` passes geometry to `applyDamage(packet, tissue, geometry)`
+- Generated humanoid plan includes per-part geometry values
+
+**Remaining (Phase 4 polish):** `body.zig:904` TODO - use `layer.thickness_ratio * geometry.thickness_cm` for path-length reduction of geometry axis in tissue resolution.
+
+### 9.10 Armour Runtime Loader - Complete (2026-01-10)
+
+`armour_list.zig` now provides full comptime-built runtime types:
+- `Materials` array: runtime `armour.Material` built from generated definitions
+- `Templates` array: runtime `armour.Template` with material + pattern refs
+- `getMaterial(id)` / `getTemplate(id)`: comptime lookup by ID
+- Integration tested: `getTemplate("steel_breastplate")` → `Instance.init()` → `Stack.buildFromEquipped()` works end-to-end
+
+### 9.11 Audit Script - Complete (2026-01-10)
+
+`scripts/cue_to_zig.py` now supports `--audit-report` and `--audit-only` flags:
+- Validates weapons, techniques, armour materials/pieces, tissue templates, body plans
+- Cross-reference checks (pieces→materials, body plans→tissue templates)
+- Generates markdown report with summary tables and issue details
+- Usage: `cue export data/*.cue --out json | ./scripts/cue_to_zig.py --audit-report doc/artefacts/data_audit_report.md`

@@ -132,6 +132,18 @@ pub const Template = struct {
     ranged: ?Ranged = null,
 
     integrity: f32 = 100.0, // total damage until broken
+
+    // Physics for 3-axis damage model (T037)
+    // - moment_of_inertia: kg·m² for swing energy (½Iω²)
+    // - effective_mass: kg for thrust energy (½mv²)
+    // - reference_energy_j: baseline joules at reference stats
+    // - geometry_coeff: 0-1, how well weapon concentrates force (blade geometry)
+    // - rigidity_coeff: 0-1, structural support of striking surface
+    moment_of_inertia: f32 = 0,
+    effective_mass: f32 = 0,
+    reference_energy_j: f32 = 0,
+    geometry_coeff: f32 = 0,
+    rigidity_coeff: f32 = 0,
 };
 
 pub const Instance = struct {

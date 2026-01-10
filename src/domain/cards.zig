@@ -309,6 +309,12 @@ pub const Technique = struct {
     // Manoeuvre overlay bonuses (applied to concurrent techniques)
     overlay_bonus: ?OverlayBonus = null,
 
+    // 3-axis damage allocation multipliers (T037)
+    // Default 1.0 means no technique-specific bias; weapon coefficients differentiate
+    axis_geometry_mult: f32 = 1.0,
+    axis_energy_mult: f32 = 1.0,
+    axis_rigidity_mult: f32 = 1.0,
+
     pub fn byID(comptime id: TechniqueID) Technique {
         inline for (TechniqueEntries) |tn| {
             if (tn.id == id) return tn;

@@ -784,21 +784,6 @@ pub fn materialIdToTissueLayer(material_id: []const u8) ?TissueLayer {
     return std.meta.stringToEnum(TissueLayer, material_id);
 }
 
-/// Derive rigidity axis from damage kind.
-/// Rigidity represents how concentrated/supported the attack force is.
-fn deriveRigidity(kind: DamageKind) f32 {
-    return switch (kind) {
-        // Physical damage kinds
-        .pierce => 1.0, // concentrated tip, fully supported
-        .slash => 0.7, // edge cuts but less concentrated than pierce
-        .bludgeon => 0.8, // blunt impact, some spread
-        .crush => 1.0, // overwhelming concentrated force
-        .shatter => 1.0, // brittle fracturing, high concentration
-        // Non-physical kinds have no rigidity component
-        else => 0.0,
-    };
-}
-
 /// How a layer interacts with damage types
 pub const LayerResistance = struct {
     /// Fraction of incoming damage this layer absorbs (dealt to this layer)
@@ -858,6 +843,18 @@ fn severityFromDamage(amount: f32) Severity {
     return .missing;
 }
 
+/// Fallback rigidity derivation for legacy packets that don't have axis values.
+fn deriveRigidityFromKind(kind: DamageKind) f32 {
+    return switch (kind) {
+        .pierce => 1.0,
+        .slash => 0.7,
+        .bludgeon => 0.8,
+        .crush => 1.0,
+        .shatter => 1.0,
+        else => 0.0,
+    };
+}
+
 /// Apply a damage packet to a body part, producing a wound.
 /// Processes tissue layers outside-in based on the part's template.
 pub fn applyDamage(
@@ -880,13 +877,10 @@ pub fn applyDamage(
         return wound;
     };
 
-    // Track the three axes through the layer stack.
-    // NOTE: Currently derived from legacy packet fields. Blocked on upstream
-    // damage.Packet refactor to carry weapon/technique-derived axes directly.
-    // See doc/artefacts/geometry_momentum_rigidity_review.md §2, §4, §5.1.
-    var remaining_geo = packet.penetration; // Geometry axis
-    var remaining_energy = packet.amount; // Energy axis
-    var remaining_rigidity = deriveRigidity(packet.kind); // Rigidity axis
+    // Track the three axes through the layer stack (T037: real values or legacy fallback)
+    var remaining_geo = if (packet.geometry > 0) packet.geometry else packet.penetration;
+    var remaining_energy = if (packet.energy > 0) packet.energy else packet.amount;
+    var remaining_rigidity = if (packet.rigidity > 0) packet.rigidity else deriveRigidityFromKind(packet.kind);
 
     // Process layers outside-in (generated data is in depth order)
     for (tissue_stack.layers) |layer| {
@@ -901,9 +895,8 @@ pub fn applyDamage(
         const residual_energy = remaining_energy * (1.0 - layer.absorption);
         const residual_rigidity = remaining_rigidity * (1.0 - layer.dispersion);
 
-        // TODO: Use layer.thickness_ratio * geometry.thickness_cm for path-length
-        // calculations once upstream damage.Packet carries proper axes (not legacy
-        // amount/penetration). See geometry_momentum_rigidity_review.md §5.2.
+        // TODO (T035 Phase 4): Use layer.thickness_ratio * part_geometry.thickness_cm
+        // for path-length reduction of geometry axis.
 
         // === Susceptibility: damage to THIS layer using post-shielding axes ===
         // Layer takes damage when residual axes exceed its thresholds

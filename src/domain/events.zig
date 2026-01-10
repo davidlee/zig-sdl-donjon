@@ -144,13 +144,21 @@ pub const Event = union(enum) {
         defender_id: entity.ID,
         technique_id: cards.TechniqueID,
         target_part: body.PartIndex,
-        // Input packet
+        // Input packet (legacy fields)
         initial_amount: f32,
         initial_penetration: f32,
         damage_kind: damage.Kind,
-        // After armour
+        // Input packet (T037 3-axis fields)
+        initial_geometry: f32,
+        initial_energy: f32,
+        initial_rigidity: f32,
+        // After armour (legacy fields)
         post_armour_amount: f32,
         post_armour_penetration: f32,
+        // After armour (T037 3-axis fields)
+        post_armour_geometry: f32,
+        post_armour_energy: f32,
+        post_armour_rigidity: f32,
         // Layer summary
         armour_layers_hit: u8,
         armour_deflected: bool,

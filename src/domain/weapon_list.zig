@@ -100,6 +100,12 @@ pub const horsemans_mace = Template{
     .defence = horsemans_mace_defence,
     .ranged = null,
     .integrity = 150.0, // very sturdy
+    // Physics: MoI = 1.2 * (0.6 * 0.7)^2 = 0.21
+    .moment_of_inertia = 0.21,
+    .effective_mass = 1.2,
+    .reference_energy_j = 3.8,
+    .geometry_coeff = 0.2, // blunt impact weapon
+    .rigidity_coeff = 0.8, // solid metal head
 };
 
 // ============================================================================
@@ -160,6 +166,12 @@ pub const footmans_axe = Template{
     .defence = footmans_axe_defence,
     .ranged = null,
     .integrity = 80.0, // wooden haft
+    // Physics: MoI = 1.8 * (0.75 * 0.75)^2 = 0.57
+    .moment_of_inertia = 0.57,
+    .effective_mass = 1.8,
+    .reference_energy_j = 10.3,
+    .geometry_coeff = 0.6, // axe edge, cleaver style
+    .rigidity_coeff = 0.65, // wooden haft, metal head
 };
 
 // ============================================================================
@@ -220,6 +232,12 @@ pub const greataxe = Template{
     .defence = greataxe_defence,
     .ranged = null,
     .integrity = 90.0,
+    // Physics: MoI = 3.5 * (1.4 * 0.8)^2 = 4.39
+    .moment_of_inertia = 4.39,
+    .effective_mass = 3.5,
+    .reference_energy_j = 79.0,
+    .geometry_coeff = 0.55, // large axe edge
+    .rigidity_coeff = 0.6, // wooden haft
 };
 
 // ============================================================================
@@ -299,6 +317,12 @@ pub const knights_sword = Template{
     .defence = knights_sword_defence,
     .ranged = null,
     .integrity = 100.0,
+    // Physics from generated data (swords.knights_sword)
+    .moment_of_inertia = 0.593,
+    .effective_mass = 1.4,
+    .reference_energy_j = 10.7,
+    .geometry_coeff = 0.6, // good blade geometry
+    .rigidity_coeff = 0.7, // solid steel blade
 };
 
 // ============================================================================
@@ -378,6 +402,12 @@ pub const falchion = Template{
     .defence = falchion_defence,
     .ranged = null,
     .integrity = 110.0,
+    // Physics: MoI = 1.3 * (0.8 * 0.5)^2 = 0.21
+    .moment_of_inertia = 0.21,
+    .effective_mass = 1.3,
+    .reference_energy_j = 3.7,
+    .geometry_coeff = 0.55, // single-edged cleaver
+    .rigidity_coeff = 0.7, // thick solid blade
 };
 
 // ============================================================================
@@ -457,6 +487,12 @@ pub const dirk = Template{
     .defence = dirk_defence,
     .ranged = null,
     .integrity = 60.0,
+    // Physics: MoI = 0.4 * (0.35 * 0.25)^2 = 0.003
+    .moment_of_inertia = 0.003,
+    .effective_mass = 0.4,
+    .reference_energy_j = 0.05, // thrust-focused, low swing energy
+    .geometry_coeff = 0.7, // narrow piercing blade
+    .rigidity_coeff = 0.6, // thin blade
 };
 
 // ============================================================================
@@ -517,6 +553,12 @@ pub const spear = Template{
     .defence = spear_defence,
     .ranged = null,
     .integrity = 70.0, // wooden shaft
+    // Physics: thrust-focused, MoI irrelevant
+    .moment_of_inertia = 2.88, // if swung: 2.0 * (2.0 * 0.6)^2
+    .effective_mass = 2.0,
+    .reference_energy_j = 9.0, // thrust energy at ~3m/s
+    .geometry_coeff = 0.75, // spearhead, excellent penetration
+    .rigidity_coeff = 0.5, // wooden shaft
 };
 
 // ============================================================================
@@ -577,6 +619,12 @@ pub const buckler = Template{
     .defence = buckler_defence,
     .ranged = null,
     .integrity = 120.0, // metal boss, wooden body
+    // Physics: MoI = 1.5 * (0.35 * 0.5)^2 = 0.046
+    .moment_of_inertia = 0.046,
+    .effective_mass = 1.5,
+    .reference_energy_j = 0.8, // punch energy
+    .geometry_coeff = 0.1, // blunt shield boss
+    .rigidity_coeff = 0.8, // metal boss
 };
 
 // ============================================================================
@@ -660,6 +708,12 @@ pub const fist_stone = Template{
         .range = .medium,
     } },
     .integrity = 30.0, // can shatter on armour
+    // Physics from generated data (improvised.fist_stone)
+    .moment_of_inertia = 0.002,
+    .effective_mass = 0.5,
+    .reference_energy_j = 0.02,
+    .geometry_coeff = 0.25, // rough stone
+    .rigidity_coeff = 0.4, // may crack
 };
 
 // ============================================================================

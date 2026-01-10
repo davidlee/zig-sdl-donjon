@@ -29,7 +29,8 @@ pub fn drainPacketEvents(event_system: *events.EventSystem) void {
         switch (event) {
             .combat_packet_resolved => |data| {
                 const line = std.fmt.bufPrint(&buf, "[packet] atk={d} def={d} tech={s} part={d} | " ++
-                    "init={d:.1}/{d:.1} post={d:.1}/{d:.1} | " ++
+                    "init amt={d:.1} pen={d:.1} geo={d:.2} en={d:.1}J rig={d:.2} | " ++
+                    "post amt={d:.1} pen={d:.1} geo={d:.2} en={d:.1}J rig={d:.2} | " ++
                     "layers={d} defl={} gap={} wound={?d}\n", .{
                     data.attacker_id.index,
                     data.defender_id.index,
@@ -37,8 +38,14 @@ pub fn drainPacketEvents(event_system: *events.EventSystem) void {
                     data.target_part,
                     data.initial_amount,
                     data.initial_penetration,
+                    data.initial_geometry,
+                    data.initial_energy,
+                    data.initial_rigidity,
                     data.post_armour_amount,
                     data.post_armour_penetration,
+                    data.post_armour_geometry,
+                    data.post_armour_energy,
+                    data.post_armour_rigidity,
                     data.armour_layers_hit,
                     data.armour_deflected,
                     data.gap_found,

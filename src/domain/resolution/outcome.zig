@@ -228,6 +228,9 @@ pub fn resolveTechniqueVsDefense(
         const initial_amount = dmg_packet.?.amount;
         const initial_penetration = dmg_packet.?.penetration;
         const damage_kind = dmg_packet.?.kind;
+        const initial_geometry = dmg_packet.?.geometry;
+        const initial_energy = dmg_packet.?.energy;
+        const initial_rigidity = dmg_packet.?.rigidity;
 
         // Resolve through armor
         const target_body_part = &attack.defender.body.parts.items[target_part];
@@ -296,8 +299,14 @@ pub fn resolveTechniqueVsDefense(
             .initial_amount = initial_amount,
             .initial_penetration = initial_penetration,
             .damage_kind = damage_kind,
+            .initial_geometry = initial_geometry,
+            .initial_energy = initial_energy,
+            .initial_rigidity = initial_rigidity,
             .post_armour_amount = armour_result.?.remaining.amount,
             .post_armour_penetration = armour_result.?.remaining.penetration,
+            .post_armour_geometry = armour_result.?.remaining.geometry,
+            .post_armour_energy = armour_result.?.remaining.energy,
+            .post_armour_rigidity = armour_result.?.remaining.rigidity,
             .armour_layers_hit = armour_result.?.layers_hit,
             .armour_deflected = armour_result.?.deflected,
             .gap_found = armour_result.?.gap_found,

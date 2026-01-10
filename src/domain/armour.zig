@@ -289,18 +289,15 @@ pub const AbsorptionResult = struct {
     layers_destroyed: u8, // layers that hit 0 integrity this resolution
 };
 
-/// Derive rigidity coefficient from damage kind.
-/// Rigidity represents how concentrated/structurally-supported the striking surface is.
-/// Higher rigidity = force stays concentrated rather than spreading.
-fn deriveRigidity(kind: damage.Kind) f32 {
+/// Fallback rigidity derivation for legacy packets that don't have axis values.
+/// Used during migration from amount/penetration to geometry/energy/rigidity.
+fn deriveRigidityFromKind(kind: damage.Kind) f32 {
     return switch (kind) {
-        // Physical damage kinds
-        .pierce => 1.0, // concentrated tip, fully supported
-        .slash => 0.7, // edge cuts but less concentrated than pierce
-        .bludgeon => 0.8, // blunt impact, some spread
-        .crush => 1.0, // overwhelming concentrated force
-        .shatter => 1.0, // brittle fracturing, high concentration
-        // Non-physical kinds have no rigidity component
+        .pierce => 1.0,
+        .slash => 0.7,
+        .bludgeon => 0.8,
+        .crush => 1.0,
+        .shatter => 1.0,
         else => 0.0,
     };
 }
@@ -346,21 +343,22 @@ pub fn resolveThroughArmour(
 
         layers_hit += 1;
 
-        // === Derive axes from current packet ===
-        const geometry = remaining.penetration;
-        const momentum = remaining.amount;
-        const rigidity = deriveRigidity(remaining.kind);
+        // === Get axes from packet (T037: real physics values or legacy fallback) ===
+        // If new axis fields aren't populated, fall back to legacy fields for compat
+        const geometry = if (remaining.geometry > 0) remaining.geometry else remaining.penetration;
+        const energy_axis = if (remaining.energy > 0) remaining.energy else remaining.amount;
+        const rigidity = if (remaining.rigidity > 0) remaining.rigidity else deriveRigidityFromKind(remaining.kind);
         const mat = layer.material;
 
         // === Susceptibility: compute damage to this layer ===
         // Layer takes damage when incoming axes exceed its thresholds
         const geo_excess = @max(0.0, geometry - mat.geometry_threshold);
-        const mom_excess = @max(0.0, momentum - mat.energy_threshold);
+        const energy_excess = @max(0.0, energy_axis - mat.energy_threshold);
         const rig_excess = @max(0.0, rigidity - mat.rigidity_threshold);
 
         const layer_damage =
             geo_excess * mat.geometry_ratio +
-            mom_excess * mat.energy_ratio +
+            energy_excess * mat.energy_ratio +
             rig_excess * mat.rigidity_ratio;
 
         layer.integrity.* -= layer_damage;
@@ -370,27 +368,32 @@ pub fn resolveThroughArmour(
 
         // === Shielding: compute what passes through to next layer ===
         // Deflection reduces geometry (blunts/redirects penetrating edges)
-        // Absorption reduces momentum (soaks energy into layer)
+        // Absorption reduces energy (soaks kinetic energy into layer)
         // Thickness is a flat geometry reduction (material path to cut through)
         const deflection_coeff = mat.effectiveDeflection();
         const absorption_coeff = mat.effectiveAbsorption();
 
-        remaining.penetration = geometry * (1.0 - deflection_coeff) - mat.thickness;
-        remaining.penetration = @max(0.0, remaining.penetration);
-        remaining.amount = momentum * (1.0 - absorption_coeff);
+        remaining.geometry = geometry * (1.0 - deflection_coeff) - mat.thickness;
+        remaining.geometry = @max(0.0, remaining.geometry);
+        remaining.energy = energy_axis * (1.0 - absorption_coeff);
+        // Also update legacy fields for backward compat
+        remaining.penetration = remaining.geometry;
+        remaining.amount = remaining.energy;
 
         // Penetration exhausted - piercing/slashing attacks stop
-        if (remaining.penetration <= 0 and
+        if (remaining.geometry <= 0 and
             (remaining.kind == .pierce or remaining.kind == .slash))
         {
+            remaining.energy = 0;
             remaining.amount = 0;
             deflected = true;
             deflected_at_layer = @intCast(layer_idx);
             break;
         }
 
-        // Attack fully absorbed - negligible damage remains
-        if (remaining.amount < 0.05) {
+        // Attack fully absorbed - negligible energy remains
+        if (remaining.energy < 0.05) {
+            remaining.energy = 0;
             remaining.amount = 0;
             deflected = true;
             deflected_at_layer = @intCast(layer_idx);
@@ -453,20 +456,20 @@ pub fn resolveThroughArmourWithEvents(
 
         layers_hit += 1;
 
-        // === Derive axes from current packet ===
-        const geometry = remaining.penetration;
-        const momentum = remaining.amount;
-        const rigidity = deriveRigidity(remaining.kind);
+        // === Get axes from packet (T037: real physics values or legacy fallback) ===
+        const geometry = if (remaining.geometry > 0) remaining.geometry else remaining.penetration;
+        const energy_axis = if (remaining.energy > 0) remaining.energy else remaining.amount;
+        const rigidity = if (remaining.rigidity > 0) remaining.rigidity else deriveRigidityFromKind(remaining.kind);
         const mat = layer.material;
 
         // === Susceptibility: compute damage to this layer ===
         const geo_excess = @max(0.0, geometry - mat.geometry_threshold);
-        const mom_excess = @max(0.0, momentum - mat.energy_threshold);
+        const energy_excess = @max(0.0, energy_axis - mat.energy_threshold);
         const rig_excess = @max(0.0, rigidity - mat.rigidity_threshold);
 
         const layer_damage =
             geo_excess * mat.geometry_ratio +
-            mom_excess * mat.energy_ratio +
+            energy_excess * mat.energy_ratio +
             rig_excess * mat.rigidity_ratio;
 
         layer.integrity.* -= layer_damage;
@@ -485,14 +488,18 @@ pub fn resolveThroughArmourWithEvents(
         const deflection_coeff = mat.effectiveDeflection();
         const absorption_coeff = mat.effectiveAbsorption();
 
-        remaining.penetration = geometry * (1.0 - deflection_coeff) - mat.thickness;
-        remaining.penetration = @max(0.0, remaining.penetration);
-        remaining.amount = momentum * (1.0 - absorption_coeff);
+        remaining.geometry = geometry * (1.0 - deflection_coeff) - mat.thickness;
+        remaining.geometry = @max(0.0, remaining.geometry);
+        remaining.energy = energy_axis * (1.0 - absorption_coeff);
+        // Also update legacy fields for backward compat
+        remaining.penetration = remaining.geometry;
+        remaining.amount = remaining.energy;
 
         // Penetration exhausted - piercing/slashing attacks stop
-        if (remaining.penetration <= 0 and
+        if (remaining.geometry <= 0 and
             (remaining.kind == .pierce or remaining.kind == .slash))
         {
+            remaining.energy = 0;
             remaining.amount = 0;
             deflected = true;
             deflected_at_layer = layer_u8;
@@ -506,8 +513,9 @@ pub fn resolveThroughArmourWithEvents(
             break;
         }
 
-        // Attack fully absorbed - negligible damage remains
-        if (remaining.amount < 0.05) {
+        // Attack fully absorbed - negligible energy remains
+        if (remaining.energy < 0.05) {
+            remaining.energy = 0;
             remaining.amount = 0;
             deflected = true;
             deflected_at_layer = layer_u8;
