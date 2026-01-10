@@ -80,7 +80,7 @@ pub const Harness = struct {
     /// Creates the agent using world's entity system to avoid ID conflicts.
     pub fn addEnemyFromTemplate(self: *Harness, template: *const personas.AgentTemplate) !*Agent {
         const ai = @import("../../domain/ai.zig");
-        const weapon = @import("integration_root").domain.weapon;
+        const wpn = @import("integration_root").domain.weapon;
 
         // Convert DirectorKind to combat.Director
         const director: combat.Director = switch (template.director) {
@@ -103,15 +103,15 @@ pub const Harness = struct {
         switch (template.armament) {
             .unarmed => {}, // Agent already starts unarmed with natural weapons
             .single => |tmpl| {
-                const w = try self.alloc.create(weapon.Instance);
+                const w = try self.alloc.create(wpn.Instance);
                 w.* = .{ .id = try self.world.entities.weapons.insert(w), .template = tmpl };
                 enemy.weapons = enemy.weapons.withEquipped(.{ .single = w });
             },
             .dual => |d| {
-                const primary = try self.alloc.create(weapon.Instance);
+                const primary = try self.alloc.create(wpn.Instance);
                 primary.* = .{ .id = try self.world.entities.weapons.insert(primary), .template = d.primary };
 
-                const secondary = try self.alloc.create(weapon.Instance);
+                const secondary = try self.alloc.create(wpn.Instance);
                 secondary.* = .{ .id = try self.world.entities.weapons.insert(secondary), .template = d.secondary };
 
                 enemy.weapons = enemy.weapons.withEquipped(.{ .dual = .{ .primary = primary, .secondary = secondary } });
@@ -422,7 +422,134 @@ pub const Harness = struct {
         defer snapshot.deinit();
         return snapshot.card_statuses.get(card_id);
     }
+    // -------------------------------------------------------------------------
+    // Forced Resolution (Data-Driven Tests)
+    // -------------------------------------------------------------------------
+
+    /// Result of a forced attack resolution for data-driven tests.
+    pub const ForceResolveResult = struct {
+        outcome: resolution.Outcome,
+        damage_dealt: f32,
+        armour_deflected: bool,
+        layers_penetrated: u8,
+    };
+
+    /// Directly resolve an attack without the card/timeline system.
+    /// Used for data-driven combat tests that verify physics calculations.
+    pub fn forceResolveAttack(
+        self: *Harness,
+        attacker: *Agent,
+        defender: *Agent,
+        technique_id_str: []const u8,
+        weapon_template: *const weapon.Template,
+        stakes_str: []const u8,
+        target_part_str: []const u8,
+    ) !ForceResolveResult {
+        // Parse stakes from string
+        const stakes = parseStakes(stakes_str);
+
+        // Look up technique by string ID
+        const technique = findTechniqueByName(technique_id_str) orelse
+            return error.UnknownTechnique;
+
+        // Get target part index by computing hash at runtime
+        const hash = std.hash.Wyhash.hash(0, target_part_str);
+        const target_part = defender.body.index_by_hash.get(hash) orelse
+            return error.UnknownBodyPart;
+
+        // Get or create engagement
+        const engagement = self.getEngagement(defender.id) orelse
+            return error.NoEngagement;
+
+        // Build attack context
+        const attack_ctx = resolution.context.AttackContext{
+            .attacker = attacker,
+            .defender = defender,
+            .technique = technique,
+            .weapon_template = weapon_template,
+            .stakes = stakes,
+            .engagement = engagement,
+            .time_start = 0,
+            .time_end = 1.0,
+            .attention_penalty = 0,
+        };
+
+        // Build defense context (minimal - defender is passive)
+        const defense_ctx = resolution.context.DefenseContext{
+            .defender = defender,
+            .technique = technique, // No active defense
+            .weapon_template = weapon_template,
+            .engagement = engagement,
+            .computed = .{},
+            .time_start = 0,
+            .time_end = 1.0,
+        };
+
+        // Resolve the attack
+        const result = try resolution.outcome.resolveTechniqueVsDefense(
+            self.world,
+            attack_ctx,
+            defense_ctx,
+            target_part,
+        );
+
+        // Extract damage dealt (post-armour, post-body)
+        // Use severity as a proxy for damage - converts severity to 0-10 scale
+        var damage_dealt: f32 = 0.0;
+        if (result.body_result) |br| {
+            const severity = br.wound.worstSeverity();
+            damage_dealt = @floatFromInt(@intFromEnum(severity));
+        } else if (result.armour_result) |ar| {
+            damage_dealt = ar.remaining.amount;
+        } else if (result.damage_packet) |pkt| {
+            damage_dealt = pkt.amount;
+        }
+
+        // Check if armour deflected
+        const armour_deflected = if (result.armour_result) |ar| ar.deflected else false;
+
+        // Count layers penetrated
+        const layers_penetrated = if (result.armour_result) |ar| ar.layers_hit else 0;
+
+        return ForceResolveResult{
+            .outcome = result.outcome,
+            .damage_dealt = damage_dealt,
+            .armour_deflected = armour_deflected,
+            .layers_penetrated = layers_penetrated,
+        };
+    }
 };
+
+// ============================================================================
+// Module-level helpers for data-driven tests
+// ============================================================================
+
+const resolution = domain.resolution;
+const weapon = domain.weapon;
+const body = domain.body;
+const armour = domain.armour;
+const Technique = cards.Technique;
+const Stakes = cards.Stakes;
+
+/// Look up a technique by its string ID (e.g., "swing", "thrust").
+fn findTechniqueByName(id_str: []const u8) ?*const Technique {
+    const entries = &card_list.TechniqueEntries;
+    for (entries) |*t| {
+        if (std.mem.eql(u8, t.name, id_str)) {
+            return t;
+        }
+    }
+    return null;
+}
+
+/// Parse stakes string to Stakes enum.
+fn parseStakes(s: []const u8) Stakes {
+    if (std.mem.eql(u8, s, "probing")) return .probing;
+    if (std.mem.eql(u8, s, "guarded")) return .guarded;
+    if (std.mem.eql(u8, s, "committed")) return .committed;
+    if (std.mem.eql(u8, s, "reckless")) return .reckless;
+    return .committed; // default
+}
 
 // ============================================================================
 // Tests

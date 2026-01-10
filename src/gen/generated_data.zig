@@ -1686,3 +1686,121 @@ pub const GeneratedArmourPieces = [_]ArmourPieceDefinition{
         },
     },
 };
+
+pub const AttackerSpec = struct {
+    species: []const u8 = "dwarf",
+    weapon_id: []const u8,
+    technique_id: []const u8,
+    stakes: []const u8 = "committed",
+    power: ?f32 = null,
+    speed: ?f32 = null,
+    skill: ?f32 = null,
+};
+
+pub const DefenderSpec = struct {
+    species: []const u8 = "dwarf",
+    armour_ids: []const []const u8 = &.{},
+    pose: []const u8 = "balanced",
+    target_part: []const u8 = "torso",
+};
+
+pub const ExpectedOutcome = struct {
+    outcome: ?[]const u8 = null,
+    damage_dealt_min: ?f32 = null,
+    damage_dealt_max: ?f32 = null,
+    packet_energy_min: ?f32 = null,
+    packet_geometry_min: ?f32 = null,
+    armour_deflected: ?bool = null,
+    penetrated_layers_min: ?u8 = null,
+    penetrated_layers_max: ?u8 = null,
+};
+
+pub const CombatTestDefinition = struct {
+    id: []const u8,
+    description: []const u8,
+    attacker: AttackerSpec,
+    defender: DefenderSpec,
+    expected: ExpectedOutcome,
+};
+
+pub const GeneratedCombatTests = [_]CombatTestDefinition{
+    .{
+        .id = "fist_vs_unarmoured",
+        .description = "Fist should deal moderate blunt damage to unarmoured target",
+        .attacker = .{
+            .species = "dwarf",
+            .weapon_id = "natural.fist",
+            .technique_id = "swing",
+            .stakes = "committed",
+        },
+        .defender = .{
+            .species = "dwarf",
+            .armour_ids = &.{  },
+            .pose = "balanced",
+            .target_part = "torso",
+        },
+        .expected = .{
+            .damage_dealt_min = 0,
+            .damage_dealt_max = 6,
+        },
+    },
+    .{
+        .id = "sword_slash_vs_plate",
+        .description = "Knight's sword slash should be deflected by plate armour",
+        .attacker = .{
+            .species = "dwarf",
+            .weapon_id = "swords.knights_sword",
+            .technique_id = "swing",
+            .stakes = "committed",
+        },
+        .defender = .{
+            .species = "dwarf",
+            .armour_ids = &.{ "steel_breastplate" },
+            .pose = "balanced",
+            .target_part = "torso",
+        },
+        .expected = .{
+            .damage_dealt_max = 6,
+        },
+    },
+    .{
+        .id = "sword_thrust_vs_plate",
+        .description = "Knight's sword thrust should penetrate plate at weak points",
+        .attacker = .{
+            .species = "dwarf",
+            .weapon_id = "swords.knights_sword",
+            .technique_id = "thrust",
+            .stakes = "committed",
+        },
+        .defender = .{
+            .species = "dwarf",
+            .armour_ids = &.{ "steel_breastplate" },
+            .pose = "balanced",
+            .target_part = "torso",
+        },
+        .expected = .{
+            .damage_dealt_min = 0,
+            .damage_dealt_max = 6,
+        },
+    },
+    .{
+        .id = "sword_vs_gambeson",
+        .description = "Sword should cut through gambeson but with reduced effect",
+        .attacker = .{
+            .species = "dwarf",
+            .weapon_id = "swords.knights_sword",
+            .technique_id = "swing",
+            .stakes = "committed",
+        },
+        .defender = .{
+            .species = "dwarf",
+            .armour_ids = &.{ "gambeson_jacket" },
+            .pose = "balanced",
+            .target_part = "torso",
+        },
+        .expected = .{
+            .damage_dealt_min = 0,
+            .damage_dealt_max = 6,
+        },
+    },
+};

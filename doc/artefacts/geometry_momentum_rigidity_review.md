@@ -179,6 +179,7 @@ Critical risks: `doc/reviews/critical_physics_review.md` (2026‑01‑10) enumer
 - [ ] **Test coverage gaps (critical review §3).** Need an integration that uses generated weapons + armour data to catch unit mismatches; current tests operate on mock materials only.
 - [ ] **Severity vs. volume modelling (T039).** Clarify how `Severity.missing` should be triggered (volume destroyed vs. depth) so high-geometry piercing blows don’t amputate by default. Requires design + data updates per the critical review.
 - [ ] **Wound encoding vs. axis detail.** Current wounds only store `damage.Kind`; tissue layers discard packet geometry/energy when building wounds. Re-evaluate whether per-layer wound metadata should retain axis contributions (especially Geometry) so future effects (conditions, healing, trauma) can distinguish deep pierce vs. crushing blows even when they share a `Kind`.
+- [ ] **Weapon template generation from CUE (T040 follow-up).** `weapon_list.zig` is hand-crafted with combat profiles while `GeneratedWeapons` from CUE has physics coefficients. Per "CUE-first" principle, weapon templates should be generated from CUE to unify these sources. Currently data-driven combat tests use a mapping table bridging CUE IDs to weapon_list entries. Scope TBD: may require extending `data/weapons.cue` with full combat profiles (reach, damage, accuracy) and updating the generator.
 
 Future edits should tick the checkboxes above (with kanban references such as T033, T035, forthcoming packet-axis task) instead of appending new ad-hoc status sections.
 

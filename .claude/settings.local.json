@@ -31,7 +31,9 @@
       "Bash(just test-integration:*)",
       "Bash(just test-unit:*)",
       "Bash(echo:*)",
-      "Bash(just --dry-run:*)"
+      "Bash(just --dry-run:*)",
+      "Bash(cue vet:*)",
+      "Bash(just generate)"
     ]
   }
 }

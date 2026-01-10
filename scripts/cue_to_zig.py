@@ -767,6 +767,128 @@ def emit_armour_pieces(pieces: List[Tuple[str, Dict[str, Any]]]) -> str:
     return "\n".join(lines)
 
 
+def flatten_combat_tests(root: Dict[str, Any]) -> List[Tuple[str, Dict[str, Any]]]:
+    """Extract combat tests from combat_tests."""
+    tests = root.get("combat_tests", {})
+    results: List[Tuple[str, Dict[str, Any]]] = []
+    for key, value in tests.items():
+        if isinstance(value, dict) and "id" in value:
+            results.append((value["id"], value))
+    return sorted(results, key=lambda x: x[0])
+
+
+def format_optional_float(value: Any) -> str:
+    """Format an optional float field for Zig."""
+    if value is None:
+        return "null"
+    return zig_float(value)
+
+
+def format_optional_bool(value: Any) -> str:
+    """Format an optional bool field for Zig."""
+    if value is None:
+        return "null"
+    return zig_bool(value)
+
+
+def format_optional_int(value: Any) -> str:
+    """Format an optional int field for Zig."""
+    if value is None:
+        return "null"
+    return str(int(value))
+
+
+def emit_combat_tests(tests: List[Tuple[str, Dict[str, Any]]]) -> str:
+    lines: List[str] = []
+    lines.append("pub const AttackerSpec = struct {")
+    lines.append("    species: []const u8 = \"dwarf\",")
+    lines.append("    weapon_id: []const u8,")
+    lines.append("    technique_id: []const u8,")
+    lines.append("    stakes: []const u8 = \"committed\",")
+    lines.append("    power: ?f32 = null,")
+    lines.append("    speed: ?f32 = null,")
+    lines.append("    skill: ?f32 = null,")
+    lines.append("};")
+    lines.append("")
+    lines.append("pub const DefenderSpec = struct {")
+    lines.append("    species: []const u8 = \"dwarf\",")
+    lines.append("    armour_ids: []const []const u8 = &.{},")
+    lines.append("    pose: []const u8 = \"balanced\",")
+    lines.append("    target_part: []const u8 = \"torso\",")
+    lines.append("};")
+    lines.append("")
+    lines.append("pub const ExpectedOutcome = struct {")
+    lines.append("    outcome: ?[]const u8 = null,")
+    lines.append("    damage_dealt_min: ?f32 = null,")
+    lines.append("    damage_dealt_max: ?f32 = null,")
+    lines.append("    packet_energy_min: ?f32 = null,")
+    lines.append("    packet_geometry_min: ?f32 = null,")
+    lines.append("    armour_deflected: ?bool = null,")
+    lines.append("    penetrated_layers_min: ?u8 = null,")
+    lines.append("    penetrated_layers_max: ?u8 = null,")
+    lines.append("};")
+    lines.append("")
+    lines.append("pub const CombatTestDefinition = struct {")
+    lines.append("    id: []const u8,")
+    lines.append("    description: []const u8,")
+    lines.append("    attacker: AttackerSpec,")
+    lines.append("    defender: DefenderSpec,")
+    lines.append("    expected: ExpectedOutcome,")
+    lines.append("};")
+    lines.append("")
+    lines.append("pub const GeneratedCombatTests = [_]CombatTestDefinition{")
+    for test_id, data in tests:
+        attacker = data.get("attacker", {})
+        defender = data.get("defender", {})
+        expected = data.get("expected", {})
+        attacker_stats = attacker.get("stats", {})
+        armour_ids = defender.get("armour_ids", [])
+        armour_str = ", ".join(f'"{aid}"' for aid in armour_ids)
+
+        lines.append("    .{")
+        lines.append(f'        .id = "{test_id}",')
+        lines.append(f'        .description = "{data.get("description", "")}",')
+        lines.append("        .attacker = .{")
+        lines.append(f'            .species = "{attacker.get("species", "dwarf")}",')
+        lines.append(f'            .weapon_id = "{attacker.get("weapon_id", "")}",')
+        lines.append(f'            .technique_id = "{attacker.get("technique_id", "")}",')
+        lines.append(f'            .stakes = "{attacker.get("stakes", "committed")}",')
+        if attacker_stats.get("power") is not None:
+            lines.append(f'            .power = {zig_float(attacker_stats["power"])},')
+        if attacker_stats.get("speed") is not None:
+            lines.append(f'            .speed = {zig_float(attacker_stats["speed"])},')
+        if attacker_stats.get("skill") is not None:
+            lines.append(f'            .skill = {zig_float(attacker_stats["skill"])},')
+        lines.append("        },")
+        lines.append("        .defender = .{")
+        lines.append(f'            .species = "{defender.get("species", "dwarf")}",')
+        lines.append(f"            .armour_ids = &.{{ {armour_str} }},")
+        lines.append(f'            .pose = "{defender.get("pose", "balanced")}",')
+        lines.append(f'            .target_part = "{defender.get("target_part", "torso")}",')
+        lines.append("        },")
+        lines.append("        .expected = .{")
+        if expected.get("outcome") is not None:
+            lines.append(f'            .outcome = "{expected["outcome"]}",')
+        if expected.get("damage_dealt_min") is not None:
+            lines.append(f'            .damage_dealt_min = {zig_float(expected["damage_dealt_min"])},')
+        if expected.get("damage_dealt_max") is not None:
+            lines.append(f'            .damage_dealt_max = {zig_float(expected["damage_dealt_max"])},')
+        if expected.get("packet_energy_min") is not None:
+            lines.append(f'            .packet_energy_min = {zig_float(expected["packet_energy_min"])},')
+        if expected.get("packet_geometry_min") is not None:
+            lines.append(f'            .packet_geometry_min = {zig_float(expected["packet_geometry_min"])},')
+        if expected.get("armour_deflected") is not None:
+            lines.append(f'            .armour_deflected = {zig_bool(expected["armour_deflected"])},')
+        if expected.get("penetrated_layers_min") is not None:
+            lines.append(f'            .penetrated_layers_min = {int(expected["penetrated_layers_min"])},')
+        if expected.get("penetrated_layers_max") is not None:
+            lines.append(f'            .penetrated_layers_max = {int(expected["penetrated_layers_max"])},')
+        lines.append("        },")
+        lines.append("    },")
+    lines.append("};")
+    return "\n".join(lines)
+
+
 def emit_species(species_map: Dict[str, Any]) -> str:
     lines: List[str] = []
     lines.append("pub const NaturalWeaponRef = struct {")
@@ -1248,12 +1370,16 @@ def generate_zig(data: Dict[str, Any]) -> str:
         output.append("")
     if armour_pieces:
         output.append(emit_armour_pieces(armour_pieces))
+        output.append("")
+    combat_tests = flatten_combat_tests(data)
+    if combat_tests:
+        output.append(emit_combat_tests(combat_tests))
     has_data = (
         weapons or techniques or tissue_templates or body_plans_root
-        or species_root or armour_materials or armour_pieces
+        or species_root or armour_materials or armour_pieces or combat_tests
     )
     if not has_data:
-        output.append("// No weapons, techniques, biological, or armour data found in input JSON.")
+        output.append("// No weapons, techniques, biological, armour, or test data found in input JSON.")
     return "\n".join(output)
 
 
