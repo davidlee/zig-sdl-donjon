@@ -484,15 +484,16 @@ pub fn resolveThroughArmourWithEvents(
         const deflection_coeff = mat.effectiveDeflection();
         const absorption_coeff = mat.effectiveAbsorption();
 
-        remaining.geometry = geometry * (1.0 - deflection_coeff) - mat.thickness;
-        remaining.geometry = @max(0.0, remaining.geometry);
+        const remaining_geo = geometry * (1.0 - deflection_coeff);
+        remaining.geometry = remaining_geo;
+        remaining.penetration -= mat.thickness;
+        remaining.penetration = @max(0.0, remaining.penetration);
+
         remaining.energy = energy_axis * (1.0 - absorption_coeff);
-        // Also update legacy fields for backward compat
-        remaining.penetration = remaining.geometry;
         remaining.amount = remaining.energy;
 
         // Penetration exhausted - piercing/slashing attacks stop
-        if (remaining.geometry <= 0 and
+        if (remaining.penetration <= 0 and
             (remaining.kind == .pierce or remaining.kind == .slash))
         {
             remaining.energy = 0;

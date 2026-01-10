@@ -1760,7 +1760,8 @@ pub const GeneratedCombatTests = [_]CombatTestDefinition{
             .target_part = "torso",
         },
         .expected = .{
-            .damage_dealt_max = 6,
+            .damage_dealt_max = 1,
+            .armour_deflected = true,
         },
     },
     .{

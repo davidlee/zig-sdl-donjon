@@ -457,62 +457,65 @@ pub const Harness = struct {
         const target_part = defender.body.index_by_hash.get(hash) orelse
             return error.UnknownBodyPart;
 
-        // Get or create engagement
-        const engagement = self.getEngagement(defender.id) orelse
-            return error.NoEngagement;
-
-        // Build attack context
-        const attack_ctx = resolution.context.AttackContext{
-            .attacker = attacker,
-            .defender = defender,
-            .technique = technique,
-            .weapon_template = weapon_template,
-            .stakes = stakes,
-            .engagement = engagement,
-            .time_start = 0,
-            .time_end = 1.0,
-            .attention_penalty = 0,
-        };
+        // Build attack context (unused now, but kept for future if needed)
+        // const attack_ctx = resolution.context.AttackContext{ ... };
 
         // Build defense context (minimal - defender is passive)
-        const defense_ctx = resolution.context.DefenseContext{
-            .defender = defender,
-            .technique = technique, // No active defense
-            .weapon_template = weapon_template,
-            .engagement = engagement,
-            .computed = .{},
-            .time_start = 0,
-            .time_end = 1.0,
-        };
+        // const defense_ctx = resolution.context.DefenseContext{ ... };
 
-        // Resolve the attack
-        const result = try resolution.outcome.resolveTechniqueVsDefense(
-            self.world,
-            attack_ctx,
-            defense_ctx,
-            target_part,
+        // Resolve the attack (Force Hit - deterministic physics test)
+        // Bypass outcome.resolveTechniqueVsDefense to avoid RNG hit/miss roll.
+        // We assume the attack hits for physics verification.
+
+        const dmg_packet = resolution.damage.createDamagePacket(
+            technique,
+            weapon_template,
+            attacker,
+            stakes,
         );
+
+        // Resolve through armor
+        const target_body_part = &defender.body.parts.items[target_part];
+        const armour_result = try armour.resolveThroughArmourWithEvents(
+            self.world,
+            defender.id,
+            &defender.armour,
+            target_part,
+            target_body_part.tag,
+            target_body_part.side,
+            dmg_packet,
+        );
+
+        // Apply remaining damage to body
+        var body_result: ?body.Body.DamageResult = null;
+        if (armour_result.remaining.amount > 0) {
+            body_result = try defender.body.applyDamageWithEvents(
+                &self.world.events,
+                target_part,
+                armour_result.remaining,
+            );
+        }
 
         // Extract damage dealt (post-armour, post-body)
         // Use severity as a proxy for damage - converts severity to 0-10 scale
         var damage_dealt: f32 = 0.0;
-        if (result.body_result) |br| {
+        if (body_result) |br| {
             const severity = br.wound.worstSeverity();
             damage_dealt = @floatFromInt(@intFromEnum(severity));
-        } else if (result.armour_result) |ar| {
-            damage_dealt = ar.remaining.amount;
-        } else if (result.damage_packet) |pkt| {
-            damage_dealt = pkt.amount;
+        } else if (armour_result.remaining.amount > 0) {
+            damage_dealt = armour_result.remaining.amount; // Should be negligible if no wound
+        } else {
+            damage_dealt = 0;
         }
 
         // Check if armour deflected
-        const armour_deflected = if (result.armour_result) |ar| ar.deflected else false;
+        const armour_deflected = armour_result.deflected;
 
         // Count layers penetrated
-        const layers_penetrated = if (result.armour_result) |ar| ar.layers_hit else 0;
+        const layers_penetrated = armour_result.layers_hit;
 
         return ForceResolveResult{
-            .outcome = result.outcome,
+            .outcome = .hit, // Forced hit
             .damage_dealt = damage_dealt,
             .armour_deflected = armour_deflected,
             .layers_penetrated = layers_penetrated,

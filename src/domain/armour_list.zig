@@ -76,7 +76,7 @@ pub fn buildMaterial(comptime def: *const ArmourMaterialDef) Material {
         .shape_dispersion_bonus = def.shape_dispersion_bonus,
         .shape_absorption_bonus = def.shape_absorption_bonus,
         // Physical (TODO: add thickness/durability to CUE schema)
-        .thickness = 0.5,
+        .thickness = 3.0,
         .durability = 100,
     };
 }
