@@ -152,7 +152,7 @@ Critical risks: `doc/reviews/critical_physics_review.md` (2026‑01‑10) enumer
 
 ### Outstanding / Next Steps
 - [x] **T035 Phase 3.3 – Body part geometry.** Extend `PartDef`/`Part` with `BodyPartGeometry`, copy from generated plans, and pass into `applyDamage(...)`. Unlocks penetration path-length math without inventing placeholder numbers.
-- [ ] **T035 Phase 4 polish – Tissue resolution.**  
+- [x] **T035 Phase 4 polish – Tissue resolution (complete 2026-01-10).**  
   • consume `layer.thickness_ratio × part_geometry.thickness_cm` when reducing penetration/path length;  
   • add a physical-only guard (non-physical packets bypass the 3-axis pipeline);  
   • remove the slash/pierce “geometry==0 stops everything” coupling so Energy/Rigidity still propagate;  
@@ -164,8 +164,8 @@ Critical risks: `doc/reviews/critical_physics_review.md` (2026‑01‑10) enumer
 - [ ] **Shared rigidity helper.** Armour and tissue each define `deriveRigidityFromKind`; move the helper into `damage.zig` (per implementation review §3.1) so future tuning stays consistent.
 - [ ] **Generated-data integration test.** Add a “knight’s sword vs. plate” style integration using generated IDs only (implementation review §3.3) to validate the data+runtime path before broader migration.
 - [x] **Geometry vs penetration unit fix (critical review §2.1, complete 2026-01-10).** Separate sharpness coefficients from penetration depth; armour/tissue should subtract thickness from a length axis, not from the Geometry coefficient. Restore realistic penetration behaviour.
-- [ ] **Energy scaling non-linearity (critical review §2.2).** Revisit `deriveEnergy` so velocity contributions scale quadratically (or otherwise per the physics design) rather than linearly.
-- [ ] **Severity mapping & volume thresholds (critical review §2.3).** Distinguish perforation vs. structural loss so high-geometry/low-energy attacks do not auto-escalate to `Severity.missing`. Capture the volume/area thresholds in the data model and tests.
+- [ ] **Energy scaling non-linearity (critical review §2.2 / T038).** Revisit `deriveEnergy` so velocity contributions scale quadratically (or otherwise per the physics design) rather than linearly.
+- [ ] **Severity mapping & volume thresholds (critical review §2.3 / T039).** Distinguish perforation vs. structural loss so high-geometry/low-energy attacks do not auto-escalate to `Severity.missing`. Capture the volume/area thresholds in the data model and tests.
 
 ### Decisions & References
 - **CUE-first data authoring is the baseline.** Continue expanding schemas instead of reintroducing ad-hoc Zig tables; converter validation remains the guardrail.
@@ -177,7 +177,8 @@ Critical risks: `doc/reviews/critical_physics_review.md` (2026‑01‑10) enumer
 - [x] **Non-physical packet handling.** T037 decision: zero out geometry/energy/rigidity when `kind.isPhysical() == false`. Armour/tissue short-circuit 3-axis logic on that guard. Thermal/conductive fields remain anchored to existing `damage.Kind` resistances for now.
 - [x] **Weapon/technique axis formulas.** T037 implements reference-energy scaling: `actual_energy = reference_energy_j × stat_scaling × stakes`. Full kinematic derivation (computing ω/v from stats, then ½Iω² or ½mv²) deferred as future calibration work. Technique axis multipliers (geometry/energy/rigidity) default to 1.0; weapon coefficients provide differentiation.
 - [ ] **Test coverage gaps (critical review §3).** Need an integration that uses generated weapons + armour data to catch unit mismatches; current tests operate on mock materials only.
-- [ ] **Severity vs. volume modelling.** Clarify how `Severity.missing` should be triggered (volume destroyed vs. depth) so high-geometry piercing blows don’t amputate by default (critical review §2.3). Requires design + data updates.
+- [ ] **Severity vs. volume modelling (T039).** Clarify how `Severity.missing` should be triggered (volume destroyed vs. depth) so high-geometry piercing blows don’t amputate by default. Requires design + data updates per the critical review.
+- [ ] **Wound encoding vs. axis detail.** Current wounds only store `damage.Kind`; tissue layers discard packet geometry/energy when building wounds. Re-evaluate whether per-layer wound metadata should retain axis contributions (especially Geometry) so future effects (conditions, healing, trauma) can distinguish deep pierce vs. crushing blows even when they share a `Kind`.
 
 Future edits should tick the checkboxes above (with kanban references such as T033, T035, forthcoming packet-axis task) instead of appending new ad-hoc status sections.
 

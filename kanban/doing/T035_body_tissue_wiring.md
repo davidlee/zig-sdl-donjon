@@ -635,3 +635,10 @@ All tests pass. T035 core work complete.
 - Added `body_list` export to `domain/mod.zig`
 
 **T035 complete.** All phases done, all tests pass.
+
+**2026-01-10**: Follow-up - Armour unit mismatch fix (critical review §2.1).
+- Applied same pattern to `armour.zig:resolveThroughArmour()`:
+  - Added `remaining_penetration` (cm) tracking separate from `remaining_geo` (coefficient)
+  - Deflection reduces geometry; thickness subtracts from penetration
+  - Fixes: sword (pen=4cm) vs plate (1cm) now penetrates (was: geo=0.6 - 1.0 = blocked)
+- Design doc item "Geometry vs penetration unit fix" marked complete
