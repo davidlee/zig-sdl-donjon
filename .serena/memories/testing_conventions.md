@@ -71,6 +71,10 @@ just test
 # With output (see all test names)
 just test-verbose
 just test-unit "--summary all"
+
+# Data-driven combat tests with optional filter
+just test-combat           # Run all combat tests
+just test-combat sword     # Filter to tests containing "sword"
 ```
 
 ## Test Philosophy
@@ -132,6 +136,20 @@ test {
 ```
 
 The `testing/mod.zig` re-exports `fixtures.zig`, so fixture tests are picked up transitively.
+
+### Data-Driven Combat Tests (`src/testing/integration/domain/data_driven_combat.zig`)
+
+Declarative combat outcome tests defined in CUE (`data/tests.cue`), generated to Zig.
+
+```bash
+just test-combat           # All combat tests
+just test-combat plate     # Filter by substring
+```
+
+- Tests accumulate results, report summary at end
+- Filter via `COMBAT_TEST_FILTER` env var (substring match on test ID)
+- CUE schema: `#CombatTest` with `#AttackerSpec`, `#DefenderSpec`, `#ExpectedOutcome`
+- See T040 for implementation details
 
 ## Key Files
 

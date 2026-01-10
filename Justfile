@@ -48,6 +48,11 @@ test: test-unit test-integration test-system
 [group('test')]
 test-verbose: (test-unit "--summary all") (test-integration "--summary all") (test-system "--summary-all")
 
+# Run data-driven combat tests with optional filter (e.g., just test-combat sword)
+[group('test')]
+test-combat filter="":
+  COMBAT_TEST_FILTER={{filter}} zig build test-integration
+
 ## only shortcuts for humans below
 ## sweet shortcuts - conveniences for super common ops
 

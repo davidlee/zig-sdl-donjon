@@ -29,19 +29,37 @@ const gen = @import("../../../gen/generated_data.zig");
 test "data-driven combat tests" {
     const alloc = testing.allocator;
 
+    // Optional runtime filter from environment
+    const filter = std.posix.getenv("COMBAT_TEST_FILTER");
+
+    // Accumulator for results
+    const TestResult = struct {
+        id: []const u8,
+        passed: bool,
+        failure_reason: ?[]const u8 = null,
+        damage_dealt: f32 = 0,
+    };
+
+    var results = std.ArrayList(TestResult){};
+    defer results.deinit(alloc);
+
     for (gen.GeneratedCombatTests) |test_def| {
+        // Apply filter if set
+        if (filter) |f| {
+            if (std.mem.indexOf(u8, test_def.id, f) == null) continue;
+        }
+
         // Setup harness
         var h = try Harness.init(alloc);
         defer h.deinit();
 
-        // Get attacker (player) - use setPlayerFromTemplate for stats
-        // For now, use default player with overridden weapon
+        // Get attacker (player)
         const attacker = h.player();
 
-        // Look up weapon template from the weapon list by matching the CUE ID
+        // Look up weapon template
         const weapon_template = lookupWeaponById(test_def.attacker.weapon_id) orelse {
-            std.debug.print("Unknown weapon: {s}\n", .{test_def.attacker.weapon_id});
-            continue; // Skip test if weapon not found
+            try results.append(alloc, .{ .id = test_def.id, .passed = false, .failure_reason = "unknown weapon" });
+            continue;
         };
 
         // Equip the weapon to attacker
@@ -56,7 +74,6 @@ test "data-driven combat tests" {
         const defender = try h.addEnemyFromTemplate(&personas.Agents.ser_marcus);
 
         // Equip armour to defender if specified
-        // We need to track allocated instances to free them after resolution
         var armour_instances = try std.ArrayList(*armour.Instance).initCapacity(alloc, test_def.defender.armour_ids.len);
         defer {
             for (armour_instances.items) |inst| {
@@ -82,53 +99,70 @@ test "data-driven combat tests" {
             test_def.attacker.stakes,
             test_def.defender.target_part,
         ) catch |err| {
-            std.debug.print("Test '{s}' failed to resolve: {any}\n", .{ test_def.id, err });
+            const msg = std.fmt.allocPrint(alloc, "resolution error: {any}", .{err}) catch "resolution error";
+            try results.append(alloc, .{ .id = test_def.id, .passed = false, .failure_reason = msg });
             continue;
         };
 
         // Check assertions
-        var test_passed = true;
+        var failure_reason: ?[]const u8 = null;
 
-        // Check armour_deflected
         if (test_def.expected.armour_deflected) |expected| {
             if (result.armour_deflected != expected) {
-                std.debug.print(
-                    "Test '{s}' FAILED: armour_deflected expected {}, got {}\n",
-                    .{ test_def.id, expected, result.armour_deflected },
-                );
-                test_passed = false;
+                failure_reason = if (expected) "expected armour deflection" else "unexpected armour deflection";
             }
         }
 
-        // Check damage_dealt_min
-        if (test_def.expected.damage_dealt_min) |min| {
-            if (result.damage_dealt < min) {
-                std.debug.print(
-                    "Test '{s}' FAILED: damage_dealt {d:.2} < min {d:.2}\n",
-                    .{ test_def.id, result.damage_dealt, min },
-                );
-                test_passed = false;
+        if (failure_reason == null) {
+            if (test_def.expected.damage_dealt_min) |min| {
+                if (result.damage_dealt < min) {
+                    failure_reason = std.fmt.allocPrint(alloc, "damage {d:.2} < min {d:.2}", .{ result.damage_dealt, min }) catch "damage below min";
+                }
             }
         }
 
-        // Check damage_dealt_max
-        if (test_def.expected.damage_dealt_max) |max| {
-            if (result.damage_dealt > max) {
-                std.debug.print(
-                    "Test '{s}' FAILED: damage_dealt {d:.2} > max {d:.2}\n",
-                    .{ test_def.id, result.damage_dealt, max },
-                );
-                test_passed = false;
+        if (failure_reason == null) {
+            if (test_def.expected.damage_dealt_max) |max| {
+                if (result.damage_dealt > max) {
+                    failure_reason = std.fmt.allocPrint(alloc, "damage {d:.2} > max {d:.2}", .{ result.damage_dealt, max }) catch "damage above max";
+                }
             }
         }
 
-        if (test_passed) {
-            std.debug.print("Test '{s}': PASSED (damage={d:.2})\n", .{ test_def.id, result.damage_dealt });
-        }
-
-        // Fail if any assertion failed
-        try testing.expect(test_passed);
+        try results.append(alloc, .{
+            .id = test_def.id,
+            .passed = failure_reason == null,
+            .failure_reason = failure_reason,
+            .damage_dealt = result.damage_dealt,
+        });
     }
+
+    // Report summary
+    var passed: usize = 0;
+    var failed: usize = 0;
+    for (results.items) |r| {
+        if (r.passed) passed += 1 else failed += 1;
+    }
+
+    std.debug.print("\n=== Combat Test Summary ===\n", .{});
+    std.debug.print("Passed: {d}/{d}\n", .{ passed, passed + failed });
+
+    if (failed > 0) {
+        std.debug.print("\nFailures:\n", .{});
+        for (results.items) |r| {
+            if (!r.passed) {
+                std.debug.print("  - {s}: {s}\n", .{ r.id, r.failure_reason orelse "unknown" });
+            }
+        }
+    }
+
+    std.debug.print("\nDetails:\n", .{});
+    for (results.items) |r| {
+        const status = if (r.passed) "PASS" else "FAIL";
+        std.debug.print("  [{s}] {s} (damage={d:.2})\n", .{ status, r.id, r.damage_dealt });
+    }
+
+    try testing.expect(failed == 0);
 }
 
 // ============================================================================

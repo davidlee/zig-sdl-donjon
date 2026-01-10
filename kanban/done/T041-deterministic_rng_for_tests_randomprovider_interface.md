@@ -132,3 +132,25 @@ Chose B for consistency with existing Director pattern. Perf cost immeasurable f
 
 ### Integration tests
 - Data-driven combat tests with scripted rolls produce expected outcomes
+
+## Progress Log
+
+### 2026-01-10: Complete
+
+**Implemented:**
+1. Added `RandomProvider` interface to `random.zig` (Director-style vtable)
+2. Added `StreamRandomProvider` (production) wrapping `RandomStreamDict`
+3. Added `ScriptedRandomProvider` (test double) returning predetermined values
+4. Updated `World` to use `random_provider: RandomProvider` + `random_impl: StreamRandomProvider`
+5. Refactored `Harness.forceResolveAttack` to:
+   - Use real resolution pipeline (`resolveTechniqueVsDefense`)
+   - Inject `ScriptedRandomProvider` temporarily
+   - Restore original provider after resolution
+
+**Key insight:** Scripted values must account for multiple random draws:
+- Hit roll: low value (0.1) → attack hits
+- Gap roll: high value (0.99) → no gap found in armour
+
+Using `&.{0.1, 0.99}` cycles through both, ensuring deterministic hits that properly engage armour.
+
+**Verification:** All 4 data-driven combat tests pass with deterministic outcomes.

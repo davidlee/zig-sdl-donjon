@@ -34,7 +34,8 @@
       "Bash(just --dry-run:*)",
       "Bash(cue vet:*)",
       "Bash(just generate)",
-      "Bash(just new-card:*)"
+      "Bash(just new-card:*)",
+      "Bash(just:*)"
     ]
   }
 }

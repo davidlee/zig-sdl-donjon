@@ -60,9 +60,18 @@ Returns `worstSeverity()` (0-5 enum) instead of actual damage amount. CUE schema
 
 ## Follow-Up Tasks
 
-### F2. Deterministic Test Mode → T041
+### F2. Deterministic Test Mode → T041 ✓ COMPLETE
 **Goal:** Force hits (bypass RNG) or seed World's RNG for reproducible results.
-**Moved to:** T041 (RandomProvider interface design)
+**Implemented:** RandomProvider interface with ScriptedRandomProvider test double.
+
+### F3. Runtime Filtering & Accumulator/Reporter Pattern ✓ COMPLETE
+**Goal:** Improve test runner debuggability without compile-time bloat.
+
+**Implemented:**
+- `COMBAT_TEST_FILTER` env var for substring filtering (e.g., `COMBAT_TEST_FILTER=sword`)
+- Accumulator collects all `TestResult` structs before reporting
+- Summary shows pass/fail counts, failures listed first, then all details
+- All tests run regardless of failures; single assertion at end
 
 ### F4. Weapon/Armour Source of Truth
 **Goal:** Resolve whether CUE should be the single source for weapon templates.

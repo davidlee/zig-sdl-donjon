@@ -73,3 +73,59 @@ pub const RandomStreamDict = struct {
         };
     }
 };
+
+// ============================================================================
+// RandomProvider - Injectable interface for random number generation
+// ============================================================================
+
+/// Interface for random number provision. Follows Director pattern (see ai.zig).
+/// Allows injection of test doubles for deterministic testing.
+pub const RandomProvider = struct {
+    ptr: *anyopaque,
+    drawFn: *const fn (ptr: *anyopaque, id: RandomStreamID) f32,
+
+    pub fn draw(self: RandomProvider, id: RandomStreamID) f32 {
+        return self.drawFn(self.ptr, id);
+    }
+};
+
+/// Production implementation - wraps RandomStreamDict with real PRNG.
+pub const StreamRandomProvider = struct {
+    dict: RandomStreamDict,
+
+    pub fn init() StreamRandomProvider {
+        return .{ .dict = RandomStreamDict.init() };
+    }
+
+    pub fn provider(self: *StreamRandomProvider) RandomProvider {
+        return .{ .ptr = self, .drawFn = draw };
+    }
+
+    /// Access underlying stream for RandomSource compatibility.
+    pub fn getStream(self: *StreamRandomProvider, id: RandomStreamID) *Stream {
+        return self.dict.get(id);
+    }
+
+    fn draw(ptr: *anyopaque, id: RandomStreamID) f32 {
+        const self: *StreamRandomProvider = @ptrCast(@alignCast(ptr));
+        return self.dict.get(id).random().float(f32);
+    }
+};
+
+/// Test double - returns predetermined values in sequence.
+/// Values wrap around when exhausted.
+pub const ScriptedRandomProvider = struct {
+    values: []const f32,
+    index: usize = 0,
+
+    pub fn provider(self: *ScriptedRandomProvider) RandomProvider {
+        return .{ .ptr = self, .drawFn = draw };
+    }
+
+    fn draw(ptr: *anyopaque, _: RandomStreamID) f32 {
+        const self: *ScriptedRandomProvider = @ptrCast(@alignCast(ptr));
+        const value = self.values[self.index % self.values.len];
+        self.index += 1;
+        return value;
+    }
+};

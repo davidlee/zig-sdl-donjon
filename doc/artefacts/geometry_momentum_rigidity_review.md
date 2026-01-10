@@ -145,27 +145,27 @@ Latest implementation review: `doc/reviews/geometry_momentum_rigidity_implementa
 Critical risks: `doc/reviews/critical_physics_review.md` (2026‑01‑10) enumerates unit mismatches and severity issues noted below.
 
 ### Completed Work
-- [x] **T033 – Armour 3-axis integration.** Armour stacks now consume generated materials, run deflection/absorption/dispersion per layer, and pass residual packets inward (`src/domain/armour.zig`). Converter emits `ArmourMaterialDefinition`/`ArmourPieceDefinition`, and `armour_list.zig` validates IDs at comptime.
-- [x] **T035 Phases 0‑3 – Data-driven bodies/tissues.** `data/bodies.cue` defines tissue stacks, body plans, and species; `body_list.zig` builds runtime `TissueStacks`/`BodyPlans`; `Body.fromPlan` now sources its parts, hierarchy, and tissue composition from generated data.
-- [x] **Instrumentation & audit logging.** Minimal packet logging landed in `audit_log.zig`, `event.log` captures combat packets, and §9.5’s event-hook plan remains optional for richer telemetry.
-- [x] **Data audit tooling.** `doc/artefacts/data_audit_report.md` plus `just audit-data` enumerate every weapon/technique/armour/tissue entry, emit derived axis values, and flag missing coefficients (currently 17 warnings: technique axis defaults + tissue thickness sums).
+- ✔ **T033 – Armour 3-axis integration.** Armour stacks now consume generated materials, run deflection/absorption/dispersion per layer, and pass residual packets inward (`src/domain/armour.zig`). Converter emits `ArmourMaterialDefinition`/`ArmourPieceDefinition`, and `armour_list.zig` validates IDs at comptime.
+- ✔ **T035 Phases 0‑3 – Data-driven bodies/tissues.** `data/bodies.cue` defines tissue stacks, body plans, and species; `body_list.zig` builds runtime `TissueStacks`/`BodyPlans`; `Body.fromPlan` now sources its parts, hierarchy, and tissue composition from generated data.
+- ✔ **Instrumentation & audit logging.** Minimal packet logging landed in `audit_log.zig`, `event.log` captures combat packets, and §9.5’s event-hook plan remains optional for richer telemetry.
+- ✔ **Data audit tooling.** `doc/artefacts/data_audit_report.md` plus `just audit-data` enumerate every weapon/technique/armour/tissue entry, emit derived axis values, and flag missing coefficients (currently 17 warnings: technique axis defaults + tissue thickness sums).
 
 ### Outstanding / Next Steps
-- [x] **T035 Phase 3.3 – Body part geometry.** Extend `PartDef`/`Part` with `BodyPartGeometry`, copy from generated plans, and pass into `applyDamage(...)`. Unlocks penetration path-length math without inventing placeholder numbers.
-- [x] **T035 Phase 4 polish – Tissue resolution (complete 2026-01-10).**  
+- ✔ **T035 Phase 3.3 – Body part geometry.** Extend `PartDef`/`Part` with `BodyPartGeometry`, copy from generated plans, and pass into `applyDamage(...)`. Unlocks penetration path-length math without inventing placeholder numbers.
+- ✔ **T035 Phase 4 polish – Tissue resolution (complete 2026-01-10).**  
   • consume `layer.thickness_ratio × part_geometry.thickness_cm` when reducing penetration/path length;  
   • add a physical-only guard (non-physical packets bypass the 3-axis pipeline);  
   • remove the slash/pierce “geometry==0 stops everything” coupling so Energy/Rigidity still propagate;  
   • revisit severity mapping/tests once the per-axis contributions replace the legacy scalar thresholds.
-- [x] **Damage-packet axis export (T037 complete).** `damage.Packet` now carries `geometry`/`energy`/`rigidity` fields. `createDamagePacket` derives axes from weapon physics × technique multipliers × stats × stakes. Armour/tissue consumers use packet axes with legacy fallback for backward compat.
-- [x] **Technique axis coverage (T037 decision).** Allow 1.0/1.0/1.0 defaults. Weapon geometry/rigidity coefficients already differentiate swing vs thrust; technique-specific bias can refine later. No enforcement in generator.
-- [x] **Tissue thickness normalisation (subtask under T035).** `digit`, `joint`, and `facial` templates sum to <0.95. Either adjust the ratios or annotate the intended scaling so audits stop flagging them.
-- [ ] **Event instrumentation (optional follow-up).** If `event.log` proves insufficient, revisit §9.5’s `combat_packet_resolved` event so audits and UI can subscribe to the same structured payloads.
-- [x] **Shared rigidity helper (complete 2026-01-10).** Moved `deriveRigidityFromKind` to `resolution/damage.zig`; armour.zig and body.zig now reference the shared helper.
-- [ ] **Generated-data integration test.** Add a “knight’s sword vs. plate” style integration using generated IDs only (implementation review §3.3). See `doc/designs/data_driven_combat_tests.md` for the planned CUE-driven harness; implement or borrow from that design to validate the data+runtime path before broader migration.
-- [x] **Geometry vs penetration unit fix (critical review §2.1, complete 2026-01-10).** Separate sharpness coefficients from penetration depth; armour/tissue should subtract thickness from a length axis, not from the Geometry coefficient. Restore realistic penetration behaviour.
-- [x] **Energy scaling non-linearity (critical review §2.2 / T038, complete 2026-01-10).** `deriveEnergy` now splits velocity-like stats (speed, dexterity, agility) from mass-like stats (power, etc.); velocity contributions scale quadratically (velocity_scale²), mass contributions scale linearly (mass_scale). Formula: `energy = reference_energy_j × velocity_scale² × mass_scale × stakes × technique_mult`.
-- [ ] **Severity mapping & volume thresholds (critical review §2.3 / T039).** Distinguish perforation vs. structural loss so high-geometry/low-energy attacks do not auto-escalate to `Severity.missing`. Capture the volume/area thresholds in the data model and tests.
+- ✔ **Damage-packet axis export (T037 complete).** `damage.Packet` now carries `geometry`/`energy`/`rigidity` fields. `createDamagePacket` derives axes from weapon physics × technique multipliers × stats × stakes. Armour/tissue consumers use packet axes with legacy fallback for backward compat.
+- ✔ **Technique axis coverage (T037 decision).** Allow 1.0/1.0/1.0 defaults. Weapon geometry/rigidity coefficients already differentiate swing vs thrust; technique-specific bias can refine later. No enforcement in generator.
+- ✔ **Tissue thickness normalisation (subtask under T035).** `digit`, `joint`, and `facial` templates sum to <0.95. Either adjust the ratios or annotate the intended scaling so audits stop flagging them.
+- □ **Event instrumentation (optional follow-up).** If `event.log` proves insufficient, revisit §9.5’s `combat_packet_resolved` event so audits and UI can subscribe to the same structured payloads.
+- ✔ **Shared rigidity helper (complete 2026-01-10).** Moved `deriveRigidityFromKind` to `resolution/damage.zig`; armour.zig and body.zig now reference the shared helper.
+- ✔ **Generated-data integration test.** Add a “knight’s sword vs. plate” style integration using generated IDs only (implementation review §3.3). See `doc/designs/data_driven_combat_tests.md` for the planned CUE-driven harness; implement or borrow from that design to validate the data+runtime path before broader migration.
+- ✔ **Geometry vs penetration unit fix (critical review §2.1, complete 2026-01-10).** Separate sharpness coefficients from penetration depth; armour/tissue should subtract thickness from a length axis, not from the Geometry coefficient. Restore realistic penetration behaviour.
+- ✔ **Energy scaling non-linearity (critical review §2.2 / T038, complete 2026-01-10).** `deriveEnergy` now splits velocity-like stats (speed, dexterity, agility) from mass-like stats (power, etc.); velocity contributions scale quadratically (velocity_scale²), mass contributions scale linearly (mass_scale). Formula: `energy = reference_energy_j × velocity_scale² × mass_scale × stakes × technique_mult`.
+- □ **Severity mapping & volume thresholds (critical review §2.3 / T039).** Distinguish perforation vs. structural loss so high-geometry/low-energy attacks do not auto-escalate to `Severity.missing`. Capture the volume/area thresholds in the data model and tests.
 
 ### Decisions & References
 - **CUE-first data authoring is the baseline.** Continue expanding schemas instead of reintroducing ad-hoc Zig tables; converter validation remains the guardrail.
@@ -173,13 +173,13 @@ Critical risks: `doc/reviews/critical_physics_review.md` (2026‑01‑10) enumer
 - **Audit warnings are tracked inputs.** Treat the outstanding axis_bias entries and thickness mismatches as blocking data debt for Phase 4 validation rather than cosmetic clean-up.
 
 ### Open Questions / Risks
-- [ ] **Per-part scale derivation.** Where do limb thickness/length/area values originate (plan defaults vs. species modifiers vs. agent overrides)? Needed before we compute lever arms and path lengths for axis derivation.
-- [x] **Non-physical packet handling.** T037 decision: zero out geometry/energy/rigidity when `kind.isPhysical() == false`. Armour/tissue short-circuit 3-axis logic on that guard. Thermal/conductive fields remain anchored to existing `damage.Kind` resistances for now.
-- [x] **Weapon/technique axis formulas.** T037 implemented reference-energy scaling; T038 refined it to use quadratic velocity scaling: `energy = reference_energy_j × velocity_scale² × mass_scale × stakes × technique_mult`. Velocity-like stats (speed, dexterity, agility) feed the squared term; mass-like stats (power, fortitude, etc.) feed a linear term. This mirrors E = ½mv² without requiring full kinematic derivation. Technique axis multipliers default to 1.0; weapon coefficients provide differentiation.
-- [ ] **Test coverage gaps (critical review §3).** Need an integration that uses generated weapons + armour data to catch unit mismatches; current tests operate on mock materials only.
-- [ ] **Severity vs. volume modelling (T039).** Clarify how `Severity.missing` should be triggered (volume destroyed vs. depth) so high-geometry piercing blows don’t amputate by default. Requires design + data updates per the critical review.
-- [ ] **Wound encoding vs. axis detail.** Current wounds only store `damage.Kind`; tissue layers discard packet geometry/energy when building wounds. Re-evaluate whether per-layer wound metadata should retain axis contributions (especially Geometry) so future effects (conditions, healing, trauma) can distinguish deep pierce vs. crushing blows even when they share a `Kind`.
-- [ ] **Weapon template generation from CUE (T040 follow-up).** `weapon_list.zig` is hand-crafted with combat profiles while `GeneratedWeapons` from CUE has physics coefficients. Per "CUE-first" principle, weapon templates should be generated from CUE to unify these sources. Currently data-driven combat tests use a mapping table bridging CUE IDs to weapon_list entries. Scope TBD: may require extending `data/weapons.cue` with full combat profiles (reach, damage, accuracy) and updating the generator.
+- □ **Per-part scale derivation.** Where do limb thickness/length/area values originate (plan defaults vs. species modifiers vs. agent overrides)? Needed before we compute lever arms and path lengths for axis derivation.
+- ✔ **Non-physical packet handling.** T037 decision: zero out geometry/energy/rigidity when `kind.isPhysical() == false`. Armour/tissue short-circuit 3-axis logic on that guard. Thermal/conductive fields remain anchored to existing `damage.Kind` resistances for now.
+- ✔ **Weapon/technique axis formulas.** T037 implemented reference-energy scaling; T038 refined it to use quadratic velocity scaling: `energy = reference_energy_j × velocity_scale² × mass_scale × stakes × technique_mult`. Velocity-like stats (speed, dexterity, agility) feed the squared term; mass-like stats (power, fortitude, etc.) feed a linear term. This mirrors E = ½mv² without requiring full kinematic derivation. Technique axis multipliers default to 1.0; weapon coefficients provide differentiation.
+- ✔ **Test coverage gaps (critical review §3)(T040, complete 2026-01-10).** Data-driven combat tests using CUE-defined scenarios with generated weapons/armour. Deterministic RNG (T041) enables reproducible results.
+- □ **Severity vs. volume modelling (T039).** Clarify how `Severity.missing` should be triggered (volume destroyed vs. depth) so high-geometry piercing blows don’t amputate by default. Requires design + data updates per the critical review.
+- □ **Wound encoding vs. axis detail.** Current wounds only store `damage.Kind`; tissue layers discard packet geometry/energy when building wounds. Re-evaluate whether per-layer wound metadata should retain axis contributions (especially Geometry) so future effects (conditions, healing, trauma) can distinguish deep pierce vs. crushing blows even when they share a `Kind`.
+- □ **Weapon template generation from CUE (T040 follow-up).** `weapon_list.zig` is hand-crafted with combat profiles while `GeneratedWeapons` from CUE has physics coefficients. Per "CUE-first" principle, weapon templates should be generated from CUE to unify these sources. Currently data-driven combat tests use a mapping table bridging CUE IDs to weapon_list entries. Scope TBD: may require extending `data/weapons.cue` with full combat profiles (reach, damage, accuracy) and updating the generator.
 
 Future edits should tick the checkboxes above (with kanban references such as T033, T035, forthcoming packet-axis task) instead of appending new ad-hoc status sections.
 
@@ -211,3 +211,12 @@ Geometry is fully wired through the body system:
 - Cross-reference checks (pieces→materials, body plans→tissue templates)
 - Generates markdown report with summary tables and issue details
 - Usage: `cue export data/*.cue --out json | ./scripts/cue_to_zig.py --audit-report doc/artefacts/data_audit_report.md`
+
+### 9.12 Data-Driven Combat Tests - Complete (T040, T041, 2026-01-10)
+
+CUE-driven verification suite for the 3-axis physics model:
+- `data/tests.cue`: `#CombatTest` schema with attacker/defender specs and expected outcomes
+- `src/testing/integration/domain/data_driven_combat.zig`: test runner with accumulator/reporter pattern
+- `RandomProvider` interface (T041): `ScriptedRandomProvider` test double for deterministic results
+- Runtime filtering via `COMBAT_TEST_FILTER` env var; `just test-combat [filter]`
+- Verified: sword slash vs plate correctly deflects; thrust penetrates gambeson

@@ -203,7 +203,8 @@ pub const World = struct {
     alloc: std.mem.Allocator,
     events: EventSystem,
     encounter: ?*combat.Encounter,
-    random: random.RandomStreamDict,
+    random_impl: random.StreamRandomProvider,
+    random_provider: random.RandomProvider,
     entities: EntityMap,
     card_registry: CardRegistry,
     player: *combat.Agent,
@@ -231,7 +232,8 @@ pub const World = struct {
             .alloc = alloc,
             .events = try EventSystem.init(alloc),
             .encounter = null, // created after player
-            .random = random.RandomStreamDict.init(),
+            .random_impl = random.StreamRandomProvider.init(),
+            .random_provider = undefined, // set after struct init
             .entities = try EntityMap.init(alloc),
             .card_registry = try CardRegistry.init(alloc),
             .player = undefined, // set after entities exist
@@ -240,6 +242,9 @@ pub const World = struct {
             .eventProcessor = undefined,
             .commandHandler = undefined,
         };
+
+        // Wire up random provider (must be after struct init for stable pointer)
+        self.random_provider = self.random_impl.provider();
 
         // Create player (body, resources, natural weapons derived from species)
         self.player = try player.newPlayer(alloc, self, &species.DWARF, playerStats);
@@ -372,7 +377,7 @@ pub const World = struct {
     }
 
     pub fn drawRandom(self: *World, id: random.RandomStreamID) !f32 {
-        const r = self.random.get(id).random().float(f32);
+        const r = self.random_provider.draw(id);
         try self.events.push(.{ .draw_random = .{ .stream = id, .result = r } });
         return r;
     }
@@ -380,7 +385,7 @@ pub const World = struct {
     pub fn getRandomSource(self: *World, id: random.RandomStreamID) random.RandomSource {
         return .{
             .events = &self.events,
-            .stream = self.random.get(id),
+            .stream = self.random_impl.getStream(id),
             .stream_id = id,
         };
     }
