@@ -139,106 +139,35 @@ Each phase should end with a written artefact (audit results, formal spec, inter
 
 ---
 
-## Next Actions
+## Status & Checklist (2026‑01‑10)
 
-1. Kick off the data audit (Phase 1) with instrumentation to capture current packet values so we can compare recorded Energy/Geometry/Rigidity magnitudes against expectations.
-2. Draft the shared material/preset schema (covering shielding vs. self-susceptibility plus geometry-aware modifiers) so armour and tissue authors understand the new declaration flow. Consider leveraging the schema-driven generation approach in `doc/issues/data_generation.md` so weapons/armour/bodies can inherit presets and derived values without repetitive Zig boilerplate.
-3. Define and populate the per-part geometry dataset (plan-level defaults, species modifiers, potential per-agent overrides) so axis derivations have concrete path/lever inputs.
-4. Schedule a dedicated design session to tackle Phase 2, focusing on formulas for deriving Geometry/Energy/Rigidity from weapon/technique/stat inputs, including corner cases like lunges, half-swording, and natural weapons.
+### Completed Work
+- [x] **T033 – Armour 3-axis integration.** Armour stacks now consume generated materials, run deflection/absorption/dispersion per layer, and pass residual packets inward (`src/domain/armour.zig`). Converter emits `ArmourMaterialDefinition`/`ArmourPieceDefinition`, and `armour_list.zig` validates IDs at comptime.
+- [x] **T035 Phases 0‑3 – Data-driven bodies/tissues.** `data/bodies.cue` defines tissue stacks, body plans, and species; `body_list.zig` builds runtime `TissueStacks`/`BodyPlans`; `Body.fromPlan` now sources its parts, hierarchy, and tissue composition from generated data.
+- [x] **Instrumentation & audit logging.** Minimal packet logging landed in `audit_log.zig`, `event.log` captures combat packets, and §9.5’s event-hook plan remains optional for richer telemetry.
+- [x] **Data audit tooling.** `doc/artefacts/data_audit_report.md` plus `just audit-data` enumerate every weapon/technique/armour/tissue entry, emit derived axis values, and flag missing coefficients (currently 17 warnings: technique axis defaults + tissue thickness sums).
 
-Answering these will position us to draft the full specification confidently instead of refactoring blind.
+### Outstanding / Next Steps
+- [ ] **T035 Phase 3.3 – Body part geometry.** Extend `PartDef`/`Part` with `BodyPartGeometry`, copy from generated plans, and pass into `applyDamage(...)`. Unlocks penetration path-length math without inventing placeholder numbers.
+- [ ] **T035 Phase 4 polish – Tissue resolution.**  
+  • consume `layer.thickness_ratio × part_geometry.thickness_cm` when reducing Geometry;  
+  • add a physical-only guard (non-physical packets bypass the 3-axis pipeline);  
+  • remove the slash/pierce “geometry==0 stops everything” coupling so Energy/Rigidity still propagate;  
+  • revisit severity mapping/tests once the per-axis contributions replace the legacy scalar thresholds.
+- [ ] **Damage-packet axis export (upstream card).** `damage.Packet` still exposes only `amount`/`penetration`. The weapon/technique resolver must emit Geometry/Energy/Rigidity so armour/tissue layers consume real axis data instead of deriving placeholders.
+- [ ] **Technique axis coverage (new card).** Audit flagged every baseline technique coasting on implicit `axis_bias`. Decide whether to make the field required in CUE or author deliberate defaults per technique group (swing, lunge, grapples) and document them.
+- [ ] **Tissue thickness normalisation (subtask under T035).** `digit`, `joint`, and `facial` templates sum to <0.95. Either adjust the ratios or annotate the intended scaling so audits stop flagging them.
+- [ ] **Event instrumentation (optional follow-up).** If `event.log` proves insufficient, revisit §9.5’s `combat_packet_resolved` event so audits and UI can subscribe to the same structured payloads.
 
----
+### Decisions & References
+- **CUE-first data authoring is the baseline.** Continue expanding schemas instead of reintroducing ad-hoc Zig tables; converter validation remains the guardrail.
+- **Shared material model is canonical.** Armour, tissue, and eventually weapon durability all reference the same shielding + susceptibility coefficients.
+- **Audit warnings are tracked inputs.** Treat the outstanding axis_bias entries and thickness mismatches as blocking data debt for Phase 4 validation rather than cosmetic clean-up.
 
-## 9. Data Audit Status Check-in (2026‑01‑09)
+### Open Questions / Risks
+- [ ] **Per-part scale derivation.** Where do limb thickness/length/area values originate (plan defaults vs. species modifiers vs. agent overrides)? Needed before we compute lever arms and path lengths for axis derivation.
+- [ ] **Non-physical packet handling.** Beyond skipping the 3-axis pipeline, do we extend shared materials with thermal/conductive fields or leave fire/corrosion anchored to existing `damage.Kind` resistances?
+- [ ] **Weapon/technique axis formulas.** We have MoI/effective-mass derivations, but not the runtime formulas tying stats + grips + techniques into final axis magnitudes. Track under the upcoming damage-packet rewrite.
+- [ ] **Test coverage.** Once tissue resolution changes behaviour, which integration/unit tests replace the legacy slash/pierce/bludgeon expectations? Capture an explicit test plan before flipping the switch.
 
-### 9.1 Restated Audit Brief
-- Phase 1 from Section 8 still anchors this effort: (a) instrument the current combat resolution to log packet amounts/penetration (soon axes) for ground-truth comparisons, (b) catalogue all weapon/armour/tissue templates so we know what physical descriptors exist and where the gaps lie, and (c) capture per-part geometry or scale factors so the forthcoming axis formulas have real lever/path inputs.
-- Success criteria: every layer (armour+tissue) should reference a shared material definition with explicit shielding/susceptibility, every offensive profile should expose derived axis magnitudes, and we should have at least a draft dataset describing body-part dimensions so the later formulas are not speculative.
-
-### 9.2 Modelling Implemented So Far
-- `doc/artefacts/data_generation_plan.md` and the live CUE files (`data/materials.cue`, `data/weapons.cue`, `data/techniques.cue`, `data/armour.cue`) give us the scaffolding for most of the catalogue work:
-  - **Shared materials** – `#Material` now encodes Deflection/Absorption/Dispersion plus per-axis thresholds/ratios for tissues and armour alike, with presets for muscle, bone, fat, steel plate, chain, and gambeson. Shape modifiers create the “geometry-aware” knobs we called for in §5.1.
-  - **Armour pieces** – `#ArmourPiece` entries point directly to those materials and define coverage (tags, side, totality, layer), ready to be fed into a unified layer stack once the converter emits them.
-  - **Weapons** – the weapon schema derives moment of inertia, effective mass, and reference energy from weight/length/balance; base Geometry/Rigidity coefficients plus curvature adjustments are expressed per template.
-  - **Techniques** – techniques now live in data with damage instances, scaling, channels, overlays, and explicit `axis_bias` multipliers, matching the conversion-factor discussion in §4.
-  - **Generation pipeline** – `scripts/cue_to_zig.py` already exports the weapon + technique data into `src/gen/generated_data.zig`, and `just generate`/`just check` run it automatically. This satisfies the “catalogue & validate before Zig” requirement and keeps the audit reproducible.
-
-### 9.3 Gaps Blocking the Audit
-- **Instrumentation** – we still lack packet logging hooks in the combat resolver, so there is no empirical data to compare against the derived coefficients. Adding temporary logging (even of the current amount/penetration scalars) remains step 1.
-- **Tissue/body datasets** – bodies still use hard-coded tables in `src/domain/body.zig`. We need CUE definitions for tissue layers, body plans, and per-part scale factors (thickness, circumference, reach percentages) so the audit can confirm coverage completeness and give the axis formulas real numbers.
-- **Armour integration** – the generator has not yet emitted armour stacks or wired them into runtime resolution. Until armour pieces consume the shared material presets in-game, the audit cannot verify that layering matches the design.
-- **Species & natural weapons** – species metadata and natural weapons remain in Zig; they should move into CUE alongside weapons so Energy/Geometry/Rigidity derivations apply consistently and can be inspected as part of the audit.
-- **Validation tooling** – there is no automated report summarising which templates lack required fields (e.g., missing curvature, absent axis bias, incomplete coverage totals). The audit needs such reporting to prove completeness.
-
-### 9.4 Immediate Follow-ups
-1. ✅ **Done** - Add minimal packet logging (`audit_log.zig` exists).
-2. ✅ **CUE done, wiring pending** - `data/bodies.cue` complete with tissues/body plans/species. Generates `GeneratedBodyPlans` and `GeneratedTissueTemplates`. Runtime wiring tracked in T035.
-3. ✅ **Done** - T033 complete. Armour uses 3-axis model.
-4. ✅ **Done** - T036 complete. `just audit-data` generates `doc/artefacts/data_audit_report.md` with per-dataset validation. Initial audit: 17 warnings (axis_bias defaults, thickness ratio deltas), 0 errors.
-
-### 9.5 Event-System Instrumentation Plan
-- The existing event bus (`src/domain/events.zig`, see `events_system_overview` memory) already broadcasts key combat resolution milestones (technique resolved, armour deflected, wound inflicted). Rather than inventing a parallel logger, add a new packet-centric event (e.g., `combat_packet_resolved`) carrying the packet inputs/outputs, layer stack summary, and attacker/defender IDs.
-- Emit this event at the point in resolution where packets are finalised; subscribers can then fork the stream to: (a) a simple audit drain that writes structured logs for Phase 1 analysis, and (b) the combat-log/UI layer, which is already interested in these details for richer damage numbers.
-- Because events are double-buffered, consumers remain decoupled, and we can swap out the audit drain later without touching combat code—keeping instrumentation aligned with the “data-first” architecture while delivering the observability the audit requests.
-
-Capturing this status inside the original geometry/energy/rigidity doc keeps the motivating questions and the data-audit deliverables tied together as we continue Phase 1.
-
-### 9.6 Armour Emission Wired (2026-01-09)
-
-**Completed:** Item #3 from 9.4 - converter now emits armour data.
-
-Changes to `scripts/cue_to_zig.py`:
-- Added `flatten_armour_materials()` to extract materials from `materials.armour`
-- Added `flatten_armour_pieces()` to extract pieces from `armour_pieces`
-- Added `emit_armour_materials()` generating `ArmourMaterialDefinition` structs with full shielding/susceptibility coefficients
-- Added `emit_armour_pieces()` generating `ArmourPieceDefinition` structs with coverage entries
-- Wired into `main()` so armour data flows through the pipeline
-
-Generated output (`src/gen/generated_data.zig`) now includes:
-- `GeneratedArmourMaterials`: chainmail, gambeson, steel_plate with all axis coefficients
-- `GeneratedArmourPieces`: gambeson_jacket, steel_breastplate with coverage (part_tags, side, layer, totality)
-
-**Design notes:**
-- CUE layer types (`padding`/`outer`/`cloak`) map to `inventory.Layer` slots (`Gambeson`/`Plate`/`Cloak`)
-- Coverage uses `body.PartTag` for part identification, `body.Side` for laterality
-- Material coefficients include shape modifiers (profile, dispersion_bonus, absorption_bonus)
-
-**Remaining for full wiring:**
-- Create `src/domain/armour_list.zig` to build runtime `armour.Template`/`armour.Material` from generated data (following `species.zig` pattern)
-- Integrate with equipment system so equipped pieces populate `armour.Stack`
-- Enrich `data/armour.cue` with more piece definitions once loader works
-
-### 9.7 Comptime Validation Added (2026-01-09)
-
-Created `src/domain/armour_list.zig` following the pattern from `species.zig` (see data_generation_plan.md 8.5 Option C):
-
-- `resolveMaterial(id)` - comptime lookup with clear error if material_id missing
-- `resolvePiece(id)` - comptime lookup with clear error if piece_id missing
-- `pieceMaterial(piece_id)` - resolves piece then its material
-- `validateAllPieces()` - runs at comptime, validates all piece->material references
-
-If CUE defines a piece referencing a non-existent material, compilation fails with:
-```
-error: Unknown armour material ID: 'bad_id'. Add it to data/materials.cue under materials.armour or check the piece definition in data/armour.cue.
-```
-
-Also made `armour.Totality` public so generated data can reference it.
-
-### 9.8 Status Update (2026-01-09)
-
-**§9.4 #1 - Packet logging:** Already implemented. `src/domain/audit_log.zig` provides `drainPacketEvents()` which is called in the main event loop (`src/main.zig:84`) to capture combat packet data for analysis.
-
-**Remaining from §9.4:**
-- #4: Audit script/report (not started)
-
-**§9.6 Completed (2026-01-09):**
-- Runtime armour loader implemented in `src/domain/armour_list.zig`
-- `armour.Material` updated to 3-axis model (deflection/absorption/dispersion + per-axis susceptibility)
-- Generated `Materials`, `Patterns`, `Templates` lookup tables
-- Integration tests verify `Instance.init` and `Stack.buildFromEquipped` work with generated data
-- See `kanban/T033_armour_3axis_migration.md` for full task tracking
-
-**Remaining:**
-- Update `resolveThroughArmour` to use 3-axis model (Phase 4 of T033)
-- Remove deprecated fields after resolution migration
+Future edits should tick the checkboxes above (with kanban references such as T033, T035, forthcoming packet-axis task) instead of appending new ad-hoc status sections.
