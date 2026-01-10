@@ -58,38 +58,38 @@ wip: gkd
 # interactive: edit kanban/
 [group('shortcut')]
 ek:
-    $EDITOR $(fd 'T\d{3,3}(-\w+)?.md' kanban | sort | fzf )
+    $EDITOR $(fd 'T\d{3}' kanban | sort | fzf )
 
 # interactive: edit kanban/backlog
 [group('shortcut')]
 ekb:
-    $EDITOR $(fd 'T\d{3,3}(-\w+)?.md' kanban/backlog | sort | fzf )
+    $EDITOR $(fd 'T\d{3}' kanban/backlog | sort | fzf )
 
 # interactive: edit kanban/in-progress
 [group('shortcut')]
 ekd:
-    $EDITOR $(fd 'T\d{3,3}(-\w+)?.md' kanban/doing | sort | fzf )
+    $EDITOR $(fd 'T\d{3}' kanban/doing | sort | fzf )
 
 # interactive: view kanban/
 [group('shortcut')]
 gk:
-    glow -p $(fd 'T\d{3,3}(-\w+)?.md' kanban | sort | fzf )
+    glow -p $(fd 'T\d{3}' kanban | sort | fzf )
 
 # interactive: view kanban/backlog
 [group('shortcut')]
 gkb:
-    glow -p $(fd 'T\d{3,3}(-\w+)?.md' kanban/backlog | sort | fzf )
+    glow -p $(fd 'T\d{3}' kanban/backlog | sort | fzf )
 
 # interactive: view kanban/in-progress
 [group('shortcut')]
 gkd:
-    glow -p $(fd 'T\d{3,3}(-\w+)?.md' kanban/doing | sort | fzf )
+    glow -p $(fd 'T\d{3}' kanban/doing | sort | fzf )
 
 # interactive: move card
 [group('shortcut')]
 mvk:
     #/bin/sh
-    file=$(fd 'T\d{3,3}(-\w+)?.md' kanban | sort | fzf)
+    file=$(fd 'T\d{3}' kanban | sort | fzf)
     echo "git mv $file "
     folder=$(gum choose --header="Choose where:" $(fd -t d . kanban/ | sort))
     git mv $file $folder
@@ -125,7 +125,7 @@ new-card desc="":
     if not template_path.exists():
         sys.exit(f"Template not found: {template_path}")
 
-    pattern = re.compile(r"T(\d{3,})(?:-[\w]+)?\.md$", re.IGNORECASE)
+    pattern = re.compile(r"T(\d{3,})(?:[-_][\w]+)?\.md$", re.IGNORECASE)
     max_id = 0
     for path in kanban_dir.rglob("T*.md"):
         match = pattern.match(path.name)
@@ -142,6 +142,24 @@ new-card desc="":
 
     shutil.copyfile(template_path, dest_path)
     print(f"Created {dest_path}")
+
+# rename T###_foo.md to T###-foo.md for consistency
+normalize-kanban:
+    #!/usr/bin/env python3
+    import subprocess
+    import re
+    from pathlib import Path
+
+    kanban_dir = Path("kanban")
+    pattern = re.compile(r"^(T\d{3})_(.+\.md)$")
+
+    for path in kanban_dir.rglob("T*_*.md"):
+        match = pattern.match(path.name)
+        if match:
+            new_name = f"{match.group(1)}-{match.group(2)}"
+            new_path = path.parent / new_name
+            print(f"git mv {path} -> {new_path}")
+            subprocess.run(["git", "mv", str(path), str(new_path)], check=True)
 
 ## doc
 

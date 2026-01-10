@@ -30,7 +30,8 @@
       "Bash(just check:*)",
       "Bash(just test-integration:*)",
       "Bash(just test-unit:*)",
-      "Bash(echo:*)"
+      "Bash(echo:*)",
+      "Bash(just --dry-run:*)"
     ]
   }
 }

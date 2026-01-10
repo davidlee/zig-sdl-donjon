@@ -7,6 +7,7 @@ const lib = @import("infra");
 const body = @import("body.zig");
 const body_list = @import("body_list.zig");
 const damage = @import("damage.zig");
+const resolution = @import("resolution.zig");
 const entity = lib.entity;
 const events = @import("events.zig");
 const inventory = @import("inventory.zig");
@@ -289,19 +290,6 @@ pub const AbsorptionResult = struct {
     layers_destroyed: u8, // layers that hit 0 integrity this resolution
 };
 
-/// Fallback rigidity derivation for legacy packets that don't have axis values.
-/// Used during migration from amount/penetration to geometry/energy/rigidity.
-fn deriveRigidityFromKind(kind: damage.Kind) f32 {
-    return switch (kind) {
-        .pierce => 1.0,
-        .slash => 0.7,
-        .bludgeon => 0.8,
-        .crush => 1.0,
-        .shatter => 1.0,
-        else => 0.0,
-    };
-}
-
 /// Process a damage packet through armour layers, returning what reaches the body.
 /// Mutates layer integrity as armour is damaged.
 ///
@@ -332,7 +320,7 @@ pub fn resolveThroughArmour(
     // - Rigidity: dimensionless coefficient for susceptibility
     var remaining_geo = if (packet.geometry > 0) packet.geometry else packet.penetration;
     var remaining_energy = if (packet.energy > 0) packet.energy else packet.amount;
-    const rigidity = if (packet.rigidity > 0) packet.rigidity else deriveRigidityFromKind(packet.kind);
+    const rigidity = if (packet.rigidity > 0) packet.rigidity else resolution.damage.deriveRigidityFromKind(packet.kind);
     var remaining_penetration = packet.penetration; // cm - consumed by layer thickness
 
     // Process layers outer to inner (Cloak=8 down to Skin=0)
@@ -467,7 +455,7 @@ pub fn resolveThroughArmourWithEvents(
         // === Get axes from packet (T037: real physics values or legacy fallback) ===
         const geometry = if (remaining.geometry > 0) remaining.geometry else remaining.penetration;
         const energy_axis = if (remaining.energy > 0) remaining.energy else remaining.amount;
-        const rigidity = if (remaining.rigidity > 0) remaining.rigidity else deriveRigidityFromKind(remaining.kind);
+        const rigidity = if (remaining.rigidity > 0) remaining.rigidity else resolution.damage.deriveRigidityFromKind(remaining.kind);
         const mat = layer.material;
 
         // === Susceptibility: compute damage to this layer ===

@@ -1,6 +1,6 @@
 # Data Audit Report
 
-Generated: 2026-01-10 01:34:35
+Generated: 2026-01-10 14:19:08
 
 ## Summary
 
@@ -10,10 +10,10 @@ Generated: 2026-01-10 01:34:35
 | armour_pieces | 2 | 0 | 0 |
 | body_plans | 1 | 0 | 0 |
 | techniques | 14 | 14 | 0 |
-| tissue_templates | 6 | 3 | 0 |
+| tissue_templates | 6 | 0 | 0 |
 | weapons | 6 | 0 | 0 |
 
-**STATUS: PASSED with warnings** - 17 warning(s)
+**STATUS: PASSED with warnings** - 14 warning(s)
 
 ## Weapons
 
@@ -250,49 +250,14 @@ Fields:
 
 ## Tissue Templates
 
-### Issues
-
-#### `digit`
-
-- WARNING: Thickness ratios sum to 0.700 (expected ~1.0, tolerance ±0.05)
-
-Fields:
-```
-  notes: Minimal soft tissue around slender bones.
-  layer_count: 5
-  thickness_sum: 0.7
-  materials: ['skin', 'tendon', 'nerve', 'bone', 'cartilage']
-```
-
-#### `joint`
-
-- WARNING: Thickness ratios sum to 0.830 (expected ~1.0, tolerance ±0.05)
-
-Fields:
-```
-  notes: Bone with cartilage pads and encapsulating ligaments.
-  layer_count: 5
-  thickness_sum: 0.8300000000000001
-  materials: ['skin', 'cartilage', 'tendon', 'bone', 'nerve']
-```
-
-#### `facial`
-
-- WARNING: Thickness ratios sum to 0.900 (expected ~1.0, tolerance ±0.05)
-
-Fields:
-```
-  notes: Cartilage-heavy facial features with light soft tissue.
-  layer_count: 4
-  thickness_sum: 0.9
-  materials: ['skin', 'fat', 'cartilage', 'muscle']
-```
-
 ### Valid Entries
 
 | ID | Layers | Thickness Sum |
 |----|--------|---------------|
 | limb | 6 | 1.000 |
+| digit | 5 | 1.000 |
+| joint | 5 | 1.000 |
+| facial | 4 | 1.000 |
 | organ | 1 | 1.000 |
 | core | 5 | 1.000 |
 

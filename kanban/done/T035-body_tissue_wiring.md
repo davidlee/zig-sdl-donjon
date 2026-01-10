@@ -642,3 +642,15 @@ All tests pass. T035 core work complete.
   - Deflection reduces geometry; thickness subtracts from penetration
   - Fixes: sword (pen=4cm) vs plate (1cm) now penetrates (was: geo=0.6 - 1.0 = blocked)
 - Design doc item "Geometry vs penetration unit fix" marked complete
+
+**2026-01-10**: Follow-up - Tissue thickness normalisation.
+- Normalised `digit`, `joint`, `facial` tissue templates so thickness_ratios sum to 1.0
+- Previously: digit=0.70, joint=0.83, facial=0.90 (audit warnings)
+- Now: all templates sum to 1.000, preserving relative layer proportions
+- Audit warnings reduced from 17 to 14 (remaining are expected technique axis_bias defaults)
+
+**2026-01-10**: Follow-up - Shared rigidity helper (design doc §3.1).
+- Moved `deriveRigidityFromKind` to `resolution/damage.zig` (now public)
+- Removed duplicate definitions from `armour.zig` and `body.zig`
+- Both now reference `resolution.damage.deriveRigidityFromKind`
+- Ensures consistent tuning of rigidity fallbacks across armour and tissue resolution

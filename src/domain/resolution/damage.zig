@@ -94,6 +94,20 @@ fn deriveRigidity(
     return weapon_template.rigidity_coeff * technique.axis_rigidity_mult;
 }
 
+/// Fallback rigidity derivation for legacy packets that don't have axis values.
+/// Used during migration from amount/penetration to geometry/energy/rigidity.
+/// Shared by armour and tissue resolution to ensure consistent tuning.
+pub fn deriveRigidityFromKind(kind: damage.Kind) f32 {
+    return switch (kind) {
+        .pierce => 1.0,
+        .slash => 0.7,
+        .bludgeon => 0.8,
+        .crush => 1.0,
+        .shatter => 1.0,
+        else => 0.0,
+    };
+}
+
 // ============================================================================
 // Damage Packet Creation
 // ============================================================================

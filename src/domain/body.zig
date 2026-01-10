@@ -5,6 +5,7 @@
 const std = @import("std");
 const lib = @import("infra");
 const damage = @import("damage.zig");
+const resolution = @import("resolution.zig");
 const events = @import("events.zig");
 const body_list = @import("body_list.zig");
 const EventSystem = events.EventSystem;
@@ -843,18 +844,6 @@ fn severityFromDamage(amount: f32) Severity {
     return .missing;
 }
 
-/// Fallback rigidity derivation for legacy packets that don't have axis values.
-fn deriveRigidityFromKind(kind: DamageKind) f32 {
-    return switch (kind) {
-        .pierce => 1.0,
-        .slash => 0.7,
-        .bludgeon => 0.8,
-        .crush => 1.0,
-        .shatter => 1.0,
-        else => 0.0,
-    };
-}
-
 /// Apply a damage packet to a body part, producing a wound.
 /// Processes tissue layers outside-in based on the part's template.
 pub fn applyDamage(
@@ -881,7 +870,7 @@ pub fn applyDamage(
     // Penetration: cm of material the attack can punch through (for path-length consumption)
     var remaining_geo = if (packet.geometry > 0) packet.geometry else packet.penetration;
     var remaining_energy = if (packet.energy > 0) packet.energy else packet.amount;
-    var remaining_rigidity = if (packet.rigidity > 0) packet.rigidity else deriveRigidityFromKind(packet.kind);
+    var remaining_rigidity = if (packet.rigidity > 0) packet.rigidity else resolution.damage.deriveRigidityFromKind(packet.kind);
     var remaining_penetration = packet.penetration; // cm - consumed by layer thickness
 
     // Process layers outside-in (generated data is in depth order)

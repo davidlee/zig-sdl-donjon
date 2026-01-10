@@ -614,7 +614,7 @@ pub const GeneratedTissueTemplates = [_]TissueTemplateDefinition{
         .layers = &.{
             .{
                 .material_id = "skin",
-                .thickness_ratio = 0.1,
+                .thickness_ratio = 0.14,
                 .deflection = 0.1,
                 .absorption = 0.25,
                 .dispersion = 0.1,
@@ -627,7 +627,7 @@ pub const GeneratedTissueTemplates = [_]TissueTemplateDefinition{
             },
             .{
                 .material_id = "tendon",
-                .thickness_ratio = 0.15,
+                .thickness_ratio = 0.21,
                 .deflection = 0.2,
                 .absorption = 0.2,
                 .dispersion = 0.1,
@@ -640,7 +640,7 @@ pub const GeneratedTissueTemplates = [_]TissueTemplateDefinition{
             },
             .{
                 .material_id = "nerve",
-                .thickness_ratio = 0.05,
+                .thickness_ratio = 0.07,
                 .deflection = 0.05,
                 .absorption = 0.3,
                 .dispersion = 0.05,
@@ -653,7 +653,7 @@ pub const GeneratedTissueTemplates = [_]TissueTemplateDefinition{
             },
             .{
                 .material_id = "bone",
-                .thickness_ratio = 0.3,
+                .thickness_ratio = 0.43,
                 .deflection = 0.25,
                 .absorption = 0.1,
                 .dispersion = 0.35,
@@ -666,7 +666,7 @@ pub const GeneratedTissueTemplates = [_]TissueTemplateDefinition{
             },
             .{
                 .material_id = "cartilage",
-                .thickness_ratio = 0.1,
+                .thickness_ratio = 0.15,
                 .deflection = 0.15,
                 .absorption = 0.35,
                 .dispersion = 0.15,
@@ -685,7 +685,7 @@ pub const GeneratedTissueTemplates = [_]TissueTemplateDefinition{
         .layers = &.{
             .{
                 .material_id = "skin",
-                .thickness_ratio = 0.2,
+                .thickness_ratio = 0.22,
                 .deflection = 0.1,
                 .absorption = 0.25,
                 .dispersion = 0.1,
@@ -698,7 +698,7 @@ pub const GeneratedTissueTemplates = [_]TissueTemplateDefinition{
             },
             .{
                 .material_id = "fat",
-                .thickness_ratio = 0.15,
+                .thickness_ratio = 0.17,
                 .deflection = 0.02,
                 .absorption = 0.55,
                 .dispersion = 0.1,
@@ -711,7 +711,7 @@ pub const GeneratedTissueTemplates = [_]TissueTemplateDefinition{
             },
             .{
                 .material_id = "cartilage",
-                .thickness_ratio = 0.35,
+                .thickness_ratio = 0.39,
                 .deflection = 0.15,
                 .absorption = 0.35,
                 .dispersion = 0.15,
@@ -724,7 +724,7 @@ pub const GeneratedTissueTemplates = [_]TissueTemplateDefinition{
             },
             .{
                 .material_id = "muscle",
-                .thickness_ratio = 0.2,
+                .thickness_ratio = 0.22,
                 .deflection = 0.05,
                 .absorption = 0.45,
                 .dispersion = 0.15,
@@ -743,7 +743,7 @@ pub const GeneratedTissueTemplates = [_]TissueTemplateDefinition{
         .layers = &.{
             .{
                 .material_id = "skin",
-                .thickness_ratio = 0.08,
+                .thickness_ratio = 0.1,
                 .deflection = 0.1,
                 .absorption = 0.25,
                 .dispersion = 0.1,
@@ -756,7 +756,7 @@ pub const GeneratedTissueTemplates = [_]TissueTemplateDefinition{
             },
             .{
                 .material_id = "cartilage",
-                .thickness_ratio = 0.15,
+                .thickness_ratio = 0.18,
                 .deflection = 0.15,
                 .absorption = 0.35,
                 .dispersion = 0.15,
@@ -769,7 +769,7 @@ pub const GeneratedTissueTemplates = [_]TissueTemplateDefinition{
             },
             .{
                 .material_id = "tendon",
-                .thickness_ratio = 0.15,
+                .thickness_ratio = 0.18,
                 .deflection = 0.2,
                 .absorption = 0.2,
                 .dispersion = 0.1,
@@ -782,7 +782,7 @@ pub const GeneratedTissueTemplates = [_]TissueTemplateDefinition{
             },
             .{
                 .material_id = "bone",
-                .thickness_ratio = 0.4,
+                .thickness_ratio = 0.48,
                 .deflection = 0.25,
                 .absorption = 0.1,
                 .dispersion = 0.35,
@@ -795,7 +795,7 @@ pub const GeneratedTissueTemplates = [_]TissueTemplateDefinition{
             },
             .{
                 .material_id = "nerve",
-                .thickness_ratio = 0.05,
+                .thickness_ratio = 0.06,
                 .deflection = 0.05,
                 .absorption = 0.3,
                 .dispersion = 0.05,

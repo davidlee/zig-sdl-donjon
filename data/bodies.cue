@@ -35,11 +35,11 @@ tissue_templates: {
         id: "digit"
         notes: "Minimal soft tissue around slender bones."
         layers: [
-            { material_id: "skin", thickness_ratio: 0.10 },
-            { material_id: "tendon", thickness_ratio: 0.15 },
-            { material_id: "nerve", thickness_ratio: 0.05 },
-            { material_id: "bone", thickness_ratio: 0.30 },
-            { material_id: "cartilage", thickness_ratio: 0.10 },
+            { material_id: "skin", thickness_ratio: 0.14 },
+            { material_id: "tendon", thickness_ratio: 0.21 },
+            { material_id: "nerve", thickness_ratio: 0.07 },
+            { material_id: "bone", thickness_ratio: 0.43 },
+            { material_id: "cartilage", thickness_ratio: 0.15 },
         ]
     }
 
@@ -47,11 +47,11 @@ tissue_templates: {
         id: "joint"
         notes: "Bone with cartilage pads and encapsulating ligaments."
         layers: [
-            { material_id: "skin", thickness_ratio: 0.08 },
-            { material_id: "cartilage", thickness_ratio: 0.15 },
-            { material_id: "tendon", thickness_ratio: 0.15 },
-            { material_id: "bone", thickness_ratio: 0.40 },
-            { material_id: "nerve", thickness_ratio: 0.05 },
+            { material_id: "skin", thickness_ratio: 0.10 },
+            { material_id: "cartilage", thickness_ratio: 0.18 },
+            { material_id: "tendon", thickness_ratio: 0.18 },
+            { material_id: "bone", thickness_ratio: 0.48 },
+            { material_id: "nerve", thickness_ratio: 0.06 },
         ]
     }
 
@@ -59,10 +59,10 @@ tissue_templates: {
         id: "facial"
         notes: "Cartilage-heavy facial features with light soft tissue."
         layers: [
-            { material_id: "skin", thickness_ratio: 0.20 },
-            { material_id: "fat", thickness_ratio: 0.15 },
-            { material_id: "cartilage", thickness_ratio: 0.35 },
-            { material_id: "muscle", thickness_ratio: 0.20 },
+            { material_id: "skin", thickness_ratio: 0.22 },
+            { material_id: "fat", thickness_ratio: 0.17 },
+            { material_id: "cartilage", thickness_ratio: 0.39 },
+            { material_id: "muscle", thickness_ratio: 0.22 },
         ]
     }
 
