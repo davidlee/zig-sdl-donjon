@@ -397,6 +397,8 @@ pub const Body = struct {
             if (part.is_severed) {
                 out[i] = 0;
             } else if (part.parent) |parent_idx| {
+                // Topological safety check: parent must have been processed already
+                std.debug.assert(parent_idx < i);
                 out[i] = integrity * out[parent_idx];
             } else {
                 out[i] = integrity; // root

@@ -27,7 +27,7 @@ Add test coverage for:
 
 ### Key files
 
-- `doc/issues/test_coverage_audit.md` - IMPORTANT - READ THIS and revise this document.
+- `doc/issues/test_coverage_audit.md` - IMPORTANT - READ THIS and keep up to date.
 
 - `src/domain/apply/command_handler.zig` - play/cancel/commit workflows
 - `src/domain/apply/event_processor.zig` - event emission

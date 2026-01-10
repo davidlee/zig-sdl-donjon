@@ -5,6 +5,7 @@
 /*.log
 strace.log
 /src/data/trees.*
-event.log
+/*.log.json
 
 
+events.log.json
