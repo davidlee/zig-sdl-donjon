@@ -366,14 +366,15 @@ Already complete in CUE. Wire to runtime:
 - [x] **4.2** Map layer damage to wound severity:
   - Current: `severityFromDamage(absorbed)` - simple threshold
   - New: consider geometry/energy/rigidity contributions separately?
-- [ ] **4.3** Integration test: damage packet → armour → tissue → wound
-  - Compare sword-vs-arm results with/without armour
-  - Verify layer damage accumulates correctly
-- [ ] **4.4** Use geometry in `applyDamage()` for path-length calculations
-  - Blocked on: upstream `damage.Packet` refactor to carry proper Geometry/Energy/Rigidity axes
-  - Use `layer.thickness_ratio * geometry.thickness_cm` for penetration path per layer
-  - Geometry decay: reduce geometry axis as attack travels through tissue depth
-  - See TODO at `body.zig:920` and design doc §5.2
+- [x] **4.3** Integration test: damage packet → armour → tissue → wound
+  - Created `src/testing/integration/domain/damage_resolution.zig`
+  - 7 tests covering pierce/slash/bludgeon vs armoured/unarmoured scenarios
+  - Tests layer damage accumulation, penetration stopping, armour reduction
+- [x] **4.4** Use geometry in `applyDamage()` for path-length calculations
+  - Added `remaining_penetration` tracking (cm) separate from geometry axis
+  - Subtracts `layer.thickness_ratio * part_geometry.thickness_cm` per layer
+  - Pierce/slash attacks stop when penetration exhausted
+  - Geometry stays dimensionless for shielding/susceptibility math (per design doc)
 
 ### Phase 5: Cleanup ✓
 
@@ -613,6 +614,24 @@ All tests pass. Phase 3 now fully complete.
 
 All tests pass. T035 core work complete.
 
-**Remaining tasks:**
-- 4.3: Integration test (armour → tissue → wound)
-- 4.4: Use geometry for path-length (blocked on upstream packet axes)
+**2026-01-10**: Phase 4 complete - Tissue resolution polish.
+
+**4.4 - Path-length consumption:**
+- `applyDamage()` now tracks `remaining_penetration` (cm) separately from geometry axis
+- Each layer subtracts `layer.thickness_ratio * part_geometry.thickness_cm` from penetration
+- Pierce/slash attacks stop when penetration ≤ 0 (bludgeon continues via energy transfer)
+- Geometry axis remains dimensionless for shielding (deflection) and susceptibility (thresholds)
+- This follows the design doc §3: "Geometry is a dimensionless coefficient... convert to penetration depth before subtracting thickness"
+
+**4.3 - Integration tests:**
+- Created `src/testing/integration/domain/damage_resolution.zig`
+- 7 test cases covering the armour→tissue pipeline:
+  - Pierce vs unarmoured arm: penetrates multiple layers
+  - Bludgeon vs unarmoured torso: energy transfers through layers
+  - Slash with insufficient penetration: stops before reaching bone
+  - Armour reduces damage severity (armoured vs unarmoured comparison)
+  - Plate deflects pierce, padding absorbs bludgeon (layered armour)
+  - Layer damage accumulates correctly through tissue stack
+- Added `body_list` export to `domain/mod.zig`
+
+**T035 complete.** All phases done, all tests pass.

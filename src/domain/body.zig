@@ -860,9 +860,8 @@ fn deriveRigidityFromKind(kind: DamageKind) f32 {
 pub fn applyDamage(
     packet: damage.Packet,
     template: TissueTemplate,
-    geometry: body_list.BodyPartGeometry,
+    part_geometry: body_list.BodyPartGeometry,
 ) Wound {
-    _ = geometry; // TODO: use for path-length math once upstream packet axes are available
     var wound = Wound{ .kind = packet.kind };
 
     // Non-physical damage bypasses the 3-axis mechanics (§6 of design doc).
@@ -878,9 +877,12 @@ pub fn applyDamage(
     };
 
     // Track the three axes through the layer stack (T037: real values or legacy fallback)
+    // Geometry: dimensionless coefficient for shielding/susceptibility math
+    // Penetration: cm of material the attack can punch through (for path-length consumption)
     var remaining_geo = if (packet.geometry > 0) packet.geometry else packet.penetration;
     var remaining_energy = if (packet.energy > 0) packet.energy else packet.amount;
     var remaining_rigidity = if (packet.rigidity > 0) packet.rigidity else deriveRigidityFromKind(packet.kind);
+    var remaining_penetration = packet.penetration; // cm - consumed by layer thickness
 
     // Process layers outside-in (generated data is in depth order)
     for (tissue_stack.layers) |layer| {
@@ -895,8 +897,11 @@ pub fn applyDamage(
         const residual_energy = remaining_energy * (1.0 - layer.absorption);
         const residual_rigidity = remaining_rigidity * (1.0 - layer.dispersion);
 
-        // TODO (T035 Phase 4): Use layer.thickness_ratio * part_geometry.thickness_cm
-        // for path-length reduction of geometry axis.
+        // === Path-length consumption ===
+        // Each layer has a thickness ratio (0-1) of the total part depth.
+        // Multiply by part geometry to get absolute cm this layer occupies.
+        const layer_thickness_cm = layer.thickness_ratio * part_geometry.thickness_cm;
+        remaining_penetration -= layer_thickness_cm;
 
         // === Susceptibility: damage to THIS layer using post-shielding axes ===
         // Layer takes damage when residual axes exceed its thresholds
@@ -920,6 +925,14 @@ pub fn applyDamage(
         remaining_geo = residual_geo;
         remaining_energy = residual_energy;
         remaining_rigidity = residual_rigidity;
+
+        // Pierce/slash attacks stop when they can't penetrate further.
+        // Bludgeon continues (transfers energy even without penetration).
+        if (remaining_penetration <= 0 and
+            (packet.kind == .pierce or packet.kind == .slash))
+        {
+            break;
+        }
     }
 
     return wound;

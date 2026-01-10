@@ -22,6 +22,7 @@ pub const condition = @import("condition.zig");
 pub const armour = @import("armour.zig");
 pub const weapon = @import("weapon.zig");
 pub const weapon_list = @import("weapon_list.zig");
+pub const body_list = @import("body_list.zig");
 pub const stats = @import("stats.zig");
 pub const inventory = @import("inventory.zig");
 pub const player = @import("player.zig");

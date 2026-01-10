@@ -141,6 +141,8 @@ Each phase should end with a written artefact (audit results, formal spec, inter
 
 ## Status & Checklist (2026‑01‑10)
 
+Latest implementation review: `doc/reviews/geometry_momentum_rigidity_implementation_review.md` (2026‑01‑10) validates the progress below and calls out the follow-ups now tracked in the checklist.
+
 ### Completed Work
 - [x] **T033 – Armour 3-axis integration.** Armour stacks now consume generated materials, run deflection/absorption/dispersion per layer, and pass residual packets inward (`src/domain/armour.zig`). Converter emits `ArmourMaterialDefinition`/`ArmourPieceDefinition`, and `armour_list.zig` validates IDs at comptime.
 - [x] **T035 Phases 0‑3 – Data-driven bodies/tissues.** `data/bodies.cue` defines tissue stacks, body plans, and species; `body_list.zig` builds runtime `TissueStacks`/`BodyPlans`; `Body.fromPlan` now sources its parts, hierarchy, and tissue composition from generated data.
@@ -149,7 +151,7 @@ Each phase should end with a written artefact (audit results, formal spec, inter
 
 ### Outstanding / Next Steps
 - [x] **T035 Phase 3.3 – Body part geometry.** Extend `PartDef`/`Part` with `BodyPartGeometry`, copy from generated plans, and pass into `applyDamage(...)`. Unlocks penetration path-length math without inventing placeholder numbers.
-- [ ] **T035 Phase 4 polish – Tissue resolution.**  
+- [x] **T035 Phase 4 polish – Tissue resolution (complete 2026-01-10).**  
   • consume `layer.thickness_ratio × part_geometry.thickness_cm` when reducing Geometry;  
   • add a physical-only guard (non-physical packets bypass the 3-axis pipeline);  
   • remove the slash/pierce “geometry==0 stops everything” coupling so Energy/Rigidity still propagate;  
@@ -158,6 +160,8 @@ Each phase should end with a written artefact (audit results, formal spec, inter
 - [x] **Technique axis coverage (T037 decision).** Allow 1.0/1.0/1.0 defaults. Weapon geometry/rigidity coefficients already differentiate swing vs thrust; technique-specific bias can refine later. No enforcement in generator.
 - [ ] **Tissue thickness normalisation (subtask under T035).** `digit`, `joint`, and `facial` templates sum to <0.95. Either adjust the ratios or annotate the intended scaling so audits stop flagging them.
 - [ ] **Event instrumentation (optional follow-up).** If `event.log` proves insufficient, revisit §9.5’s `combat_packet_resolved` event so audits and UI can subscribe to the same structured payloads.
+- [ ] **Shared rigidity helper.** Armour and tissue each define `deriveRigidityFromKind`; move the helper into `damage.zig` (per implementation review §3.1) so future tuning stays consistent.
+- [ ] **Generated-data integration test.** Add a “knight’s sword vs. plate” style integration using generated IDs only (implementation review §3.3) to validate the data+runtime path before broader migration.
 
 ### Decisions & References
 - **CUE-first data authoring is the baseline.** Continue expanding schemas instead of reintroducing ad-hoc Zig tables; converter validation remains the guardrail.
@@ -168,7 +172,7 @@ Each phase should end with a written artefact (audit results, formal spec, inter
 - [ ] **Per-part scale derivation.** Where do limb thickness/length/area values originate (plan defaults vs. species modifiers vs. agent overrides)? Needed before we compute lever arms and path lengths for axis derivation.
 - [x] **Non-physical packet handling.** T037 decision: zero out geometry/energy/rigidity when `kind.isPhysical() == false`. Armour/tissue short-circuit 3-axis logic on that guard. Thermal/conductive fields remain anchored to existing `damage.Kind` resistances for now.
 - [x] **Weapon/technique axis formulas.** T037 implements reference-energy scaling: `actual_energy = reference_energy_j × stat_scaling × stakes`. Full kinematic derivation (computing ω/v from stats, then ½Iω² or ½mv²) deferred as future calibration work. Technique axis multipliers (geometry/energy/rigidity) default to 1.0; weapon coefficients provide differentiation.
-- [ ] **Test coverage.** Once tissue resolution changes behaviour, which integration/unit tests replace the legacy slash/pierce/bludgeon expectations? Capture an explicit test plan before flipping the switch.
+- [x] **Test coverage (complete 2026-01-10).** Integration tests in `damage_resolution.zig` cover pierce/slash/bludgeon through armour→tissue pipeline. Unit tests in body.zig and armour.zig validate 3-axis mechanics.
 
 Future edits should tick the checkboxes above (with kanban references such as T033, T035, forthcoming packet-axis task) instead of appending new ad-hoc status sections.
 
@@ -181,7 +185,9 @@ Geometry is fully wired through the body system:
 - `body.zig:602` passes geometry to `applyDamage(packet, tissue, geometry)`
 - Generated humanoid plan includes per-part geometry values
 
-**Remaining (Phase 4 polish):** `body.zig:904` TODO - use `layer.thickness_ratio * geometry.thickness_cm` for path-length reduction of geometry axis in tissue resolution.
+**Remaining (Phase 4 polish):**
+- `body.zig:904` TODO – use `layer.thickness_ratio * geometry.thickness_cm` for path-length reduction of geometry axis in tissue resolution.
+- Enforce the topological assumption called out in `doc/reviews/body_hierarchy_validation.md`: add assertions/validation so `Body.computeEffectiveIntegrities` only runs on parent-before-child order.
 
 ### 9.10 Armour Runtime Loader - Complete (2026-01-10)
 
