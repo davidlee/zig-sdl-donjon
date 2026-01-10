@@ -42,8 +42,8 @@ Validating the complex 3-axis damage model via unit tests is brittle. We need a 
 
 ## Limitations & Known Issues
 
-### Critical: Armour Not Wired
-`equipArmourById()` is a stub - tests specifying `armour_ids` don't actually equip armour. The "sword vs plate = glance" verification **is not happening**. Tests pass but with wide damage tolerances (0-6) that don't validate physics.
+### ~~Critical: Armour Not Wired~~ ✓ RESOLVED
+~~`equipArmourById()` is a stub~~ → Armour now wired via `equipArmour()` (F1 complete). Physics verification still blocked by RNG (F2).
 
 ### Non-Deterministic Results
 Combat resolution uses RNG for hit/miss. Tests account for this with permissive ranges (`damage_dealt_min: 0`), weakening assertions. Need deterministic mode.

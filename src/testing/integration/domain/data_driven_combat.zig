@@ -18,7 +18,7 @@ const personas = root.data.personas;
 const weapon = domain.weapon;
 const weapon_list = domain.weapon_list;
 const armour = domain.armour;
-const armour_list = @import("../../../domain/armour_list.zig");
+const armour_list = domain.armour_list;
 const gen = @import("../../../gen/generated_data.zig");
 
 // ============================================================================
@@ -56,8 +56,19 @@ test "data-driven combat tests" {
         const defender = try h.addEnemyFromTemplate(&personas.Agents.ser_marcus);
 
         // Equip armour to defender if specified
-        var equipped_armour = try equipArmour(alloc, defender, test_def.defender.armour_ids);
-        defer equipped_armour.deinit(alloc);
+        // We need to track allocated instances to free them after resolution
+        var armour_instances = try std.ArrayList(*armour.Instance).initCapacity(alloc, test_def.defender.armour_ids.len);
+        defer {
+            for (armour_instances.items) |inst| {
+                inst.deinit(alloc);
+                alloc.destroy(inst);
+            }
+            armour_instances.deinit(alloc);
+        }
+
+        for (test_def.defender.armour_ids) |armour_id| {
+            try equipArmourById(alloc, defender, armour_id, &armour_instances);
+        }
 
         // Begin encounter to establish engagement
         try h.beginSelection();
@@ -143,48 +154,25 @@ fn lookupWeaponById(id: []const u8) ?*const weapon.Template {
     return null;
 }
 
-/// Armour instances returned from equipArmour. Must be freed after combat resolution.
-const EquippedArmour = struct {
-    instances: std.ArrayList(*armour.Instance),
-
-    fn deinit(self: *EquippedArmour, alloc: std.mem.Allocator) void {
-        for (self.instances.items) |inst| {
-            inst.deinit(alloc);
-            alloc.destroy(inst);
-        }
-        self.instances.deinit(alloc);
-    }
-};
-
-/// Equip armour pieces to defender by CUE IDs.
-/// Returns owned instances that must be freed after combat resolution.
-fn equipArmour(
+/// Equip armour piece to defender by ID.
+fn equipArmourById(
     alloc: std.mem.Allocator,
     defender: *domain.combat.Agent,
-    armour_ids: []const []const u8,
-) !EquippedArmour {
-    var instances: std.ArrayList(*armour.Instance) = .{};
-    errdefer {
-        for (instances.items) |inst| {
-            inst.deinit(alloc);
-            alloc.destroy(inst);
-        }
-        instances.deinit(alloc);
-    }
+    armour_id: []const u8,
+    tracker: *std.ArrayList(*armour.Instance),
+) !void {
+    // 1. Lookup template from generated registry
+    const template = armour_list.getTemplateRuntime(armour_id) orelse {
+        std.debug.print("Unknown armour ID: {s}\n", .{armour_id});
+        return error.UnknownArmourId;
+    };
 
-    for (armour_ids) |armour_id| {
-        const template = armour_list.getTemplateRuntime(armour_id) orelse {
-            std.debug.print("Unknown armour ID: {s}\n", .{armour_id});
-            continue;
-        };
+    // 2. Create instance
+    const inst = try alloc.create(armour.Instance);
+    inst.* = try armour.Instance.init(alloc, template, null);
+    try tracker.append(alloc, inst);
 
-        const inst = try alloc.create(armour.Instance);
-        inst.* = try armour.Instance.init(alloc, template, null);
-        try instances.append(alloc, inst);
-    }
-
-    // Build defender's armour stack from equipped instances
-    try defender.armour.buildFromEquipped(&defender.body, instances.items);
-
-    return .{ .instances = instances };
+    // 3. Rebuild stack with new armour + any existing tracked armour
+    // Note: This rebuilds from scratch each time, which is fine for test setup
+    try defender.armour.buildFromEquipped(&defender.body, tracker.items);
 }
