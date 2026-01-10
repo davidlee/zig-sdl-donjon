@@ -325,6 +325,16 @@ pub fn resolveThroughArmour(
     var layers_destroyed: u8 = 0;
     const protection = stack.getProtection(part_idx);
 
+    // Track axes through the layer stack:
+    // - Geometry: dimensionless coefficient (0-1) for shielding/susceptibility math
+    // - Penetration: cm of material the attack can punch through (for thickness consumption)
+    // - Energy: joules for absorption calculations
+    // - Rigidity: dimensionless coefficient for susceptibility
+    var remaining_geo = if (packet.geometry > 0) packet.geometry else packet.penetration;
+    var remaining_energy = if (packet.energy > 0) packet.energy else packet.amount;
+    const rigidity = if (packet.rigidity > 0) packet.rigidity else deriveRigidityFromKind(packet.kind);
+    var remaining_penetration = packet.penetration; // cm - consumed by layer thickness
+
     // Process layers outer to inner (Cloak=8 down to Skin=0)
     var layer_idx: usize = 9;
     while (layer_idx > 0) {
@@ -342,18 +352,12 @@ pub fn resolveThroughArmour(
         }
 
         layers_hit += 1;
-
-        // === Get axes from packet (T037: real physics values or legacy fallback) ===
-        // If new axis fields aren't populated, fall back to legacy fields for compat
-        const geometry = if (remaining.geometry > 0) remaining.geometry else remaining.penetration;
-        const energy_axis = if (remaining.energy > 0) remaining.energy else remaining.amount;
-        const rigidity = if (remaining.rigidity > 0) remaining.rigidity else deriveRigidityFromKind(remaining.kind);
         const mat = layer.material;
 
         // === Susceptibility: compute damage to this layer ===
         // Layer takes damage when incoming axes exceed its thresholds
-        const geo_excess = @max(0.0, geometry - mat.geometry_threshold);
-        const energy_excess = @max(0.0, energy_axis - mat.energy_threshold);
+        const geo_excess = @max(0.0, remaining_geo - mat.geometry_threshold);
+        const energy_excess = @max(0.0, remaining_energy - mat.energy_threshold);
         const rig_excess = @max(0.0, rigidity - mat.rigidity_threshold);
 
         const layer_damage =
@@ -367,21 +371,25 @@ pub fn resolveThroughArmour(
         }
 
         // === Shielding: compute what passes through to next layer ===
-        // Deflection reduces geometry (blunts/redirects penetrating edges)
+        // Deflection reduces geometry coefficient (blunts/redirects penetrating edges)
         // Absorption reduces energy (soaks kinetic energy into layer)
-        // Thickness is a flat geometry reduction (material path to cut through)
+        // Thickness subtracts from penetration (cm of material to cut through)
         const deflection_coeff = mat.effectiveDeflection();
         const absorption_coeff = mat.effectiveAbsorption();
 
-        remaining.geometry = geometry * (1.0 - deflection_coeff) - mat.thickness;
-        remaining.geometry = @max(0.0, remaining.geometry);
-        remaining.energy = energy_axis * (1.0 - absorption_coeff);
-        // Also update legacy fields for backward compat
-        remaining.penetration = remaining.geometry;
-        remaining.amount = remaining.energy;
+        remaining_geo = remaining_geo * (1.0 - deflection_coeff);
+        remaining_energy = remaining_energy * (1.0 - absorption_coeff);
+        remaining_penetration -= mat.thickness; // cm consumed by this layer
 
-        // Penetration exhausted - piercing/slashing attacks stop
-        if (remaining.geometry <= 0 and
+        // Update packet for return and backward compat
+        remaining.geometry = remaining_geo;
+        remaining.energy = remaining_energy;
+        remaining.penetration = @max(0.0, remaining_penetration);
+        remaining.amount = remaining_energy;
+
+        // Pierce/slash attacks stop when they can't penetrate further
+        // Bludgeon continues (transfers energy even without penetration)
+        if (remaining_penetration <= 0 and
             (remaining.kind == .pierce or remaining.kind == .slash))
         {
             remaining.energy = 0;
@@ -392,7 +400,7 @@ pub fn resolveThroughArmour(
         }
 
         // Attack fully absorbed - negligible energy remains
-        if (remaining.energy < 0.05) {
+        if (remaining_energy < 0.05) {
             remaining.energy = 0;
             remaining.amount = 0;
             deflected = true;
