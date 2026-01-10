@@ -7,13 +7,18 @@
 - `data/taxonomy.cue` - T042: Data-driven PartTag enum values
 
 ## Creating Bodies
-Bodies are now created from CUE-generated plans via string ID:
+Bodies are created from CUE-generated plans via string ID, with optional scaling:
 ```zig
-var bod = try Body.fromPlan(alloc, "humanoid");  // uses body_list lookup
-var bod = try Body.fromParts(alloc, &TestBodyPlan);  // for test fixtures only
-```
+// Basic creation (no scaling)
+var bod = try Body.fromPlan(alloc, "humanoid", null);
 
-The old `HumanoidPlan` constant still exists but is deprecated (Phase 5 cleanup).
+// With species scaling (T042)
+const mods = SizeModifiers{ .height = 0.9, .mass = 1.1 };  // dwarf-like
+var bod = try Body.fromPlan(alloc, "humanoid", mods);
+
+// Test fixtures only
+var bod = try Body.fromParts(alloc, &TestBodyPlan, null);
+```
 
 ## Key Types
 - `Body` - runtime body with ArrayList of Parts, hash index for lookups
@@ -73,8 +78,19 @@ Rules:
 
 ## Species Integration
 `Species.body_plan_id: []const u8` references a body plan by ID.
-Agent.init looks up the plan: `Body.fromPlan(alloc, sp.body_plan_id)`
 
-T042: Species now has `height_modifier` and `mass_modifier` (default 1.0).
-These are used to scale body part geometry (thickness, length, area).
-Work in progress: `Body.fromPlan` needs updating to accept and apply scaling.
+T042: Species has `height_modifier` and `mass_modifier` (default 1.0).
+Agent.init creates `SizeModifiers` from species and passes to `Body.fromPlan()`:
+```zig
+const mods = SizeModifiers{ .height = sp.height_modifier, .mass = sp.mass_modifier };
+self.body = try Body.fromPlan(alloc, sp.body_plan_id, mods);
+```
+
+## T042: Body Scaling
+`SizeModifiers` struct in `body.zig` scales geometry during body creation:
+- `lengthScale()` = height (taller → longer limbs)
+- `thicknessScale()` = mass / height (stockiness)
+- `areaScale()` = length × thickness (exposed surface)
+- `scaleGeometry(base)` applies all three to `BodyPartGeometry`
+
+Example: Dwarf (h=0.9, m=1.1) → length 0.9×, thickness ~1.22×, area ~1.1×
