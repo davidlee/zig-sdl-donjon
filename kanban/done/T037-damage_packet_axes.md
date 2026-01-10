@@ -117,7 +117,8 @@ Armour and (soon) tissue resolution operate on Geometry / Energy / Rigidity axes
 - Consider generating a developer report (e.g., `just audit-data --packets`) summarising axis outputs for each offensive profile to aid balancing.
 
 ## Progress Log / Notes
-- 2026-01-10: Card scaffolded with context from design review (§4-§6) and data audit. Downstream dependants: T035 Phase 4 (tissue resolution polish). Upstream prerequisites satisfied (armour + body data).- 2026-01-10: Design decisions finalised (see Decisions section). Key choices: reference-energy scaling (not full kinematics), physics on Template, allow technique defaults, keep amount/penetration for compat, zero axes for non-physical.
+- 2026-01-10: Card scaffolded with context from design review (§4-§6) and data audit. Downstream dependants: T035 Phase 4 (tissue resolution polish). Upstream prerequisites satisfied (armour + body data).
+- 2026-01-10: Design decisions finalised (see Decisions section). Key choices: reference-energy scaling (not full kinematics), physics on Template, allow technique defaults, keep amount/penetration for compat, zero axes for non-physical.
 - 2026-01-10: **Implementation complete.** Changes:
   - `weapon.Template`: added `moment_of_inertia`, `effective_mass`, `reference_energy_j`, `geometry_coeff`, `rigidity_coeff`
   - `weapon_list.zig`: all 9 weapons now have physics values (calculated from weight/length/balance)

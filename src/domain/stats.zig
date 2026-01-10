@@ -104,9 +104,35 @@ pub const Accessor = enum {
     presence,
 };
 
+/// Returns true if the accessor represents a velocity-contributing stat
+/// (affects swing/thrust speed → energy scales quadratically).
+/// Returns false for mass/force-contributing stats (energy scales linearly).
+pub fn isVelocityStat(accessor: Accessor) bool {
+    return switch (accessor) {
+        .speed, .dexterity, .agility => true,
+        else => false,
+    };
+}
+
 pub const Template = Block;
 
 const testing = std.testing;
+
+test "isVelocityStat classifies accessors for energy scaling (T038)" {
+    // Velocity stats: speed, dexterity, agility → quadratic energy scaling
+    try testing.expect(isVelocityStat(.speed));
+    try testing.expect(isVelocityStat(.dexterity));
+    try testing.expect(isVelocityStat(.agility));
+
+    // Mass/force stats: power, fortitude, etc. → linear energy scaling
+    try testing.expect(!isVelocityStat(.power));
+    try testing.expect(!isVelocityStat(.fortitude));
+    try testing.expect(!isVelocityStat(.endurance));
+    try testing.expect(!isVelocityStat(.acuity));
+    try testing.expect(!isVelocityStat(.will));
+    try testing.expect(!isVelocityStat(.intuition));
+    try testing.expect(!isVelocityStat(.presence));
+}
 
 test "Resource commit/finalize flow (stamina pattern)" {
     // Stamina: commit on card selection, finalize at resolution

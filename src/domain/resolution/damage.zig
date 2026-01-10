@@ -18,17 +18,62 @@ const Stakes = cards.Stakes;
 // ============================================================================
 
 /// Compute kinetic energy from weapon reference energy, scaled by attacker stats and stakes.
-/// Formula: energy = reference_energy_j × scalingMultiplier(stat_value, ratio) × stakes.damageMultiplier()
+/// Velocity-like stats (speed, dexterity, agility) contribute quadratically (E ∝ v²).
+/// Mass-like stats (power, fortitude, etc.) contribute linearly (E ∝ m).
+/// Formula: energy = reference_energy_j × velocity_scale² × mass_scale × stakes × technique_mult
 fn deriveEnergy(
     weapon_template: *const weapon.Template,
     technique: *const Technique,
-    stat_value: f32,
-    stat_ratio: f32,
+    attacker_stats: *const stats.Block,
     stakes: Stakes,
 ) f32 {
-    const stat_mult = stats.scalingMultiplier(stat_value, stat_ratio);
+    const scaling = technique.damage.scaling;
+    const ratio = scaling.ratio;
+
+    // Split stat contributions into velocity (quadratic) and mass (linear) terms.
+    // E = ½mv² → velocity contributes quadratically, mass/power linearly.
+    var velocity_sum: f32 = 0;
+    var velocity_count: u8 = 0;
+    var mass_sum: f32 = 0;
+    var mass_count: u8 = 0;
+
+    switch (scaling.stats) {
+        .stat => |accessor| {
+            const value = attacker_stats.getConst(accessor);
+            if (stats.isVelocityStat(accessor)) {
+                velocity_sum = value;
+                velocity_count = 1;
+            } else {
+                mass_sum = value;
+                mass_count = 1;
+            }
+        },
+        .average => |accessors| {
+            for (accessors) |accessor| {
+                const value = attacker_stats.getConst(accessor);
+                if (stats.isVelocityStat(accessor)) {
+                    velocity_sum += value;
+                    velocity_count += 1;
+                } else {
+                    mass_sum += value;
+                    mass_count += 1;
+                }
+            }
+        },
+    }
+
+    // Compute scale factors from stat contributions.
+    // velocity_scale = 1 + (normalized_velocity - baseline) × ratio
+    // mass_scale = 1 + (normalized_mass - baseline) × ratio
+    const velocity_avg = if (velocity_count > 0) velocity_sum / @as(f32, @floatFromInt(velocity_count)) else stats.STAT_BASELINE;
+    const mass_avg = if (mass_count > 0) mass_sum / @as(f32, @floatFromInt(mass_count)) else stats.STAT_BASELINE;
+
+    const velocity_scale = stats.scalingMultiplier(velocity_avg, ratio);
+    const mass_scale = stats.scalingMultiplier(mass_avg, ratio);
+
+    // Energy = reference × velocity² × mass × stakes × technique_mult
     const stakes_mult = stakes.damageMultiplier();
-    return weapon_template.reference_energy_j * stat_mult * stakes_mult * technique.axis_energy_mult;
+    return weapon_template.reference_energy_j * (velocity_scale * velocity_scale) * mass_scale * stakes_mult * technique.axis_energy_mult;
 }
 
 /// Compute geometry coefficient from weapon geometry and technique bias.
@@ -118,7 +163,7 @@ pub fn createDamagePacket(
     // 3-axis values: only compute for physical damage
     const is_physical = kind.isPhysical();
     const geometry = if (is_physical) deriveGeometry(weapon_template, technique) else 0;
-    const energy = if (is_physical) deriveEnergy(weapon_template, technique, stat_value, technique.damage.scaling.ratio, stakes) else 0;
+    const energy = if (is_physical) deriveEnergy(weapon_template, technique, &attacker.stats, stakes) else 0;
     const rigidity = if (is_physical) deriveRigidity(weapon_template, technique) else 0;
 
     return damage.Packet{
@@ -234,4 +279,78 @@ test "createDamagePacket axis energy scales with stakes" {
 
     // Energy should increase with stakes (same as amount)
     try std.testing.expect(probing.energy < reckless.energy);
+}
+
+test "deriveEnergy: velocity stat scales quadratically (T038)" {
+    // Test deriveEnergy directly with stats.Block - no Agent needed.
+    // Swing technique uses average([speed, power]) with ratio 1.2.
+    const technique = &cards.Technique.byID(.swing);
+    const weap = &weapon_list.knights_sword;
+
+    const baseline = stats.Block.splat(5.0);
+    var fast = stats.Block.splat(5.0);
+    fast.speed = 5.5; // +10% speed
+    var strong = stats.Block.splat(5.0);
+    strong.power = 5.5; // +10% power
+
+    const baseline_energy = deriveEnergy(weap, technique, &baseline, .guarded);
+    const fast_energy = deriveEnergy(weap, technique, &fast, .guarded);
+    const strong_energy = deriveEnergy(weap, technique, &strong, .guarded);
+
+    // Speed contributes quadratically: +10% → velocity_scale ≈ 1.06, squared ≈ 1.12
+    // Power contributes linearly: +10% → mass_scale ≈ 1.06
+    // (Actual: stat 5.5 → norm 0.55, baseline 0.5 → delta 0.05 × ratio 1.2 = 0.06)
+    const fast_ratio = fast_energy / baseline_energy;
+    const strong_ratio = strong_energy / baseline_energy;
+
+    // Fast: velocity_scale = 1.06, mass_scale = 1.0 → factor = 1.06² × 1.0 ≈ 1.124
+    try std.testing.expectApproxEqAbs(1.124, fast_ratio, 0.02);
+
+    // Strong: velocity_scale = 1.0, mass_scale = 1.06 → factor = 1.0² × 1.06 = 1.06
+    try std.testing.expectApproxEqAbs(1.06, strong_ratio, 0.02);
+
+    // Quadratic > linear for same stat delta
+    try std.testing.expect(fast_energy > strong_energy);
+}
+
+test "deriveEnergy: larger speed delta amplifies quadratic effect (T038)" {
+    const technique = &cards.Technique.byID(.swing);
+    const weap = &weapon_list.knights_sword;
+
+    const baseline = stats.Block.splat(5.0);
+    var very_fast = stats.Block.splat(5.0);
+    very_fast.speed = 7.0; // +40% speed
+
+    const baseline_energy = deriveEnergy(weap, technique, &baseline, .guarded);
+    const fast_energy = deriveEnergy(weap, technique, &very_fast, .guarded);
+
+    // normalize(7.0) = 0.7, baseline_norm = 0.5 → delta = 0.2
+    // velocity_scale = 1.0 + 0.2 × 1.2 = 1.24
+    // velocity_scale² = 1.5376
+    // mass_scale = 1.0 (power at baseline)
+    const ratio = fast_energy / baseline_energy;
+    try std.testing.expectApproxEqAbs(1.5376, ratio, 0.02);
+}
+
+test "deriveEnergy: pure power technique scales linearly (T038)" {
+    // Thrust uses average([speed, power]) - same as swing.
+    // Create a mock technique that uses only power to test linear-only path.
+    const weap = &weapon_list.knights_sword;
+
+    // Use thrust technique (also average([speed, power]))
+    const technique = &cards.Technique.byID(.thrust);
+
+    const baseline = stats.Block.splat(5.0);
+    var strong = stats.Block.splat(5.0);
+    strong.power = 7.0; // +40% power, speed at baseline
+
+    const baseline_energy = deriveEnergy(weap, technique, &baseline, .guarded);
+    const strong_energy = deriveEnergy(weap, technique, &strong, .guarded);
+
+    // Power contributes linearly only.
+    // mass_scale = 1.0 + 0.2 × 0.5 = 1.1 (thrust ratio is 0.5)
+    // velocity_scale = 1.0 (speed at baseline)
+    // factor = 1.0² × 1.1 = 1.1
+    const ratio = strong_energy / baseline_energy;
+    try std.testing.expectApproxEqAbs(1.1, ratio, 0.02);
 }

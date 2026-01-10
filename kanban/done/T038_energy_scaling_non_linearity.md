@@ -39,9 +39,39 @@ Created: 2026-01-10
 - Manual log inspection (e.g., `event.log`) to ensure energy outputs are plausible across a range of techniques/weapons.
 
 ## Risks / Open Questions
-- Need to avoid runaway numbers; may require capping or scaling functions to keep high stats within reasonable ranges.
-- Might need to differentiate between “speed” stats (quadratic) and “power” stats (linear) to avoid double-dipping.
-- Ensure migration path for existing saves/tests that relied on the linear relationship.
+- [x] ~~Might need to differentiate between "speed" stats (quadratic) and "power" stats (linear) to avoid double-dipping.~~ → Decision: yes, split by accessor type.
+- [x] ~~Need to avoid runaway numbers.~~ → Started with raw quadratic per decision. With max stat (10) and ratio 1.2, velocity_scale = 1.6, squared = 2.56. Reasonable; calibrate later if needed.
+- [x] ~~Ensure migration path for existing saves/tests.~~ → All existing tests pass; no breaking changes to public API.
+
+## Decisions
+
+### D1: Split velocity vs mass contributions (2026-01-10)
+Use Option B from preflight analysis—separate contributions so "speed" stats feed the velocity term (quadratic) and "power" stats feed the mass term (linear), mirroring E = ½mv².
+
+**Implicit accessor classification (no schema change):**
+- Velocity-like: `speed`, `dexterity` → feed `velocity_scale`, squared
+- Mass-like: `power`, `fortitude`, others → feed `mass_scale`, linear
+
+**Technique interpretation:**
+- Single stat: classify per above.
+- Average of two stats: split per accessor (e.g., `average: ["speed", "power"]` → speed→velocity, power→mass).
+- If both are velocity-like, both feed quadratic term; if both mass-like, both feed linear term.
+
+**Formula:**
+```
+velocity_scale = 1 + velocity_contribution × ratio
+mass_scale     = 1 + mass_contribution × ratio
+energy         = reference_energy_j × velocity_scale² × mass_scale × stakes × technique.axis_energy_mult
+```
+
+**Capping:** Start with raw quadratic; calibrate later if needed.
 
 ## Progress Log / Notes
 - 2026-01-10: Card created in response to `doc/reviews/critical_physics_review.md` §2.2.
+- 2026-01-10: Preflight complete. Decision D1 taken: split velocity/mass contributions, implicit accessor classification.
+- 2026-01-10: Implementation complete.
+  - Added `stats.isVelocityStat(accessor)` helper to classify accessors.
+  - Refactored `resolution/damage.zig:deriveEnergy` to split velocity/mass contributions per D1.
+  - Added unit tests verifying quadratic vs linear scaling behavior.
+  - Updated `doc/artefacts/geometry_momentum_rigidity_review.md` checklist.
+  - All tests pass (`just check` green).
