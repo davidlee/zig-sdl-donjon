@@ -553,8 +553,8 @@ pub const AgentEncounterState = struct {
 
 const testing = std.testing;
 
-fn testId(index: u32) entity.ID {
-    return .{ .index = index, .generation = 0 };
+fn testId(index: u32, kind: entity.EntityKind) entity.ID {
+    return .{ .index = index, .generation = 0, .kind = kind };
 }
 
 // AttentionState tests
@@ -572,45 +572,45 @@ test "AttentionState.init with high acuity" {
 
 test "AttentionState.penaltyFor returns 0 for primary target" {
     var state = AttentionState.init(0.5);
-    state.primary = testId(1);
-    try testing.expectEqual(@as(f32, 0), state.penaltyFor(testId(1)));
+    state.primary = testId(1, .agent);
+    try testing.expectEqual(@as(f32, 0), state.penaltyFor(testId(1, .agent)));
 }
 
 test "AttentionState.penaltyFor returns 0 when no primary set" {
     const state = AttentionState.init(0.5);
-    try testing.expectEqual(@as(f32, 0), state.penaltyFor(testId(1)));
+    try testing.expectEqual(@as(f32, 0), state.penaltyFor(testId(1, .agent)));
 }
 
 test "AttentionState.penaltyFor returns penalty for non-primary" {
     var state = AttentionState.init(0.5); // awareness = 0.05
-    state.primary = testId(1);
+    state.primary = testId(1, .agent);
     // Penalty = max(0, 0.2 - 0.05) = 0.15
-    try testing.expectEqual(@as(f32, 0.15), state.penaltyFor(testId(2)));
+    try testing.expectEqual(@as(f32, 0.15), state.penaltyFor(testId(2, .agent)));
 }
 
 test "AttentionState.penaltyFor reduced by high awareness" {
     var state = AttentionState.init(2.0); // awareness = 0.2
-    state.primary = testId(1);
+    state.primary = testId(1, .agent);
     // Penalty = max(0, 0.2 - 0.2) = 0
-    try testing.expectEqual(@as(f32, 0), state.penaltyFor(testId(2)));
+    try testing.expectEqual(@as(f32, 0), state.penaltyFor(testId(2, .agent)));
 }
 
 test "Play.effectiveStakes escalates with modifiers" {
-    var play = Play{ .action = testId(1) };
+    var play = Play{ .action = testId(1, .action) };
     try testing.expectEqual(cards.Stakes.guarded, play.effectiveStakes());
 
-    try play.addModifier(testId(2), null);
+    try play.addModifier(testId(2, .action), null);
     try testing.expectEqual(cards.Stakes.committed, play.effectiveStakes());
 
-    try play.addModifier(testId(3), null);
+    try play.addModifier(testId(3, .action), null);
     try testing.expectEqual(cards.Stakes.reckless, play.effectiveStakes());
 }
 
 test "Play.canStack false when added in commit phase" {
-    const normal_play = Play{ .action = testId(1) };
+    const normal_play = Play{ .action = testId(1, .action) };
     try testing.expect(normal_play.canStack());
 
-    const commit_play = Play{ .action = testId(2), .added_in_phase = .commit };
+    const commit_play = Play{ .action = testId(2, .action), .added_in_phase = .commit };
     try testing.expect(!commit_play.canStack());
 }
 
@@ -621,8 +621,8 @@ test "TurnState tracks plays and clears" {
     var state = TurnState{};
     try testing.expectEqual(@as(usize, 0), state.slots().len);
 
-    try state.addPlay(.{ .action = testId(1) }, &registry);
-    try state.addPlay(.{ .action = testId(2) }, &registry);
+    try state.addPlay(.{ .action = testId(1, .action) }, &registry);
+    try state.addPlay(.{ .action = testId(2, .action) }, &registry);
     try testing.expectEqual(@as(usize, 2), state.slots().len);
 
     state.clear();
@@ -671,7 +671,7 @@ test "AgentEncounterState.endTurn pushes to history" {
     var state = AgentEncounterState{};
 
     // Add a play to current turn
-    try state.current.addPlay(.{ .action = testId(1) }, &registry);
+    try state.current.addPlay(.{ .action = testId(1, .action) }, &registry);
     state.current.focus_spent = 2.5;
 
     // End turn
@@ -687,16 +687,16 @@ test "AgentEncounterState.endTurn pushes to history" {
 }
 
 test "Play.addModifier overflow returns error" {
-    var play = Play{ .action = testId(0) };
+    var play = Play{ .action = testId(0, .action) };
 
     // Fill to capacity
     for (0..Play.max_modifiers) |i| {
-        try play.addModifier(testId(@intCast(i + 1)), null);
+        try play.addModifier(testId(@intCast(i + 1), .action), null);
     }
     try testing.expectEqual(Play.max_modifiers, play.modifier_stack_len);
 
     // Next one should fail
-    try testing.expectError(error.Overflow, play.addModifier(testId(99), null));
+    try testing.expectError(error.Overflow, play.addModifier(testId(99, .action), null));
     try testing.expectEqual(Play.max_modifiers, play.modifier_stack_len); // unchanged
 }
 
@@ -708,12 +708,12 @@ test "TurnState.addPlay overflow returns error" {
 
     // Fill to capacity (Timeline.max_slots)
     for (0..Timeline.max_slots) |i| {
-        try state.addPlay(.{ .action = testId(@intCast(i)) }, &registry);
+        try state.addPlay(.{ .action = testId(@intCast(i), .action) }, &registry);
     }
     try testing.expectEqual(Timeline.max_slots, state.slots().len);
 
     // Next one should fail with Overflow
-    try testing.expectError(error.Overflow, state.addPlay(.{ .action = testId(99) }, &registry));
+    try testing.expectError(error.Overflow, state.addPlay(.{ .action = testId(99, .action) }, &registry));
     try testing.expectEqual(Timeline.max_slots, state.slots().len); // unchanged
 }
 
@@ -723,9 +723,9 @@ test "TurnState.removePlay shifts remaining plays" {
 
     var state = TurnState{};
 
-    try state.addPlay(.{ .action = testId(1) }, &registry);
-    try state.addPlay(.{ .action = testId(2) }, &registry);
-    try state.addPlay(.{ .action = testId(3) }, &registry);
+    try state.addPlay(.{ .action = testId(1, .action) }, &registry);
+    try state.addPlay(.{ .action = testId(2, .action) }, &registry);
+    try state.addPlay(.{ .action = testId(3, .action) }, &registry);
     try testing.expectEqual(@as(usize, 3), state.slots().len);
 
     // Remove middle play
@@ -740,7 +740,7 @@ test "TurnState.removePlay handles out of bounds" {
     defer registry.deinit();
 
     var state = TurnState{};
-    try state.addPlay(.{ .action = testId(1) }, &registry);
+    try state.addPlay(.{ .action = testId(1, .action) }, &registry);
 
     // Should do nothing for invalid index
     state.removePlay(5);
@@ -753,14 +753,14 @@ test "TurnState.findPlayByCard returns correct index" {
 
     var state = TurnState{};
 
-    try state.addPlay(.{ .action = testId(10) }, &registry);
-    try state.addPlay(.{ .action = testId(20) }, &registry);
-    try state.addPlay(.{ .action = testId(30) }, &registry);
+    try state.addPlay(.{ .action = testId(10, .action) }, &registry);
+    try state.addPlay(.{ .action = testId(20, .action) }, &registry);
+    try state.addPlay(.{ .action = testId(30, .action) }, &registry);
 
-    try testing.expectEqual(@as(?usize, 0), state.findPlayByCard(testId(10)));
-    try testing.expectEqual(@as(?usize, 1), state.findPlayByCard(testId(20)));
-    try testing.expectEqual(@as(?usize, 2), state.findPlayByCard(testId(30)));
-    try testing.expectEqual(@as(?usize, null), state.findPlayByCard(testId(99)));
+    try testing.expectEqual(@as(?usize, 0), state.findPlayByCard(testId(10, .action)));
+    try testing.expectEqual(@as(?usize, 1), state.findPlayByCard(testId(20, .action)));
+    try testing.expectEqual(@as(?usize, 2), state.findPlayByCard(testId(30, .action)));
+    try testing.expectEqual(@as(?usize, null), state.findPlayByCard(testId(99, .action)));
 }
 
 test "Play.wouldConflict detects conflicting height_override" {
@@ -772,7 +772,7 @@ test "Play.wouldConflict detects conflicting height_override" {
     const high = card_list.byName("high");
 
     // Create a play with low modifier
-    var play = Play{ .action = testId(1) };
+    var play = Play{ .action = testId(1, .action) };
     const low_instance = try registry.create(low);
     try play.addModifier(low_instance.id, null);
 
@@ -791,7 +791,7 @@ test "Play.wouldConflict allows same height_override" {
     const low = card_list.byName("low");
 
     // Create a play with low modifier
-    var play = Play{ .action = testId(1) };
+    var play = Play{ .action = testId(1, .action) };
     const low_instance = try registry.create(low);
     try play.addModifier(low_instance.id, null);
 
@@ -807,7 +807,7 @@ test "Play.wouldConflict allows non-conflicting modifiers" {
     // Use a modifier without height_override
     const feint = card_list.byName("feint");
 
-    const play = Play{ .action = testId(1) };
+    const play = Play{ .action = testId(1, .action) };
 
     // Feint (no height_override) should not conflict
     try testing.expect(!play.wouldConflict(feint, &registry));
@@ -820,7 +820,7 @@ test "Play.wouldConflict returns false for empty modifier stack" {
     const card_list = @import("../card_list.zig");
     const low = card_list.byName("low");
 
-    const play = Play{ .action = testId(1) };
+    const play = Play{ .action = testId(1, .action) };
     // Empty modifier stack - any modifier should be allowed
     try testing.expect(!play.wouldConflict(low, &registry));
 }
@@ -833,7 +833,7 @@ test "Timeline.canInsert allows non-overlapping same channel" {
     const weapon_channels: cards.ChannelSet = .{ .weapon = true };
 
     // Insert first play at 0.0-0.2
-    try timeline.insert(0.0, 0.2, .{ .action = testId(1) }, weapon_channels, &registry);
+    try timeline.insert(0.0, 0.2, .{ .action = testId(1, .action) }, weapon_channels, &registry);
 
     // Should allow non-overlapping same channel at 0.3-0.5
     try testing.expect(timeline.canInsert(0.3, 0.5, weapon_channels, &registry));
@@ -868,7 +868,7 @@ test "Timeline.canInsert allows overlapping different channels" {
     const footwork_channels: cards.ChannelSet = .{ .footwork = true };
 
     // Insert first play at 0.0-0.2 on weapon channel
-    try timeline.insert(0.0, 0.2, .{ .action = testId(1) }, weapon_channels, &registry);
+    try timeline.insert(0.0, 0.2, .{ .action = testId(1, .action) }, weapon_channels, &registry);
 
     // Should allow overlapping on different channel
     try testing.expect(timeline.canInsert(0.1, 0.3, footwork_channels, &registry));
@@ -930,7 +930,7 @@ test "Timeline.insert snaps time_start to granularity" {
     const channels = cards.ChannelSet{};
 
     // Insert at 0.15 (should snap to 0.1)
-    try timeline.insert(0.15, 0.25, .{ .action = testId(1) }, channels, &registry);
+    try timeline.insert(0.15, 0.25, .{ .action = testId(1, .action) }, channels, &registry);
 
     try testing.expectApproxEqAbs(@as(f32, 0.1), timeline.slots()[0].time_start, 0.001);
 }
@@ -941,7 +941,7 @@ test "TimeSlot.overlapsWith adjacent slots do not overlap" {
 
     const slot = TimeSlot{
         .time_start = 0.0,
-        .play = .{ .action = testId(1) },
+        .play = .{ .action = testId(1, .action) },
     };
 
     // Adjacent slot (0.0-0.0 to 0.0-0.1) should not overlap

@@ -69,7 +69,7 @@ pub fn agentFromTemplate(
 ) !AgentHandle {
     // Allocate agents map
     const agents_map = try alloc.create(SlotMap(*Agent));
-    agents_map.* = try SlotMap(*Agent).init(alloc);
+    agents_map.* = try SlotMap(*Agent).init(alloc, .agent);
     errdefer {
         agents_map.deinit();
         alloc.destroy(agents_map);
@@ -98,17 +98,17 @@ pub fn agentFromTemplate(
         .unarmed => {}, // Agent already starts unarmed with natural weapons
         .single => |tmpl| {
             const w = try alloc.create(weapon.Instance);
-            w.* = .{ .id = entity.ID{ .index = 0, .generation = 999 }, .template = tmpl };
+            w.* = .{ .id = entity.ID{ .index = 0, .generation = 999, .kind = .weapon }, .template = tmpl };
             weapon_storage = .{ .single = w };
             agent.weapons = agent.weapons.withEquipped(.{ .single = w });
         },
         .dual => |d| {
             const primary = try alloc.create(weapon.Instance);
-            primary.* = .{ .id = entity.ID{ .index = 0, .generation = 998 }, .template = d.primary };
+            primary.* = .{ .id = entity.ID{ .index = 0, .generation = 998, .kind = .weapon }, .template = d.primary };
             errdefer alloc.destroy(primary);
 
             const secondary = try alloc.create(weapon.Instance);
-            secondary.* = .{ .id = entity.ID{ .index = 1, .generation = 997 }, .template = d.secondary };
+            secondary.* = .{ .id = entity.ID{ .index = 1, .generation = 997, .kind = .weapon }, .template = d.secondary };
 
             weapon_storage = .{ .dual = .{ .primary = primary, .secondary = secondary } };
             agent.weapons = agent.weapons.withEquipped(.{ .dual = .{ .primary = primary, .secondary = secondary } });

@@ -205,7 +205,7 @@ pub const Instance = struct {
         return .{
             .name = template.name,
             .template_id = template.id,
-            .id = .{ .index = 0, .generation = 0 }, // assigned by entity system
+            .id = .{ .index = 0, .generation = 0, .kind = .armour }, // assigned by entity system
             .coverage = coverage,
         };
     }

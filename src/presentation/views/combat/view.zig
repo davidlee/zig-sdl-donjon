@@ -1320,7 +1320,7 @@ pub const View = struct {
 
         // Render animating cards at their current interpolated position
         for (cs.activeAnimations()) |anim| {
-            if (self.world.card_registry.getConst(.{ .index = anim.card_id.index, .generation = anim.card_id.generation })) |card| {
+            if (self.world.card_registry.getConst(anim.card_id)) |card| {
                 // Compute destination lazily from timeline if not set
                 const to_rect = anim.to_rect orelse self.findCardRectInTimeline(anim.card_id, alloc);
                 const current_rect = if (to_rect) |dest|

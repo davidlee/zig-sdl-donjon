@@ -333,8 +333,8 @@ const SlotMap = @import("../../slot_map.zig").SlotMap;
 const species = @import("../../species.zig");
 const weapon_list = @import("../../weapon_list.zig");
 
-fn testId(index: u32) entity.ID {
-    return .{ .index = index, .generation = 0 };
+fn testId(index: u32, kind: entity.EntityKind) entity.ID {
+    return .{ .index = index, .generation = 0, .kind = kind };
 }
 
 const TestAgent = struct {
@@ -352,14 +352,14 @@ const TestAgent = struct {
 
 fn makeTestAgent(alloc: std.mem.Allocator, speed: f32) !TestAgent {
     const agents = try alloc.create(SlotMap(*combat.Agent));
-    agents.* = try SlotMap(*combat.Agent).init(alloc);
+    agents.* = try SlotMap(*combat.Agent).init(alloc, .agent);
     errdefer {
         agents.deinit();
         alloc.destroy(agents);
     }
 
     const sword = try alloc.create(weapon.Instance);
-    sword.* = .{ .id = testId(999), .template = &weapon_list.knights_sword };
+    sword.* = .{ .id = testId(999, .weapon), .template = &weapon_list.knights_sword };
     errdefer alloc.destroy(sword);
 
     const agent = try combat.Agent.init(

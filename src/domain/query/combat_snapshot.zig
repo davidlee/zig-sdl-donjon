@@ -283,7 +283,7 @@ test "empty snapshot returns false for unknown cards" {
     var snapshot = try CombatSnapshot.init(testing.allocator);
     defer snapshot.deinit();
 
-    const fake_id = entity.ID{ .index = 0, .generation = 0 };
+    const fake_id = entity.ID{ .index = 0, .generation = 0, .kind = .action };
     try testing.expect(!snapshot.isCardPlayable(fake_id));
 }
 
@@ -298,6 +298,6 @@ test "canModifierAttachToPlay returns false for unknown modifier" {
     var snapshot = try CombatSnapshot.init(testing.allocator);
     defer snapshot.deinit();
 
-    const fake_id = entity.ID{ .index = 0, .generation = 0 };
+    const fake_id = entity.ID{ .index = 0, .generation = 0, .kind = .action };
     try testing.expect(!snapshot.canModifierAttachToPlay(fake_id, 0));
 }

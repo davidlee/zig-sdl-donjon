@@ -69,8 +69,8 @@ pub const FlankingStatus = enum {
 const testing = std.testing;
 
 test "AgentPair.canonical produces consistent key regardless of order" {
-    const id_low = entity.ID{ .index = 1, .generation = 0 };
-    const id_high = entity.ID{ .index = 5, .generation = 0 };
+    const id_low = entity.ID{ .index = 1, .generation = 0, .kind = .agent };
+    const id_high = entity.ID{ .index = 5, .generation = 0, .kind = .agent };
 
     const pair_ab = AgentPair.canonical(id_low, id_high);
     const pair_ba = AgentPair.canonical(id_high, id_low);

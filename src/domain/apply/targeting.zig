@@ -485,13 +485,13 @@ const weapon = @import("../weapon.zig");
 const ai = @import("../ai.zig");
 const stats = @import("../stats.zig");
 
-fn testId(index: u32) entity.ID {
-    return .{ .index = index, .generation = 0 };
+fn testId(index: u32, kind: entity.EntityKind) entity.ID {
+    return .{ .index = index, .generation = 0, .kind = kind };
 }
 
 fn makeTestAgent(equipped: combat.Armament.Equipped) combat.Agent {
     return combat.Agent{
-        .id = testId(99),
+        .id = testId(99, .agent),
         .alloc = undefined,
         .director = ai.noop(),
         .draw_style = .shuffled_deck,
@@ -514,7 +514,7 @@ fn makeTestAgent(equipped: combat.Armament.Equipped) combat.Agent {
 
 fn makeTestCardInstance(template: *const cards.Template) cards.Instance {
     return cards.Instance{
-        .id = testId(0),
+        .id = testId(0, .agent),
         .template = template,
     };
 }
@@ -522,7 +522,7 @@ fn makeTestCardInstance(template: *const cards.Template) cards.Instance {
 test "expressionAppliesToTarget returns true when no filter" {
     const thrust = card_list.byName("thrust");
     const expr = &thrust.rules[0].expressions[0];
-    var sword_instance = weapon.Instance{ .id = testId(0), .template = &weapon_list.knights_sword };
+    var sword_instance = weapon.Instance{ .id = testId(0, .weapon), .template = &weapon_list.knights_sword };
     const actor = makeTestAgent(.{ .single = &sword_instance });
     const target = makeTestAgent(.{ .single = &sword_instance });
     const card = makeTestCardInstance(thrust);
@@ -533,7 +533,7 @@ test "expressionAppliesToTarget returns true when no filter" {
 test "expressionAppliesToTarget with advantage_threshold filter passes when control high" {
     const riposte = card_list.byName("riposte");
     const expr = &riposte.rules[0].expressions[0];
-    var sword_instance = weapon.Instance{ .id = testId(0), .template = &weapon_list.knights_sword };
+    var sword_instance = weapon.Instance{ .id = testId(0, .weapon), .template = &weapon_list.knights_sword };
     const actor = makeTestAgent(.{ .single = &sword_instance });
     const target = makeTestAgent(.{ .single = &sword_instance });
     const card = makeTestCardInstance(riposte);
@@ -547,7 +547,7 @@ test "expressionAppliesToTarget with advantage_threshold filter passes when cont
 test "expressionAppliesToTarget with advantage_threshold filter fails when control low" {
     const riposte = card_list.byName("riposte");
     const expr = &riposte.rules[0].expressions[0];
-    var sword_instance = weapon.Instance{ .id = testId(0), .template = &weapon_list.knights_sword };
+    var sword_instance = weapon.Instance{ .id = testId(0, .weapon), .template = &weapon_list.knights_sword };
     const actor = makeTestAgent(.{ .single = &sword_instance });
     const target = makeTestAgent(.{ .single = &sword_instance });
     const card = makeTestCardInstance(riposte);

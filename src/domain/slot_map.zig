@@ -20,13 +20,15 @@ pub fn SlotMap(comptime T: type) type {
         // The "Freelist" - a stack of indices we can reuse
         free_indices: std.ArrayList(u32),
         alloc: std.mem.Allocator,
+        kind: entity.EntityKind,
 
-        pub fn init(alloc: std.mem.Allocator) !Self {
+        pub fn init(alloc: std.mem.Allocator, kind: entity.EntityKind) !Self {
             return .{
                 .items = try std.ArrayList(T).initCapacity(alloc, 1000),
                 .generations = try std.ArrayList(u32).initCapacity(alloc, 1000),
                 .free_indices = try std.ArrayList(u32).initCapacity(alloc, 1000),
                 .alloc = alloc,
+                .kind = kind,
             };
         }
 
@@ -44,13 +46,21 @@ pub fn SlotMap(comptime T: type) type {
                 self.items.items[idx] = item;
                 // Update generation is NOT needed here; we increment on *deletion*
                 // so the current generation is already "fresh" for this new user.
-                return entity.ID{ .index = idx, .generation = self.generations.items[idx] };
+                return entity.ID{
+                    .index = idx,
+                    .generation = self.generations.items[idx],
+                    .kind = self.kind,
+                };
             } else {
                 // NEW SLOT:
                 const idx = @as(u32, @intCast(self.items.items.len));
                 try self.items.append(self.alloc, item);
                 try self.generations.append(self.alloc, 1); // Generation starts at 1
-                return entity.ID{ .index = idx, .generation = 1 };
+                return entity.ID{
+                    .index = idx,
+                    .generation = 1,
+                    .kind = self.kind,
+                };
             }
         }
 

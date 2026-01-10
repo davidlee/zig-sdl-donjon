@@ -394,7 +394,7 @@ test "canWithdrawPlay returns true for play with no modifiers" {
     defer registry.deinit();
 
     var play = combat.Play{
-        .action = entity.ID{ .index = 0, .generation = 0 },
+        .action = entity.ID{ .index = 0, .generation = 0, .kind = .action },
     };
     try testing.expect(canWithdrawPlay(&play, &registry));
 }
@@ -404,7 +404,7 @@ test "canWithdrawPlay returns false for play with modifiers attached" {
     defer registry.deinit();
 
     var play = combat.Play{
-        .action = entity.ID{ .index = 0, .generation = 0 },
+        .action = entity.ID{ .index = 0, .generation = 0, .kind = .action },
         .modifier_stack_len = 1,
     };
     try testing.expect(!canWithdrawPlay(&play, &registry));
@@ -586,7 +586,7 @@ const stats = @import("../stats.zig");
 
 fn makeTestAgent(equipped: combat.Armament.Equipped) combat.Agent {
     return combat.Agent{
-        .id = entity.ID{ .index = 99, .generation = 0 },
+        .id = entity.ID{ .index = 99, .generation = 0, .kind = .agent },
         .alloc = undefined,
         .director = ai.noop(),
         .draw_style = .shuffled_deck,
@@ -609,7 +609,7 @@ fn makeTestAgent(equipped: combat.Armament.Equipped) combat.Agent {
 
 test "rulePredicatesSatisfied allows card with always predicate" {
     const thrust_template = card_list.byName("thrust");
-    var sword_instance = weapon.Instance{ .id = entity.ID{ .index = 0, .generation = 0 }, .template = &weapon_list.knights_sword };
+    var sword_instance = weapon.Instance{ .id = entity.ID{ .index = 0, .generation = 0, .kind = .weapon }, .template = &weapon_list.knights_sword };
     const agent = makeTestAgent(.{ .single = &sword_instance });
 
     try testing.expect(rulePredicatesSatisfied(thrust_template, &agent, null));
@@ -617,7 +617,7 @@ test "rulePredicatesSatisfied allows card with always predicate" {
 
 test "rulePredicatesSatisfied allows shield block with shield equipped" {
     const shield_block = card_list.byName("shield block");
-    var buckler_instance = weapon.Instance{ .id = entity.ID{ .index = 0, .generation = 0 }, .template = &weapon_list.buckler };
+    var buckler_instance = weapon.Instance{ .id = entity.ID{ .index = 0, .generation = 0, .kind = .weapon }, .template = &weapon_list.buckler };
     const agent = makeTestAgent(.{ .single = &buckler_instance });
 
     try testing.expect(rulePredicatesSatisfied(shield_block, &agent, null));
@@ -625,7 +625,7 @@ test "rulePredicatesSatisfied allows shield block with shield equipped" {
 
 test "rulePredicatesSatisfied denies shield block without shield" {
     const shield_block = card_list.byName("shield block");
-    var sword_instance = weapon.Instance{ .id = entity.ID{ .index = 0, .generation = 0 }, .template = &weapon_list.knights_sword };
+    var sword_instance = weapon.Instance{ .id = entity.ID{ .index = 0, .generation = 0, .kind = .weapon }, .template = &weapon_list.knights_sword };
     const agent = makeTestAgent(.{ .single = &sword_instance });
 
     try testing.expect(!rulePredicatesSatisfied(shield_block, &agent, null));
@@ -633,8 +633,8 @@ test "rulePredicatesSatisfied denies shield block without shield" {
 
 test "rulePredicatesSatisfied allows shield block with sword and shield dual wield" {
     const shield_block = card_list.byName("shield block");
-    var sword_instance = weapon.Instance{ .id = entity.ID{ .index = 0, .generation = 0 }, .template = &weapon_list.knights_sword };
-    var buckler_instance = weapon.Instance{ .id = entity.ID{ .index = 1, .generation = 0 }, .template = &weapon_list.buckler };
+    var sword_instance = weapon.Instance{ .id = entity.ID{ .index = 0, .generation = 0, .kind = .weapon }, .template = &weapon_list.knights_sword };
+    var buckler_instance = weapon.Instance{ .id = entity.ID{ .index = 1, .generation = 0, .kind = .weapon }, .template = &weapon_list.buckler };
     const agent = makeTestAgent(.{ .dual = .{
         .primary = &sword_instance,
         .secondary = &buckler_instance,

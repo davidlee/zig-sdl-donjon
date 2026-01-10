@@ -31,6 +31,37 @@ const WorldError = error{
     InvalidStateTransition,
 };
 
+/// Polymorphic entity wrapper for unified lookup.
+/// Use World.getEntity() to retrieve entities by ID regardless of kind.
+pub const Entity = union(lib.entity.EntityKind) {
+    action: *cards.Instance,
+    agent: *combat.Agent,
+    weapon: *weapon.Instance,
+    armour: void, // no registry yet
+    item: void, // T048 placeholder
+
+    pub fn asAction(self: Entity) ?*cards.Instance {
+        return if (self == .action) self.action else null;
+    }
+
+    pub fn asAgent(self: Entity) ?*combat.Agent {
+        return if (self == .agent) self.agent else null;
+    }
+
+    pub fn asWeapon(self: Entity) ?*weapon.Instance {
+        return if (self == .weapon) self.weapon else null;
+    }
+};
+
+/// Placeholder for item entities - T048 will populate with actual implementation.
+pub const ItemRegistry = struct {
+    pub fn init(_: std.mem.Allocator) !ItemRegistry {
+        return .{};
+    }
+
+    pub fn deinit(_: *ItemRegistry) void {}
+};
+
 /// Central registry for all card instances. Containers (Agent, Encounter) hold IDs.
 pub const CardRegistry = struct {
     alloc: std.mem.Allocator,
@@ -41,7 +72,7 @@ pub const CardRegistry = struct {
     pub fn init(alloc: std.mem.Allocator) !CardRegistry {
         return .{
             .alloc = alloc,
-            .entities = try SlotMap(*cards.Instance).init(alloc),
+            .entities = try SlotMap(*cards.Instance).init(alloc, .action),
             .destroyed_indices = std.AutoHashMap(u32, void).init(alloc),
         };
     }
@@ -162,10 +193,10 @@ pub const EntityMap = struct {
 
     pub fn init(alloc: std.mem.Allocator) !EntityMap {
         const agents = try alloc.create(SlotMap(*combat.Agent));
-        agents.* = try SlotMap(*combat.Agent).init(alloc);
+        agents.* = try SlotMap(*combat.Agent).init(alloc, .agent);
 
         const weapons = try alloc.create(SlotMap(*weapon.Instance));
-        weapons.* = try SlotMap(*weapon.Instance).init(alloc);
+        weapons.* = try SlotMap(*weapon.Instance).init(alloc, .weapon);
 
         return .{ .agents = agents, .weapons = weapons };
     }
@@ -299,6 +330,27 @@ pub const World = struct {
         }
     }
 
+    /// Unified entity lookup by ID. Dispatches to the appropriate registry
+    /// based on the ID's kind field.
+    pub fn getEntity(self: *World, id: lib.entity.ID) ?Entity {
+        return switch (id.kind) {
+            .action => if (self.card_registry.get(id)) |inst|
+                .{ .action = inst }
+            else
+                null,
+            .agent => if (self.entities.agents.get(id)) |ptr|
+                .{ .agent = ptr.* }
+            else
+                null,
+            .weapon => if (self.entities.weapons.get(id)) |ptr|
+                .{ .weapon = ptr.* }
+            else
+                null,
+            .armour => null, // no registry yet
+            .item => null, // T048 placeholder
+        };
+    }
+
     pub fn transitionTo(self: *World, target_state: GameState) !void {
         if (self.fsm.canTransitionTo(target_state)) {
             try self.fsm.transitionTo(target_state);
@@ -427,4 +479,32 @@ test "CardRegistry: remove invalidates ID" {
 
     // Should not be found via get
     try std.testing.expect(registry.get(id) == null);
+}
+
+test "World.getEntity: dispatches to correct registry by kind" {
+    const alloc = std.testing.allocator;
+    const world = try World.init(alloc);
+    defer world.deinit();
+
+    // Test action lookup (cards)
+    const template = card_list.BeginnerDeck[0];
+    const card_instance = try world.card_registry.create(template);
+    const card_id = card_instance.id;
+
+    const action_entity = world.getEntity(card_id);
+    try std.testing.expect(action_entity != null);
+    try std.testing.expectEqual(card_instance, action_entity.?.action);
+    try std.testing.expect(action_entity.?.asAction() != null);
+    try std.testing.expect(action_entity.?.asAgent() == null);
+
+    // Test agent lookup (player is registered)
+    const player_entity = world.getEntity(world.player.id);
+    try std.testing.expect(player_entity != null);
+    try std.testing.expectEqual(world.player, player_entity.?.agent);
+    try std.testing.expect(player_entity.?.asAgent() != null);
+    try std.testing.expect(player_entity.?.asAction() == null);
+
+    // Test invalid ID returns null
+    const fake_id = lib.entity.ID{ .index = 9999, .generation = 0, .kind = .action };
+    try std.testing.expect(world.getEntity(fake_id) == null);
 }

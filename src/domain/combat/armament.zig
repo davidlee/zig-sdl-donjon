@@ -102,14 +102,14 @@ pub const Armament = struct {
 
 const testing = std.testing;
 
-fn testId(index: u32) @import("infra").entity.ID {
-    return .{ .index = index, .generation = 0 };
+fn testId(index: u32, kind: @import("infra").entity.EntityKind) @import("infra").entity.ID {
+    return .{ .index = index, .generation = 0, .kind = kind };
 }
 
 test "Armament.hasCategory single weapon" {
     const weapon_list = @import("../weapon_list.zig");
-    var buckler_instance = weapon.Instance{ .id = testId(0), .template = &weapon_list.buckler };
-    var sword_instance = weapon.Instance{ .id = testId(1), .template = &weapon_list.knights_sword };
+    var buckler_instance = weapon.Instance{ .id = testId(0, .weapon), .template = &weapon_list.buckler };
+    var sword_instance = weapon.Instance{ .id = testId(1, .weapon), .template = &weapon_list.knights_sword };
 
     const shield_armament = Armament{ .equipped = .{ .single = &buckler_instance }, .natural = &.{} };
     try testing.expect(shield_armament.hasCategory(.shield));
@@ -122,8 +122,8 @@ test "Armament.hasCategory single weapon" {
 
 test "Armament.hasCategory dual wield" {
     const weapon_list = @import("../weapon_list.zig");
-    var buckler_instance = weapon.Instance{ .id = testId(0), .template = &weapon_list.buckler };
-    var sword_instance = weapon.Instance{ .id = testId(1), .template = &weapon_list.knights_sword };
+    var buckler_instance = weapon.Instance{ .id = testId(0, .weapon), .template = &weapon_list.buckler };
+    var sword_instance = weapon.Instance{ .id = testId(1, .weapon), .template = &weapon_list.knights_sword };
 
     const sword_and_shield = Armament{
         .equipped = .{ .dual = .{
@@ -151,7 +151,7 @@ test "Armament.fromSpecies creates unarmed with natural weapons" {
 
 test "Armament.withEquipped preserves natural weapons" {
     const weapon_list = @import("../weapon_list.zig");
-    var sword_instance = weapon.Instance{ .id = testId(0), .template = &weapon_list.knights_sword };
+    var sword_instance = weapon.Instance{ .id = testId(0, .weapon), .template = &weapon_list.knights_sword };
 
     const unarmed = Armament.fromSpecies(species.DWARF.natural_weapons);
     const armed = unarmed.withEquipped(.{ .single = &sword_instance });

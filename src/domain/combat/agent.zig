@@ -737,8 +737,8 @@ pub const ConditionIterator = struct {
 
 const testing = std.testing;
 
-fn testId(index: u32) entity.ID {
-    return .{ .index = index, .generation = 0 };
+fn testId(index: u32, kind: entity.EntityKind) entity.ID {
+    return .{ .index = index, .generation = 0, .kind = kind };
 }
 
 const TestAgent = struct {
@@ -754,7 +754,7 @@ const TestAgent = struct {
 fn makeTestAgent(alloc: std.mem.Allocator, agents: *SlotMap(*Agent)) !TestAgent {
     const weapon_list = @import("../weapon_list.zig");
     const sword = try alloc.create(weapon.Instance);
-    sword.* = .{ .id = testId(999), .template = &weapon_list.knights_sword };
+    sword.* = .{ .id = testId(999, .weapon), .template = &weapon_list.knights_sword };
 
     const agent = try Agent.init(
         alloc,
@@ -798,7 +798,7 @@ test "ConditionIterator computed condition thresholds" {
 }
 
 test "ConditionIterator yields blinded when eyes damaged" {
-    var agents = try SlotMap(*Agent).init(testing.allocator);
+    var agents = try SlotMap(*Agent).init(testing.allocator, .agent);
     defer agents.deinit();
 
     const test_agent = try makeTestAgent(testing.allocator, &agents);
@@ -826,7 +826,7 @@ test "ConditionIterator yields blinded when eyes damaged" {
 }
 
 test "ConditionIterator yields deafened when ears damaged" {
-    var agents = try SlotMap(*Agent).init(testing.allocator);
+    var agents = try SlotMap(*Agent).init(testing.allocator, .agent);
     defer agents.deinit();
 
     const test_agent = try makeTestAgent(testing.allocator, &agents);
@@ -854,7 +854,7 @@ test "ConditionIterator yields deafened when ears damaged" {
 }
 
 test "isIncapacitated false for healthy agent" {
-    var agents = try SlotMap(*Agent).init(testing.allocator);
+    var agents = try SlotMap(*Agent).init(testing.allocator, .agent);
     defer agents.deinit();
 
     const test_agent = try makeTestAgent(testing.allocator, &agents);
@@ -864,7 +864,7 @@ test "isIncapacitated false for healthy agent" {
 }
 
 test "isIncapacitated true when vital organ destroyed" {
-    var agents = try SlotMap(*Agent).init(testing.allocator);
+    var agents = try SlotMap(*Agent).init(testing.allocator, .agent);
     defer agents.deinit();
 
     const test_agent = try makeTestAgent(testing.allocator, &agents);
@@ -882,7 +882,7 @@ test "isIncapacitated true when vital organ destroyed" {
 }
 
 test "isIncapacitated true when mobility zero" {
-    var agents = try SlotMap(*Agent).init(testing.allocator);
+    var agents = try SlotMap(*Agent).init(testing.allocator, .agent);
     defer agents.deinit();
 
     const test_agent = try makeTestAgent(testing.allocator, &agents);
@@ -899,7 +899,7 @@ test "isIncapacitated true when mobility zero" {
 }
 
 test "isIncapacitated true when unconscious" {
-    var agents = try SlotMap(*Agent).init(testing.allocator);
+    var agents = try SlotMap(*Agent).init(testing.allocator, .agent);
     defer agents.deinit();
 
     const test_agent = try makeTestAgent(testing.allocator, &agents);
@@ -915,7 +915,7 @@ test "isIncapacitated true when unconscious" {
 }
 
 test "isIncapacitated true when comatose" {
-    var agents = try SlotMap(*Agent).init(testing.allocator);
+    var agents = try SlotMap(*Agent).init(testing.allocator, .agent);
     defer agents.deinit();
 
     const test_agent = try makeTestAgent(testing.allocator, &agents);
@@ -931,13 +931,13 @@ test "isIncapacitated true when comatose" {
 }
 
 test "Agent.isPoolCardAvailable respects cooldowns" {
-    var agents = try SlotMap(*Agent).init(testing.allocator);
+    var agents = try SlotMap(*Agent).init(testing.allocator, .agent);
     defer agents.deinit();
 
     const test_agent = try makeTestAgent(testing.allocator, &agents);
     defer test_agent.destroy(&agents);
 
-    const card_id = testId(42);
+    const card_id = testId(42, .action);
 
     // Add card to always_available
     try test_agent.agent.always_available.append(testing.allocator, card_id);
@@ -959,7 +959,7 @@ test "Agent.isPoolCardAvailable respects cooldowns" {
 }
 
 test "Agent pain/trauma/morale resources initialize correctly" {
-    var agents = try SlotMap(*Agent).init(testing.allocator);
+    var agents = try SlotMap(*Agent).init(testing.allocator, .agent);
     defer agents.deinit();
 
     const test_agent = try makeTestAgent(testing.allocator, &agents);
@@ -984,7 +984,7 @@ test "Agent pain/trauma/morale resources initialize correctly" {
 }
 
 test "Agent pain/trauma accumulate via inflict" {
-    var agents = try SlotMap(*Agent).init(testing.allocator);
+    var agents = try SlotMap(*Agent).init(testing.allocator, .agent);
     defer agents.deinit();
 
     const test_agent = try makeTestAgent(testing.allocator, &agents);
@@ -1010,7 +1010,7 @@ test "Agent pain/trauma accumulate via inflict" {
 }
 
 test "hasCondition detects computed conditions via cache" {
-    var agents = try SlotMap(*Agent).init(testing.allocator);
+    var agents = try SlotMap(*Agent).init(testing.allocator, .agent);
     defer agents.deinit();
 
     const test_agent = try makeTestAgent(testing.allocator, &agents);
@@ -1035,7 +1035,7 @@ test "hasCondition detects computed conditions via cache" {
 }
 
 test "condition cache emits events on threshold crossing" {
-    var agents = try SlotMap(*Agent).init(testing.allocator);
+    var agents = try SlotMap(*Agent).init(testing.allocator, .agent);
     defer agents.deinit();
 
     const test_agent = try makeTestAgent(testing.allocator, &agents);
@@ -1078,7 +1078,7 @@ test "condition cache emits events on threshold crossing" {
 }
 
 test "adrenaline surge suppresses pain conditions" {
-    var agents = try SlotMap(*Agent).init(testing.allocator);
+    var agents = try SlotMap(*Agent).init(testing.allocator, .agent);
     defer agents.deinit();
 
     const test_agent = try makeTestAgent(testing.allocator, &agents);
@@ -1121,7 +1121,7 @@ test "adrenaline surge suppresses pain conditions" {
 
 test "availableNaturalWeapons yields all when body healthy" {
     const alloc = testing.allocator;
-    var agents = try SlotMap(*Agent).init(alloc);
+    var agents = try SlotMap(*Agent).init(alloc, .agent);
     defer agents.deinit();
 
     // DWARF has fist (hand) and headbutt (head)
@@ -1142,7 +1142,7 @@ test "availableNaturalWeapons yields all when body healthy" {
 
 test "availableNaturalWeapons filters by body part" {
     const alloc = testing.allocator;
-    var agents = try SlotMap(*Agent).init(alloc);
+    var agents = try SlotMap(*Agent).init(alloc, .agent);
     defer agents.deinit();
 
     // DWARF has fist (hand) and headbutt (head)
@@ -1165,7 +1165,7 @@ test "availableNaturalWeapons filters by body part" {
 
 test "availableNaturalWeapons empty when all parts destroyed" {
     const alloc = testing.allocator;
-    var agents = try SlotMap(*Agent).init(alloc);
+    var agents = try SlotMap(*Agent).init(alloc, .agent);
     defer agents.deinit();
 
     const agent = try Agent.init(alloc, &agents, .player, .shuffled_deck, &species_mod.DWARF, stats.Block.splat(5));
@@ -1182,7 +1182,7 @@ test "availableNaturalWeapons empty when all parts destroyed" {
 
 test "isNaturalWeaponAvailable checks body part" {
     const alloc = testing.allocator;
-    var agents = try SlotMap(*Agent).init(alloc);
+    var agents = try SlotMap(*Agent).init(alloc, .agent);
     defer agents.deinit();
 
     const agent = try Agent.init(alloc, &agents, .player, .shuffled_deck, &species_mod.DWARF, stats.Block.splat(5));
@@ -1206,7 +1206,7 @@ test "isNaturalWeaponAvailable checks body part" {
 
 test "allAvailableWeapons unarmed yields only natural" {
     const alloc = testing.allocator;
-    var agents = try SlotMap(*Agent).init(alloc);
+    var agents = try SlotMap(*Agent).init(alloc, .agent);
     defer agents.deinit();
 
     // Unarmed DWARF - no equipped weapon, 2 natural weapons
@@ -1225,7 +1225,7 @@ test "allAvailableWeapons unarmed yields only natural" {
 
 test "allAvailableWeapons single weapon yields equipped then natural" {
     const alloc = testing.allocator;
-    var agents = try SlotMap(*Agent).init(alloc);
+    var agents = try SlotMap(*Agent).init(alloc, .agent);
     defer agents.deinit();
 
     const agent = try Agent.init(alloc, &agents, .player, .shuffled_deck, &species_mod.DWARF, stats.Block.splat(5));
@@ -1235,7 +1235,7 @@ test "allAvailableWeapons single weapon yields equipped then natural" {
     const weapon_list = @import("../weapon_list.zig");
     const sword = try alloc.create(weapon.Instance);
     defer alloc.destroy(sword);
-    sword.* = .{ .id = testId(999), .template = &weapon_list.knights_sword };
+    sword.* = .{ .id = testId(999, .weapon), .template = &weapon_list.knights_sword };
     agent.weapons = agent.weapons.withEquipped(.{ .single = sword });
 
     // 1 equipped + 2 natural = 3 total
@@ -1258,7 +1258,7 @@ test "allAvailableWeapons single weapon yields equipped then natural" {
 
 test "allAvailableWeapons dual wield yields both equipped then natural" {
     const alloc = testing.allocator;
-    var agents = try SlotMap(*Agent).init(alloc);
+    var agents = try SlotMap(*Agent).init(alloc, .agent);
     defer agents.deinit();
 
     const agent = try Agent.init(alloc, &agents, .player, .shuffled_deck, &species_mod.DWARF, stats.Block.splat(5));
@@ -1268,11 +1268,11 @@ test "allAvailableWeapons dual wield yields both equipped then natural" {
     const weapon_list = @import("../weapon_list.zig");
     const sword = try alloc.create(weapon.Instance);
     defer alloc.destroy(sword);
-    sword.* = .{ .id = testId(998), .template = &weapon_list.knights_sword };
+    sword.* = .{ .id = testId(998, .weapon), .template = &weapon_list.knights_sword };
 
     const buckler = try alloc.create(weapon.Instance);
     defer alloc.destroy(buckler);
-    buckler.* = .{ .id = testId(999), .template = &weapon_list.buckler };
+    buckler.* = .{ .id = testId(999, .weapon), .template = &weapon_list.buckler };
 
     agent.weapons = agent.weapons.withEquipped(.{ .dual = .{ .primary = sword, .secondary = buckler } });
 
@@ -1300,7 +1300,7 @@ test "allAvailableWeapons dual wield yields both equipped then natural" {
 
 test "WeaponRef.template works for both types" {
     const alloc = testing.allocator;
-    var agents = try SlotMap(*Agent).init(alloc);
+    var agents = try SlotMap(*Agent).init(alloc, .agent);
     defer agents.deinit();
 
     const agent = try Agent.init(alloc, &agents, .player, .shuffled_deck, &species_mod.DWARF, stats.Block.splat(5));
@@ -1309,7 +1309,7 @@ test "WeaponRef.template works for both types" {
     const weapon_list = @import("../weapon_list.zig");
     const sword = try alloc.create(weapon.Instance);
     defer alloc.destroy(sword);
-    sword.* = .{ .id = testId(999), .template = &weapon_list.knights_sword };
+    sword.* = .{ .id = testId(999, .weapon), .template = &weapon_list.knights_sword };
     agent.weapons = agent.weapons.withEquipped(.{ .single = sword });
 
     var iter = agent.allAvailableWeapons();
@@ -1325,7 +1325,7 @@ test "WeaponRef.template works for both types" {
 
 test "weaponForChannel returns equipped for weapon channel" {
     const alloc = testing.allocator;
-    var agents = try SlotMap(*Agent).init(alloc);
+    var agents = try SlotMap(*Agent).init(alloc, .agent);
     defer agents.deinit();
 
     const agent = try Agent.init(alloc, &agents, .player, .shuffled_deck, &species_mod.DWARF, stats.Block.splat(5));
@@ -1334,7 +1334,7 @@ test "weaponForChannel returns equipped for weapon channel" {
     const weapon_list = @import("../weapon_list.zig");
     const sword = try alloc.create(weapon.Instance);
     defer alloc.destroy(sword);
-    sword.* = .{ .id = testId(999), .template = &weapon_list.knights_sword };
+    sword.* = .{ .id = testId(999, .weapon), .template = &weapon_list.knights_sword };
     agent.weapons = agent.weapons.withEquipped(.{ .single = sword });
 
     const result = agent.weaponForChannel(.{ .weapon = true });
@@ -1345,7 +1345,7 @@ test "weaponForChannel returns equipped for weapon channel" {
 
 test "weaponForChannel returns secondary for off_hand channel with dual wield" {
     const alloc = testing.allocator;
-    var agents = try SlotMap(*Agent).init(alloc);
+    var agents = try SlotMap(*Agent).init(alloc, .agent);
     defer agents.deinit();
 
     const agent = try Agent.init(alloc, &agents, .player, .shuffled_deck, &species_mod.DWARF, stats.Block.splat(5));
@@ -1354,11 +1354,11 @@ test "weaponForChannel returns secondary for off_hand channel with dual wield" {
     const weapon_list = @import("../weapon_list.zig");
     const sword = try alloc.create(weapon.Instance);
     defer alloc.destroy(sword);
-    sword.* = .{ .id = testId(998), .template = &weapon_list.knights_sword };
+    sword.* = .{ .id = testId(998, .weapon), .template = &weapon_list.knights_sword };
 
     const buckler = try alloc.create(weapon.Instance);
     defer alloc.destroy(buckler);
-    buckler.* = .{ .id = testId(999), .template = &weapon_list.buckler };
+    buckler.* = .{ .id = testId(999, .weapon), .template = &weapon_list.buckler };
 
     agent.weapons = agent.weapons.withEquipped(.{ .dual = .{ .primary = sword, .secondary = buckler } });
 
@@ -1370,7 +1370,7 @@ test "weaponForChannel returns secondary for off_hand channel with dual wield" {
 
 test "weaponForChannel returns natural weapon when unarmed" {
     const alloc = testing.allocator;
-    var agents = try SlotMap(*Agent).init(alloc);
+    var agents = try SlotMap(*Agent).init(alloc, .agent);
     defer agents.deinit();
 
     // Unarmed DWARF has natural weapons
@@ -1384,7 +1384,7 @@ test "weaponForChannel returns natural weapon when unarmed" {
 
 test "weaponForChannel returns null for off_hand with single weapon" {
     const alloc = testing.allocator;
-    var agents = try SlotMap(*Agent).init(alloc);
+    var agents = try SlotMap(*Agent).init(alloc, .agent);
     defer agents.deinit();
 
     const agent = try Agent.init(alloc, &agents, .player, .shuffled_deck, &species_mod.DWARF, stats.Block.splat(5));
@@ -1393,7 +1393,7 @@ test "weaponForChannel returns null for off_hand with single weapon" {
     const weapon_list = @import("../weapon_list.zig");
     const sword = try alloc.create(weapon.Instance);
     defer alloc.destroy(sword);
-    sword.* = .{ .id = testId(999), .template = &weapon_list.knights_sword };
+    sword.* = .{ .id = testId(999, .weapon), .template = &weapon_list.knights_sword };
     agent.weapons = agent.weapons.withEquipped(.{ .single = sword });
 
     const result = agent.weaponForChannel(.{ .off_hand = true });
@@ -1402,7 +1402,7 @@ test "weaponForChannel returns null for off_hand with single weapon" {
 
 test "weaponForChannel returns null for non-weapon channels" {
     const alloc = testing.allocator;
-    var agents = try SlotMap(*Agent).init(alloc);
+    var agents = try SlotMap(*Agent).init(alloc, .agent);
     defer agents.deinit();
 
     const agent = try Agent.init(alloc, &agents, .player, .shuffled_deck, &species_mod.DWARF, stats.Block.splat(5));
@@ -1411,7 +1411,7 @@ test "weaponForChannel returns null for non-weapon channels" {
     const weapon_list = @import("../weapon_list.zig");
     const sword = try alloc.create(weapon.Instance);
     defer alloc.destroy(sword);
-    sword.* = .{ .id = testId(999), .template = &weapon_list.knights_sword };
+    sword.* = .{ .id = testId(999, .weapon), .template = &weapon_list.knights_sword };
     agent.weapons = agent.weapons.withEquipped(.{ .single = sword });
 
     // footwork and concentration channels don't have weapons

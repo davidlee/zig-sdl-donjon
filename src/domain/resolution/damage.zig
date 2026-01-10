@@ -216,7 +216,7 @@ fn makeTestAgent(
 test "createDamagePacket scales by stakes" {
     const alloc = std.testing.allocator;
     const agents = try alloc.create(slot_map.SlotMap(*Agent));
-    agents.* = try slot_map.SlotMap(*Agent).init(alloc);
+    agents.* = try slot_map.SlotMap(*Agent).init(alloc, .agent);
     defer {
         agents.deinit();
         alloc.destroy(agents);
@@ -244,7 +244,7 @@ test "createDamagePacket scales by stakes" {
 test "createDamagePacket populates 3-axis fields for physical damage" {
     const alloc = std.testing.allocator;
     const agents = try alloc.create(slot_map.SlotMap(*Agent));
-    agents.* = try slot_map.SlotMap(*Agent).init(alloc);
+    agents.* = try slot_map.SlotMap(*Agent).init(alloc, .agent);
     defer {
         agents.deinit();
         alloc.destroy(agents);
@@ -277,7 +277,7 @@ test "createDamagePacket populates 3-axis fields for physical damage" {
 test "createDamagePacket axis energy scales with stakes" {
     const alloc = std.testing.allocator;
     const agents = try alloc.create(slot_map.SlotMap(*Agent));
-    agents.* = try slot_map.SlotMap(*Agent).init(alloc);
+    agents.* = try slot_map.SlotMap(*Agent).init(alloc, .agent);
     defer {
         agents.deinit();
         alloc.destroy(agents);

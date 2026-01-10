@@ -81,7 +81,7 @@ pub const EffectMapper = struct {
     }
 
     fn toID(eid: entity.ID) ID {
-        return .{ .index = eid.index, .generation = eid.generation };
+        return eid;
     }
 };
 

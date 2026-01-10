@@ -561,7 +561,7 @@ test "AdvantageEffect.apply modifies engagement and balance" {
 
     const alloc = std.testing.allocator;
     const agents = try alloc.create(slot_map.SlotMap(*Agent));
-    agents.* = try slot_map.SlotMap(*Agent).init(alloc);
+    agents.* = try slot_map.SlotMap(*Agent).init(alloc, .agent);
     defer {
         agents.deinit();
         alloc.destroy(agents);

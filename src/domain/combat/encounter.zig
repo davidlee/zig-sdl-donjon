@@ -227,7 +227,7 @@ fn makeTestEnemy(alloc: std.mem.Allocator, agents: *SlotMap(*Agent)) !*Agent {
 
 test "assessFlanking returns none for single opponent" {
     const alloc = testing.allocator;
-    var agents = try SlotMap(*Agent).init(alloc);
+    var agents = try SlotMap(*Agent).init(alloc, .agent);
     defer agents.deinit();
 
     const setup = try makeTestEncounter(alloc, &agents);
@@ -243,7 +243,7 @@ test "assessFlanking returns none for single opponent" {
 
 test "assessFlanking returns partial when one enemy has angle advantage" {
     const alloc = testing.allocator;
-    var agents = try SlotMap(*Agent).init(alloc);
+    var agents = try SlotMap(*Agent).init(alloc, .agent);
     defer agents.deinit();
 
     const setup = try makeTestEncounter(alloc, &agents);
@@ -267,7 +267,7 @@ test "assessFlanking returns partial when one enemy has angle advantage" {
 
 test "assessFlanking returns surrounded with 3+ enemies" {
     const alloc = testing.allocator;
-    var agents = try SlotMap(*Agent).init(alloc);
+    var agents = try SlotMap(*Agent).init(alloc, .agent);
     defer agents.deinit();
 
     const setup = try makeTestEncounter(alloc, &agents);
@@ -288,7 +288,7 @@ test "assessFlanking returns surrounded with 3+ enemies" {
 
 test "assessFlanking returns surrounded when 2+ enemies have angle advantage" {
     const alloc = testing.allocator;
-    var agents = try SlotMap(*Agent).init(alloc);
+    var agents = try SlotMap(*Agent).init(alloc, .agent);
     defer agents.deinit();
 
     const setup = try makeTestEncounter(alloc, &agents);
