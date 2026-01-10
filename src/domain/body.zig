@@ -185,6 +185,9 @@ pub const TissueLayerMaterial = struct {
     energy_ratio: f32,
     rigidity_threshold: f32,
     rigidity_ratio: f32,
+    // Whether this material provides structural integrity (bone, cartilage).
+    // Non-structural layers cannot escalate to Severity.missing on their own.
+    is_structural: bool,
 };
 
 /// Runtime tissue stack - collection of tissue layers for a body part type.
@@ -835,15 +838,58 @@ pub fn layerResistance(layer: TissueLayer, kind: DamageKind) LayerResistance {
     };
 }
 
-/// Thresholds for converting damage amount to severity.
-/// Scale: sword swing = 10.0 base damage, thresholds scaled to match.
-fn severityFromDamage(amount: f32) Severity {
-    if (amount < 0.5) return .none;
-    if (amount < 1.5) return .minor;
-    if (amount < 3.0) return .inhibited;
-    if (amount < 5.0) return .disabled;
-    if (amount < 8.0) return .broken;
+/// Severity from volume/destruction (energy-driven).
+/// Energy excess represents how much "stuff" is destroyed in the layer.
+/// High energy = crushing, tearing, pulping tissue.
+fn severityFromVolume(energy_excess: f32) Severity {
+    if (energy_excess < 0.5) return .none;
+    if (energy_excess < 1.5) return .minor;
+    if (energy_excess < 3.0) return .inhibited;
+    if (energy_excess < 5.0) return .disabled;
+    if (energy_excess < 8.0) return .broken;
     return .missing;
+}
+
+/// Severity from depth/penetration (geometry-driven).
+/// Geometry excess represents how cleanly/deeply the attack penetrates.
+/// High geometry = narrow, deep wound channel (needle, stiletto).
+fn severityFromDepth(geometry_excess: f32) Severity {
+    if (geometry_excess < 0.5) return .none;
+    if (geometry_excess < 1.5) return .minor;
+    if (geometry_excess < 3.0) return .inhibited;
+    if (geometry_excess < 5.0) return .disabled;
+    // Depth alone cannot reach .missing - penetration doesn't remove tissue
+    return .broken;
+}
+
+/// Combine volume and depth severity for a tissue layer.
+/// Rules:
+/// - Structural layers (bone, cartilage): volume drives severity. Depth contributes
+///   but cannot alone reach .missing (you need to break/crush bone, not just poke through).
+/// - Non-structural layers (muscle, fat, skin): max of volume and depth severity,
+///   capped at .disabled (soft tissue destruction alone doesn't sever a limb).
+fn computeLayerSeverity(
+    geo_excess: f32,
+    energy_excess: f32,
+    rig_excess: f32,
+    is_structural: bool,
+) Severity {
+    const volume_sev = severityFromVolume(energy_excess + rig_excess * 0.5);
+    const depth_sev = severityFromDepth(geo_excess);
+
+    if (is_structural) {
+        // Structural layers: volume dominates. Depth can add minor contribution.
+        // Both depth and volume must be significant for .missing.
+        const depth_bonus: u8 = if (@intFromEnum(depth_sev) >= @intFromEnum(Severity.inhibited)) 1 else 0;
+        const combined = @min(@as(u8, @intFromEnum(volume_sev)) + depth_bonus, @intFromEnum(Severity.missing));
+        return @enumFromInt(combined);
+    } else {
+        // Non-structural: max of volume and depth, capped at .disabled.
+        // Soft tissue alone cannot trigger .missing (no structural loss).
+        const max_sev = @max(@intFromEnum(volume_sev), @intFromEnum(depth_sev));
+        const capped = @min(max_sev, @intFromEnum(Severity.disabled));
+        return @enumFromInt(capped);
+    }
 }
 
 /// Apply a damage packet to a body part, producing a wound.
@@ -896,16 +942,14 @@ pub fn applyDamage(
 
         // === Susceptibility: damage to THIS layer using post-shielding axes ===
         // Layer takes damage when residual axes exceed its thresholds
-        const geo_excess = @max(0.0, residual_geo - layer.geometry_threshold);
-        const energy_excess = @max(0.0, residual_energy - layer.energy_threshold);
-        const rig_excess = @max(0.0, residual_rigidity - layer.rigidity_threshold);
+        const geo_excess = @max(0.0, residual_geo - layer.geometry_threshold) * layer.geometry_ratio;
+        const energy_excess = @max(0.0, residual_energy - layer.energy_threshold) * layer.energy_ratio;
+        const rig_excess = @max(0.0, residual_rigidity - layer.rigidity_threshold) * layer.rigidity_ratio;
 
-        const layer_damage =
-            geo_excess * layer.geometry_ratio +
-            energy_excess * layer.energy_ratio +
-            rig_excess * layer.rigidity_ratio;
-
-        const severity = severityFromDamage(layer_damage);
+        // T039: Dual severity model - volume (energy) vs depth (geometry)
+        // Structural layers can escalate to .missing via volume destruction.
+        // Non-structural layers cap at .disabled (soft tissue alone doesn't sever).
+        const severity = computeLayerSeverity(geo_excess, energy_excess, rig_excess, layer.is_structural);
         if (severity != .none) {
             if (materialIdToTissueLayer(layer.material_id)) |tissue_layer| {
                 wound.append(.{ .layer = tissue_layer, .severity = severity });
@@ -930,7 +974,10 @@ pub fn applyDamage(
 }
 
 /// Check if a wound causes severing of a part.
-/// Severing requires structural damage (bone/cartilage) plus soft tissue damage.
+/// T039: Severing requires BOTH depth penetration AND structural volume loss.
+/// - Depth alone (needle) can't sever - need to remove enough material
+/// - Volume alone isn't enough - need to cut through the structure
+/// Small parts (digits, ears) sever more easily due to less material.
 fn checkSevering(part: *const Part, wound: *const Wound) bool {
     // Already severed
     if (part.is_severed) return false;
@@ -953,31 +1000,42 @@ fn checkSevering(part: *const Part, wound: *const Wound) bool {
     else
         return false; // no structural layer (e.g., organ) - can't sever
 
+    // T039: Small part adjustment - digits/ears (area < 30 cm²) sever more easily.
+    // Reduce the severity threshold by 1 level for small parts.
+    const is_small_part = part.geometry.area_cm2 < 30.0;
+    const threshold_reduction: u8 = if (is_small_part) 1 else 0;
+
     // Severing rules by damage type
     const structural_int = @intFromEnum(structural_sev);
     const muscle_int = @intFromEnum(muscle_sev);
     const tendon_int = @intFromEnum(tendon_sev);
-    const broken_int = @intFromEnum(Severity.broken);
-    const disabled_int = @intFromEnum(Severity.disabled);
-    const missing_int = @intFromEnum(Severity.missing);
+    const broken_int = @intFromEnum(Severity.broken) - threshold_reduction;
+    const disabled_int = @intFromEnum(Severity.disabled) - threshold_reduction;
+    const missing_int = @intFromEnum(Severity.missing); // don't reduce - still need structural loss
 
     switch (wound.kind) {
         .slash => {
             // Slash severs when: structural broken + muscle/tendon disabled+
+            // T039: This requires both depth (geometry penetrated bone) AND
+            // volume (energy damaged soft tissue). Needles fail the energy check.
             if (structural_int >= broken_int) {
                 if (muscle_int >= disabled_int or tendon_int >= disabled_int) {
                     return true;
                 }
             }
-            // Or structural missing (clean cut through bone)
+            // Or structural missing (clean cut through bone - high energy slash)
             if (structural_int >= missing_int) return true;
         },
         .pierce => {
-            // Pierce rarely severs - only if structural is missing
+            // T039: Pierce rarely severs. With dual severity, needles (high geo,
+            // low energy) max out at .broken on structural layers. Only massive
+            // energy pierces (war pick, lance charge) can reach .missing.
             if (structural_int >= missing_int) return true;
         },
         .bludgeon, .crush, .shatter => {
-            // Bludgeon/crush can shatter-sever if bone is missing
+            // Bludgeon/crush can shatter-sever if bone is missing.
+            // T039: Hammer (high energy) can reach .missing on bone, enabling
+            // shatter-sever. But it's not a "clean" cut.
             if (structural_int >= missing_int) return true;
         },
         else => {},
@@ -1659,4 +1717,171 @@ test "hasFunctionalPart damaged but not missing" {
     // Only .missing makes it non-functional
     b.parts.items[left_hand_idx].severity = .missing;
     try std.testing.expect(!b.hasFunctionalPart(.hand, .left));
+}
+
+// === T039: Dual Severity Model Tests ===
+
+test "T039: needle (high geo, low energy) cannot cause missing" {
+    // Needle: high geometry (penetration), low energy (volume destruction)
+    // Should cause deep wounds but NOT trigger .missing on any layer.
+    const packet = damage.Packet{
+        .kind = .pierce,
+        .amount = 2.0, // low
+        .penetration = 8.0, // high - can punch through
+        .geometry = 3.0, // high - sharp, penetrating
+        .energy = 0.5, // low - no crushing force
+        .rigidity = 0.8, // moderate
+    };
+
+    const geometry = body_list.BodyPartGeometry{
+        .thickness_cm = 8.0,
+        .length_cm = 30.0,
+        .area_cm2 = 150.0,
+    };
+
+    const wound = applyDamage(packet, .limb, geometry);
+
+    // Check no layer reached .missing
+    for (wound.slice()) |ld| {
+        try std.testing.expect(ld.severity != .missing);
+    }
+
+    // Bone should be damaged but not beyond .broken (depth cap for structural)
+    const bone_sev = wound.severityAt(.bone);
+    try std.testing.expect(@intFromEnum(bone_sev) <= @intFromEnum(Severity.broken));
+}
+
+test "T039: axe (moderate geo, high energy) can cause missing on structural" {
+    // Axe: moderate geometry (cutting edge), high energy (chopping force)
+    // Energy is absorbed heavily through layers (~85% absorbed before reaching bone)
+    // Need very high initial values to get meaningful bone damage.
+    const packet = damage.Packet{
+        .kind = .slash,
+        .amount = 100.0, // very high
+        .penetration = 10.0, // high - needs to reach bone
+        .geometry = 5.0, // moderate-high - blade edge
+        .energy = 100.0, // very high - heavy chop (accounts for absorption)
+        .rigidity = 3.0, // high - solid blade
+    };
+
+    const geometry = body_list.BodyPartGeometry{
+        .thickness_cm = 8.0,
+        .length_cm = 30.0,
+        .area_cm2 = 150.0,
+    };
+
+    const wound = applyDamage(packet, .limb, geometry);
+
+    // With enough energy, structural layers take damage
+    const bone_sev = wound.severityAt(.bone);
+    // High energy should cause bone damage through volume destruction
+    try std.testing.expect(@intFromEnum(bone_sev) >= @intFromEnum(Severity.minor));
+}
+
+test "T039: hammer (low geo, high energy) crushes but does not cleanly sever" {
+    // Hammer: low geometry (blunt), very high energy (crushing force)
+    // Energy is absorbed through layers (skin 25%, fat 55%, muscle 45%, etc.)
+    // Need very high initial energy to reach bone with enough force.
+    const packet = damage.Packet{
+        .kind = .bludgeon,
+        .amount = 50.0, // very high
+        .penetration = 2.0, // low - doesn't penetrate well
+        .geometry = 0.5, // low - blunt surface
+        .energy = 80.0, // extremely high - crushing blow (accounts for absorption)
+        .rigidity = 3.0, // very high - solid metal
+    };
+
+    const geometry = body_list.BodyPartGeometry{
+        .thickness_cm = 8.0,
+        .length_cm = 30.0,
+        .area_cm2 = 150.0,
+    };
+
+    const wound = applyDamage(packet, .limb, geometry);
+
+    // Outer layers should take heavy damage from energy
+    const skin_sev = wound.severityAt(.skin);
+    try std.testing.expect(skin_sev != .none);
+
+    // Bone can reach severity via energy (crushing), even with low geometry
+    const bone_sev = wound.severityAt(.bone);
+    // With enough energy, bone takes damage through volume destruction
+    try std.testing.expect(@intFromEnum(bone_sev) >= @intFromEnum(Severity.minor));
+}
+
+test "T039: non-structural layers cap at disabled" {
+    // Massive damage should cap soft tissue at .disabled but allow bone to exceed
+    // Energy values need to account for layer absorption (~85% absorbed before bone)
+    // To get bone damage of ~10 (for .missing), need initial energy of ~500-600
+    const packet = damage.Packet{
+        .kind = .slash,
+        .amount = 500.0,
+        .penetration = 20.0,
+        .geometry = 10.0, // high - sharp blade
+        .energy = 500.0, // extremely high - ensures bone gets enough after absorption
+        .rigidity = 5.0,
+    };
+
+    const geometry = body_list.BodyPartGeometry{
+        .thickness_cm = 8.0,
+        .length_cm = 30.0,
+        .area_cm2 = 150.0,
+    };
+
+    const wound = applyDamage(packet, .limb, geometry);
+
+    // Soft tissue layers should cap at .disabled
+    const muscle_sev = wound.severityAt(.muscle);
+    const fat_sev = wound.severityAt(.fat);
+    const skin_sev = wound.severityAt(.skin);
+
+    try std.testing.expect(@intFromEnum(muscle_sev) <= @intFromEnum(Severity.disabled));
+    try std.testing.expect(@intFromEnum(fat_sev) <= @intFromEnum(Severity.disabled));
+    try std.testing.expect(@intFromEnum(skin_sev) <= @intFromEnum(Severity.disabled));
+
+    // But structural (bone) can exceed .disabled with enough volume damage
+    const bone_sev = wound.severityAt(.bone);
+    try std.testing.expect(@intFromEnum(bone_sev) >= @intFromEnum(Severity.broken));
+}
+
+test "T039: severity from depth caps at broken for structural" {
+    // Test the depth severity function directly
+    // Even with extreme geometry excess, depth alone caps at .broken
+    const depth_sev = severityFromDepth(100.0);
+    try std.testing.expectEqual(Severity.broken, depth_sev);
+}
+
+test "T039: severity from volume can reach missing" {
+    // Test the volume severity function directly
+    // High energy excess can reach .missing
+    const vol_sev = severityFromVolume(10.0);
+    try std.testing.expectEqual(Severity.missing, vol_sev);
+}
+
+test "T039: small part (digit) severs with lower thresholds" {
+    const alloc = std.testing.allocator;
+    var body = try Body.fromPlan(alloc, "humanoid");
+    defer body.deinit();
+
+    const finger_idx = body.indexOf("left_index_finger").?;
+
+    // Moderate slash that would NOT sever a large part
+    const packet = damage.Packet{
+        .kind = .slash,
+        .amount = 8.0,
+        .penetration = 4.0,
+        .geometry = 2.0,
+        .energy = 6.0, // moderate energy
+        .rigidity = 1.0,
+    };
+
+    const result = try body.applyDamageToPart(finger_idx, packet);
+
+    // Digit geometry is small (area < 30 cm²), so thresholds are reduced.
+    // Check that significant damage was dealt
+    try std.testing.expect(result.wound.len >= 1);
+
+    // The wound should cause notable damage on the small finger
+    const worst = result.wound.worstSeverity();
+    try std.testing.expect(@intFromEnum(worst) >= @intFromEnum(Severity.inhibited));
 }

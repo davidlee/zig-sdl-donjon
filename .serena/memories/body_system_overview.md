@@ -44,6 +44,24 @@ Parts MUST be in topological order (parents before children) because:
    - Then **susceptibility** (post-shielding axes vs thresholds → layer damage)
    - Matches armour's 3-axis pattern per design doc §5.1
 
+## T039: Dual Severity Model
+Severity mapping distinguishes volume (energy) from depth (geometry):
+- `severityFromVolume(energy_excess)` - how much tissue destroyed
+- `severityFromDepth(geometry_excess)` - how deep the wound penetrates
+- `computeLayerSeverity()` combines them based on `is_structural` flag
+
+Rules:
+- **Non-structural layers** (muscle, fat, skin): max of volume/depth severity, capped at `.disabled`
+- **Structural layers** (bone, cartilage): volume drives severity; depth alone caps at `.broken`
+- `.missing` requires structural layer + sufficient volume damage
+- Small parts (area < 30 cm²) have reduced severing thresholds
+
+## Severing Logic
+`checkSevering(part, wound)` checks if a wound severs a part:
+- Requires structural damage + soft tissue damage (slash)
+- Pierce/bludgeon require structural `.missing` to sever
+- Small parts sever more easily (threshold reduction)
+
 ## Capability Queries
 - `effectiveIntegrity(idx)` - integrity factoring in parent chain
 - `graspStrength(idx)` - hand strength including finger count

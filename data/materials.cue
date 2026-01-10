@@ -9,6 +9,11 @@ package data
     name: string
     category: *"tissue" | "armour" | "weapon"
 
+    // Whether this material provides structural integrity (bone, cartilage).
+    // Structural layers use volume-based severity thresholds; non-structural
+    // layers cannot escalate to Severity.missing on their own.
+    is_structural: bool | *false
+
     // How well the layer shields what lies beneath it.
     shielding: {
         // Fraction of incoming Geometry it can redirect outright.
@@ -67,6 +72,7 @@ materials: {
         bone: #Material & {
             name: "bone"
             category: "tissue"
+            is_structural: true
             shielding: {
                 deflection: 0.25
                 absorption: 0.10
@@ -127,6 +133,7 @@ materials: {
         cartilage: #Material & {
             name: "cartilage"
             category: "tissue"
+            is_structural: true
             shielding: {
                 deflection: 0.15
                 absorption: 0.35

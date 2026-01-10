@@ -1137,6 +1137,7 @@ pub const TissueLayerDefinition = struct {
     energy_ratio: f32,
     rigidity_threshold: f32,
     rigidity_ratio: f32,
+    is_structural: bool,
 };
 
 pub const TissueTemplateDefinition = struct {
@@ -1162,6 +1163,7 @@ pub const GeneratedTissueTemplates = [_]TissueTemplateDefinition{
                 .energy_ratio = 0.9,
                 .rigidity_threshold = 0.02,
                 .rigidity_ratio = 0.95,
+                .is_structural = false,
             },
             .{
                 .material_id = "fat",
@@ -1175,6 +1177,7 @@ pub const GeneratedTissueTemplates = [_]TissueTemplateDefinition{
                 .energy_ratio = 0.8,
                 .rigidity_threshold = 0.02,
                 .rigidity_ratio = 0.9,
+                .is_structural = false,
             },
             .{
                 .material_id = "muscle",
@@ -1188,6 +1191,7 @@ pub const GeneratedTissueTemplates = [_]TissueTemplateDefinition{
                 .energy_ratio = 0.6,
                 .rigidity_threshold = 0.05,
                 .rigidity_ratio = 0.8,
+                .is_structural = false,
             },
             .{
                 .material_id = "bone",
@@ -1201,6 +1205,7 @@ pub const GeneratedTissueTemplates = [_]TissueTemplateDefinition{
                 .energy_ratio = 0.3,
                 .rigidity_threshold = 0.3,
                 .rigidity_ratio = 0.2,
+                .is_structural = true,
             },
             .{
                 .material_id = "cartilage",
@@ -1214,6 +1219,7 @@ pub const GeneratedTissueTemplates = [_]TissueTemplateDefinition{
                 .energy_ratio = 0.5,
                 .rigidity_threshold = 0.15,
                 .rigidity_ratio = 0.55,
+                .is_structural = true,
             },
         },
     },
@@ -1233,6 +1239,7 @@ pub const GeneratedTissueTemplates = [_]TissueTemplateDefinition{
                 .energy_ratio = 0.9,
                 .rigidity_threshold = 0.02,
                 .rigidity_ratio = 0.95,
+                .is_structural = false,
             },
             .{
                 .material_id = "tendon",
@@ -1246,6 +1253,7 @@ pub const GeneratedTissueTemplates = [_]TissueTemplateDefinition{
                 .energy_ratio = 0.6,
                 .rigidity_threshold = 0.15,
                 .rigidity_ratio = 0.5,
+                .is_structural = false,
             },
             .{
                 .material_id = "nerve",
@@ -1259,6 +1267,7 @@ pub const GeneratedTissueTemplates = [_]TissueTemplateDefinition{
                 .energy_ratio = 0.9,
                 .rigidity_threshold = 0.01,
                 .rigidity_ratio = 0.95,
+                .is_structural = false,
             },
             .{
                 .material_id = "bone",
@@ -1272,6 +1281,7 @@ pub const GeneratedTissueTemplates = [_]TissueTemplateDefinition{
                 .energy_ratio = 0.3,
                 .rigidity_threshold = 0.3,
                 .rigidity_ratio = 0.2,
+                .is_structural = true,
             },
             .{
                 .material_id = "cartilage",
@@ -1285,6 +1295,7 @@ pub const GeneratedTissueTemplates = [_]TissueTemplateDefinition{
                 .energy_ratio = 0.5,
                 .rigidity_threshold = 0.15,
                 .rigidity_ratio = 0.55,
+                .is_structural = true,
             },
         },
     },
@@ -1304,6 +1315,7 @@ pub const GeneratedTissueTemplates = [_]TissueTemplateDefinition{
                 .energy_ratio = 0.9,
                 .rigidity_threshold = 0.02,
                 .rigidity_ratio = 0.95,
+                .is_structural = false,
             },
             .{
                 .material_id = "fat",
@@ -1317,6 +1329,7 @@ pub const GeneratedTissueTemplates = [_]TissueTemplateDefinition{
                 .energy_ratio = 0.8,
                 .rigidity_threshold = 0.02,
                 .rigidity_ratio = 0.9,
+                .is_structural = false,
             },
             .{
                 .material_id = "cartilage",
@@ -1330,6 +1343,7 @@ pub const GeneratedTissueTemplates = [_]TissueTemplateDefinition{
                 .energy_ratio = 0.5,
                 .rigidity_threshold = 0.15,
                 .rigidity_ratio = 0.55,
+                .is_structural = true,
             },
             .{
                 .material_id = "muscle",
@@ -1343,6 +1357,7 @@ pub const GeneratedTissueTemplates = [_]TissueTemplateDefinition{
                 .energy_ratio = 0.6,
                 .rigidity_threshold = 0.05,
                 .rigidity_ratio = 0.8,
+                .is_structural = false,
             },
         },
     },
@@ -1362,6 +1377,7 @@ pub const GeneratedTissueTemplates = [_]TissueTemplateDefinition{
                 .energy_ratio = 0.9,
                 .rigidity_threshold = 0.02,
                 .rigidity_ratio = 0.95,
+                .is_structural = false,
             },
             .{
                 .material_id = "cartilage",
@@ -1375,6 +1391,7 @@ pub const GeneratedTissueTemplates = [_]TissueTemplateDefinition{
                 .energy_ratio = 0.5,
                 .rigidity_threshold = 0.15,
                 .rigidity_ratio = 0.55,
+                .is_structural = true,
             },
             .{
                 .material_id = "tendon",
@@ -1388,6 +1405,7 @@ pub const GeneratedTissueTemplates = [_]TissueTemplateDefinition{
                 .energy_ratio = 0.6,
                 .rigidity_threshold = 0.15,
                 .rigidity_ratio = 0.5,
+                .is_structural = false,
             },
             .{
                 .material_id = "bone",
@@ -1401,6 +1419,7 @@ pub const GeneratedTissueTemplates = [_]TissueTemplateDefinition{
                 .energy_ratio = 0.3,
                 .rigidity_threshold = 0.3,
                 .rigidity_ratio = 0.2,
+                .is_structural = true,
             },
             .{
                 .material_id = "nerve",
@@ -1414,6 +1433,7 @@ pub const GeneratedTissueTemplates = [_]TissueTemplateDefinition{
                 .energy_ratio = 0.9,
                 .rigidity_threshold = 0.01,
                 .rigidity_ratio = 0.95,
+                .is_structural = false,
             },
         },
     },
@@ -1433,6 +1453,7 @@ pub const GeneratedTissueTemplates = [_]TissueTemplateDefinition{
                 .energy_ratio = 0.9,
                 .rigidity_threshold = 0.02,
                 .rigidity_ratio = 0.95,
+                .is_structural = false,
             },
             .{
                 .material_id = "fat",
@@ -1446,6 +1467,7 @@ pub const GeneratedTissueTemplates = [_]TissueTemplateDefinition{
                 .energy_ratio = 0.8,
                 .rigidity_threshold = 0.02,
                 .rigidity_ratio = 0.9,
+                .is_structural = false,
             },
             .{
                 .material_id = "muscle",
@@ -1459,6 +1481,7 @@ pub const GeneratedTissueTemplates = [_]TissueTemplateDefinition{
                 .energy_ratio = 0.6,
                 .rigidity_threshold = 0.05,
                 .rigidity_ratio = 0.8,
+                .is_structural = false,
             },
             .{
                 .material_id = "tendon",
@@ -1472,6 +1495,7 @@ pub const GeneratedTissueTemplates = [_]TissueTemplateDefinition{
                 .energy_ratio = 0.6,
                 .rigidity_threshold = 0.15,
                 .rigidity_ratio = 0.5,
+                .is_structural = false,
             },
             .{
                 .material_id = "nerve",
@@ -1485,6 +1509,7 @@ pub const GeneratedTissueTemplates = [_]TissueTemplateDefinition{
                 .energy_ratio = 0.9,
                 .rigidity_threshold = 0.01,
                 .rigidity_ratio = 0.95,
+                .is_structural = false,
             },
             .{
                 .material_id = "bone",
@@ -1498,6 +1523,7 @@ pub const GeneratedTissueTemplates = [_]TissueTemplateDefinition{
                 .energy_ratio = 0.3,
                 .rigidity_threshold = 0.3,
                 .rigidity_ratio = 0.2,
+                .is_structural = true,
             },
         },
     },
@@ -1517,6 +1543,7 @@ pub const GeneratedTissueTemplates = [_]TissueTemplateDefinition{
                 .energy_ratio = 0.7,
                 .rigidity_threshold = 0.03,
                 .rigidity_ratio = 0.85,
+                .is_structural = false,
             },
         },
     },

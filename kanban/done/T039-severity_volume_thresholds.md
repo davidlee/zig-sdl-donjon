@@ -45,5 +45,60 @@ Created: 2026-01-10
 - Extra data might be needed (layer volumes, structural multipliers); ensure the CUE pipeline supports it without bloating authoring.
 - Need to communicate the new behaviour to downstream systems (trauma, bleeding, UI) so they can reuse the improved severity signals.
 
+## Design Decisions (2026-01-10)
+
+### Dual Severity Model (Option A)
+Separate severity curves for **volume** (energy-derived) and **depth** (geometry-derived):
+
+- `severityFromVolume(energy_excess, is_structural)` – how much stuff is destroyed
+- `severityFromDepth(geometry_excess)` – how deep the wound penetrates
+
+Combination rules per layer:
+- Soft tissue: max of volume and depth severity, capped at `.disabled`
+- Structural tissue (bone, cartilage): volume curve drives severity; depth contributes but cannot alone reach `.missing`
+- `.missing` requires: structural layer AND volume severity ≥ `.broken`
+
+### Severing as Separate Check
+Severing is NOT just `Severity.missing` on a structural layer. It's a dedicated check:
+- Requires sufficient depth (geometry penetrated through) AND volume (structural material removed)
+- Small parts (digits) have lower volume thresholds for severing
+- Blunt trauma (high energy, low geometry) crushes but doesn't cleanly sever
+
+### Schema Changes
+Add `is_structural: bool` to `#Material` in `data/materials.cue`:
+- `bone`, `cartilage` → structural
+- `muscle`, `fat`, `skin`, `tendon`, `nerve`, `organ` → non-structural
+
+### Test Scenarios
+1. Needle (high geo, low energy) → deep puncture, max `.disabled`, no sever
+2. Axe (moderate geo, high energy) → can sever if structural threshold met
+3. Hammer (low geo, high energy) → `.broken` via crushing, no clean sever
+4. Small part (digit) → lower volume threshold for `.missing`/sever
+
+## Complication: Point vs Plane Geometries (Resolved)
+
+Concern: Geometry as a scalar can't distinguish needle (point) from scimitar (cutting plane) - both penetrate well but have very different severing potential.
+
+**Resolution:** `damage.Kind` already encodes this distinction. The existing `checkSevering` switches on kind:
+- **Slash** (edge/plane): severs at `structural ≥ broken` + `soft tissue ≥ disabled`
+- **Pierce** (point): severs only at `structural ≥ missing`
+- **Bludgeon** (blunt): severs only at `structural ≥ missing`
+
+No new fields needed. A scimitar slash and needle pierce may share similar geometry coefficients for penetration math, but their `damage.Kind` determines severing eligibility. The 3-axis model stays clean; severing logic uses kind as the implicit "contact shape" discriminator.
+
 ## Progress Log / Notes
 - 2026-01-10: Card created per `doc/reviews/critical_physics_review.md` §2.3.
+- 2026-01-10: Design decisions documented. Starting implementation.
+- 2026-01-10: Implementation complete.
+  - Added `is_structural: bool` to `#Material` in CUE schema (bone, cartilage = true)
+  - Generator updated to pass `is_structural` through to Zig
+  - `TissueLayerMaterial` extended with `is_structural` field
+  - Implemented dual severity functions: `severityFromVolume()` and `severityFromDepth()`
+  - `computeLayerSeverity()` combines volume and depth with structural/non-structural rules
+  - Non-structural layers cap at `.disabled` regardless of damage
+  - Structural layers use volume for `.missing` escalation; depth caps at `.broken`
+  - `checkSevering()` updated with small-part threshold adjustment (area < 30 cm²)
+  - Added 7 T039-specific tests covering needle/axe/hammer scenarios + soft tissue cap
+  - All tests pass; `just check` clean
+
+- Design complication added.

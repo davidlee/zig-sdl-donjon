@@ -1,0 +1,60 @@
+ ---
+  T039 Preflight Summary
+
+  Problem: severityFromDamage maps a scalar amount to severity via fixed thresholds. A needle (high geometry, low energy) can generate high layer_damage via geo_excess * geo_ratio, exceeding 8.0 → Severity.missing. Result: needle to the arm = "missing arm".
+
+  Current pipeline:
+  applyDamage() →  layer_damage = Σ(axis_excess × axis_ratio)  →  severityFromDamage(scalar)  →  LayerDamage{layer, severity}
+
+  Existing mitigations:
+  - Part.computeSeverity caps soft-tissue severity relative to structural (bone/cartilage). But severityFromDamage already escalates to .missing at the layer level before this cap.
+
+  ---
+  Key Design Questions
+
+  1. What distinguishes "missing" from "broken"?
+  - The review suggests volume destroyed vs. depth penetrated
+  - Energy seems the right proxy for volume (bulk force dissipated)
+  - Geometry is penetration/cutting depth, not mass destruction
+  - Proposal: Severity.missing requires structural (bone) layer to reach high damage, AND sufficient energy-derived volume loss. Pure geometry cannot trigger .missing alone.
+
+  2. Where should volume/depth distinction live?
+  ┌───────────────┬──────────────────────────────────────────┬────────────────┬───────────┐
+  │    Option     │               Description                │      Pros      │   Cons    │
+  ├───────────────┼──────────────────────────────────────────┼────────────────┼───────────┤
+  │ A: Dual       │ severityFromVolume(energy_excess) vs     │ Clean          │ More code │
+  │ severity      │ severityFromDepth(geo_excess), combine   │ separation     │  paths    │
+  │ function      │                                          │                │           │
+  ├───────────────┼──────────────────────────────────────────┼────────────────┼───────────┤
+  │               │                                          │                │ Logic     │
+  │ B: Material   │ Add is_structural: bool to materials;    │ Minimal data   │ spread    │
+  │ flags         │ structural layers use volume curve       │ change         │ across    │
+  │               │                                          │                │ layers    │
+  ├───────────────┼──────────────────────────────────────────┼────────────────┼───────────┤
+  │ C:            │ Track volume_lost + penetration_depth in │ Reuses         │ More      │
+  │ Wound-level   │  Wound, recompute in                     │ existing       │ state to  │
+  │ tracking      │ Part.computeSeverity                     │ aggregation    │ carry     │
+  │               │                                          │ point          │           │
+  └───────────────┴──────────────────────────────────────────┴────────────────┴───────────┘
+  I'm leaning toward Option A - it keeps the physics semantics cleanest. The energy axis drives volume damage (amount of stuff destroyed), the geometry axis drives penetration damage (how deep). Both feed into per-layer severity but .missing requires the volume track.
+
+  3. Severing semantics?
+  - Clean cuts (high geo + moderate energy) might sever small parts
+  - Chops (moderate geo + high energy) sever larger parts
+  - Bludgeoning rarely severs cleanly
+  - Should severing be a separate check or part of the severity curve?
+
+  4. Test scenarios (from card):
+  - Needle → deep puncture, NOT "missing limb"
+  - Axe → possible severing if structural thresholds met
+  - Hammer → crushing/breaking but not clean sever
+
+  ---
+  My Assessment
+
+  The scope is moderate - the core change is making severityFromDamage axis-aware rather than purely scalar, and distinguishing volume (energy-derived) from depth (geometry-derived) for severity mapping. Data schema changes should be minimal (possibly a structural flag on materials, though we could infer it from existing categories).
+
+  Ready to proceed? I'd like your input on:
+  1. The volume-vs-depth model (Option A vs B vs C)
+  2. Severing semantics - separate mechanic or folded into severity?
+  3. Any edge cases you're particularly concerned about?

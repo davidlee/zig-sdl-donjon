@@ -70,6 +70,7 @@ fn buildTissueLayer(comptime def: *const TissueLayerDef) TissueLayerMaterial {
         .energy_ratio = def.energy_ratio,
         .rigidity_threshold = def.rigidity_threshold,
         .rigidity_ratio = def.rigidity_ratio,
+        .is_structural = def.is_structural,
     };
 }
 

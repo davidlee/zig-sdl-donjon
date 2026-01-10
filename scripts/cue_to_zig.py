@@ -701,6 +701,7 @@ def emit_tissue_templates(templates: Dict[str, Any]) -> str:
     lines.append("    energy_ratio: f32,")
     lines.append("    rigidity_threshold: f32,")
     lines.append("    rigidity_ratio: f32,")
+    lines.append("    is_structural: bool,")
     lines.append("};")
     lines.append("")
     lines.append("pub const TissueTemplateDefinition = struct {")
@@ -731,6 +732,8 @@ def emit_tissue_templates(templates: Dict[str, Any]) -> str:
             lines.append(f'                .energy_ratio = {zig_float(material_field(layer, "susceptibility", "energy_ratio"))},')
             lines.append(f'                .rigidity_threshold = {zig_float(material_field(layer, "susceptibility", "rigidity_threshold"))},')
             lines.append(f'                .rigidity_ratio = {zig_float(material_field(layer, "susceptibility", "rigidity_ratio"))},')
+            is_structural = layer.get("material", {}).get("is_structural", False)
+            lines.append(f'                .is_structural = {"true" if is_structural else "false"},')
             lines.append("            },")
         lines.append("        },")
         lines.append("    },")
@@ -1220,10 +1223,9 @@ def load_existing_technique_ids() -> Set[str]:
 def audit_weapons(
     weapons: List[Tuple[str, Dict[str, Any]]], report: AuditReport
 ) -> None:
-    """Audit weapon definitions for missing/zero derived fields."""
+    """Audit weapon definitions for missing/zero physics fields."""
     for weapon_id, data in weapons:
         report.weapon_ids.add(weapon_id)
-        phys = data.get("derived", {})
 
         entry = AuditEntry(
             dataset="weapons",
@@ -1231,33 +1233,33 @@ def audit_weapons(
             fields={
                 "name": data.get("name", ""),
                 "weight_kg": data.get("weight_kg", 0),
-                "length_m": data.get("length_m", 0),
+                "length_cm": data.get("length_cm", 0),
                 "balance": data.get("balance", 0),
-                "moment_of_inertia": phys.get("moment_of_inertia", 0),
-                "effective_mass": phys.get("effective_mass", 0),
-                "reference_energy_j": phys.get("reference_energy_j", 0),
-                "geometry_coeff": phys.get("geometry_coeff", 0),
-                "rigidity_coeff": phys.get("rigidity_coeff", 0),
+                "moment_of_inertia": data.get("moment_of_inertia", 0),
+                "effective_mass": data.get("effective_mass", 0),
+                "reference_energy_j": data.get("reference_energy_j", 0),
+                "geometry_coeff": data.get("geometry_coeff", 0),
+                "rigidity_coeff": data.get("rigidity_coeff", 0),
             },
         )
 
-        # Check for zero derived fields
-        if phys.get("moment_of_inertia", 0) == 0:
+        # Check for zero physics fields
+        if data.get("moment_of_inertia", 0) == 0:
             entry.warnings.append("moment_of_inertia is 0")
-        if phys.get("effective_mass", 0) == 0:
+        if data.get("effective_mass", 0) == 0:
             entry.warnings.append("effective_mass is 0")
-        if phys.get("reference_energy_j", 0) == 0:
+        if data.get("reference_energy_j", 0) == 0:
             entry.warnings.append("reference_energy_j is 0")
-        if phys.get("geometry_coeff", 0) == 0:
+        if data.get("geometry_coeff", 0) == 0:
             entry.warnings.append("geometry_coeff is 0")
-        if phys.get("rigidity_coeff", 0) == 0:
+        if data.get("rigidity_coeff", 0) == 0:
             entry.warnings.append("rigidity_coeff is 0")
 
         # Check for missing base data
         if data.get("weight_kg", 0) == 0:
             entry.warnings.append("weight_kg is 0 (base data)")
-        if data.get("length_m", 0) == 0:
-            entry.warnings.append("length_m is 0 (base data)")
+        if data.get("length_cm", 0) == 0:
+            entry.warnings.append("length_cm is 0 (base data)")
 
         report.add_entry(entry)
 

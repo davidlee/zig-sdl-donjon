@@ -35,7 +35,8 @@
       "Bash(cue vet:*)",
       "Bash(just generate)",
       "Bash(just new-card:*)",
-      "Bash(just:*)"
+      "Bash(just:*)",
+      "Skill(preflight)"
     ]
   }
 }

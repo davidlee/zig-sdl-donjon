@@ -1,6 +1,6 @@
 # Data Audit Report
 
-Generated: 2026-01-10 14:19:08
+Generated: 2026-01-10 18:36:49
 
 ## Summary
 
@@ -11,7 +11,7 @@ Generated: 2026-01-10 14:19:08
 | body_plans | 1 | 0 | 0 |
 | techniques | 14 | 14 | 0 |
 | tissue_templates | 6 | 0 | 0 |
-| weapons | 6 | 0 | 0 |
+| weapons | 12 | 0 | 0 |
 
 **STATUS: PASSED with warnings** - 14 warning(s)
 
@@ -22,11 +22,17 @@ Generated: 2026-01-10 14:19:08
 | ID | MoI | Eff.Mass | RefEnergy | Geometry | Rigidity |
 |----|-----|----------|-----------|----------|----------|
 | swords.knights_sword | 0.593 | 1.40 | 10.7 | 0.60 | 0.70 |
-| swords.arming_sword | 0.336 | 1.10 | 6.0 | 0.61 | 0.70 |
+| swords.falchion | 0.210 | 1.30 | 3.7 | 0.55 | 0.70 |
+| maces.horsemans_mace | 0.210 | 1.20 | 3.8 | 0.20 | 0.80 |
+| axes.footmans_axe | 0.570 | 1.80 | 10.3 | 0.60 | 0.65 |
+| axes.greataxe | 4.390 | 3.50 | 79.0 | 0.55 | 0.60 |
+| daggers.dirk | 0.003 | 0.40 | 0.1 | 0.70 | 0.60 |
+| polearms.spear | 2.880 | 2.00 | 9.0 | 0.75 | 0.50 |
+| shields.buckler | 0.046 | 1.50 | 0.8 | 0.10 | 0.80 |
 | improvised.fist_stone | 0.002 | 0.50 | 0.0 | 0.25 | 0.40 |
-| natural.fist | 0.002 | 0.50 | 0.0 | 0.15 | 0.30 |
-| natural.bite | 0.000 | 0.30 | 0.0 | 0.45 | 0.45 |
-| natural.headbutt | 0.010 | 1.00 | 0.0 | 0.10 | 0.50 |
+| natural.fist | 0.002 | 0.50 | 0.5 | 0.15 | 0.30 |
+| natural.bite | 0.001 | 0.30 | 0.3 | 0.45 | 0.45 |
+| natural.headbutt | 0.006 | 1.00 | 1.0 | 0.10 | 0.50 |
 
 ## Techniques
 
