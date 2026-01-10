@@ -66,7 +66,7 @@ pub const EventProcessor = struct {
     ) !void {
         if (source) |_| {
             // Pool clone: destroy it (idempotent)
-            self.world.card_registry.destroy(card_id);
+            self.world.action_registry.destroy(card_id);
         } else {
             // Hand card: add to discard if not already there
             if (!cs.isInZone(card_id, .discard) and !cs.isInZone(card_id, .exhaust)) {
@@ -214,7 +214,7 @@ pub const EventProcessor = struct {
         const cs = agent.combat_state orelse return; // No combat state = not in combat
 
         // Create card instance from template
-        const instance = try self.world.card_registry.create(template);
+        const instance = try self.world.action_registry.create(template);
 
         // Add to agent's hand
         try cs.hand.append(cs.alloc, instance.id);
@@ -342,7 +342,7 @@ pub const EventProcessor = struct {
                         for (enc.enemies.items) |mob| {
                             if (enc.stateForConst(mob.id)) |enc_state| {
                                 for (enc_state.current.timeline.slots()) |slot| {
-                                    if (self.world.card_registry.get(slot.play.action)) |instance| {
+                                    if (self.world.action_registry.get(slot.play.action)) |instance| {
                                         log("cards in play (mob): {s}\n", .{instance.template.name});
                                     }
                                 }

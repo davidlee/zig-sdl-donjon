@@ -1,5 +1,7 @@
 # Physical Properties Unification
 
+**Solution:** [Physical Interface Design](../artefacts/physical_interface_design.md)
+
 ## Context
 
 Multiple systems model physical properties of things:

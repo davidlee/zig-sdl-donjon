@@ -30,7 +30,7 @@ pub fn setupEncounter(world: *World) !void {
     wpn1.template = weapon_list.byName("falchion");
     mob1.weapons = mob1.weapons.withEquipped(.{ .single = wpn1 });
 
-    var card_ids1 = try world.card_registry.createFromTemplatePtrs(&Templates, 5);
+    var card_ids1 = try world.action_registry.createFromTemplatePtrs(&Templates, 5);
     defer card_ids1.deinit(world.alloc);
     for (card_ids1.items) |id| {
         try mob1.always_available.append(world.alloc, id);
@@ -52,7 +52,7 @@ pub fn setupEncounter(world: *World) !void {
     wpn2.template = weapon_list.byName("spear");
     mob2.weapons = mob2.weapons.withEquipped(.{ .single = wpn2 });
 
-    var card_ids2 = try world.card_registry.createFromTemplatePtrs(&Templates, 5);
+    var card_ids2 = try world.action_registry.createFromTemplatePtrs(&Templates, 5);
     defer card_ids2.deinit(world.alloc);
     for (card_ids2.items) |id| {
         try mob2.always_available.append(world.alloc, id);

@@ -26,7 +26,7 @@ fn executeAgentManoeuvres(world: *World, actor: *combat.Agent, enc: *combat.Enco
     const enc_state = enc.stateFor(actor.id) orelse return;
 
     for (enc_state.current.slots()) |slot| {
-        const card = world.card_registry.get(slot.play.action) orelse continue;
+        const card = world.action_registry.get(slot.play.action) orelse continue;
 
         // Only process manoeuvre cards
         if (!card.template.tags.manoeuvre) continue;

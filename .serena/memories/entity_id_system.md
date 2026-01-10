@@ -53,7 +53,7 @@ pub fn getEntity(self: *World, id: lib.entity.ID) ?Entity
 ```
 
 ## Current Registries
-- `world.card_registry` → SlotMap with `.action`
+- `world.action_registry: ActionRegistry` → SlotMap with `.action`
 - `world.entities.agents` → SlotMap with `.agent`
 - `world.entities.weapons` → SlotMap with `.weapon`
 

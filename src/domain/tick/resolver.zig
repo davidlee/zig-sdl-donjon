@@ -70,16 +70,16 @@ pub const TickResolver = struct {
         for (enc_state.current.slots()) |slot| {
             const play = slot.play;
 
-            // Look up card via card_registry (new system)
-            const card_instance = w.card_registry.get(play.action) orelse continue;
+            // Look up card via action_registry (new system)
+            const card_instance = w.action_registry.get(play.action) orelse continue;
             const template = card_instance.template;
             const tech_expr = template.getTechniqueWithExpression() orelse continue;
 
             // Recalculate duration from current play state (includes modifier effects)
-            const duration = combat.getPlayDuration(play, &w.card_registry);
+            const duration = combat.getPlayDuration(play, &w.action_registry);
 
             // Resolve weapon from play's channels
-            const channels = combat.getPlayChannels(play, &w.card_registry);
+            const channels = combat.getPlayChannels(play, &w.action_registry);
             const weapon_template = if (player.weaponForChannel(channels)) |ref|
                 ref.template()
             else
@@ -113,7 +113,7 @@ pub const TickResolver = struct {
         const world_ref = w orelse return;
         const enc = world_ref.encounter orelse return;
         const enc_state = enc.stateFor(mob.id) orelse return;
-        const registry = &world_ref.card_registry;
+        const registry = &world_ref.action_registry;
 
         for (enc_state.current.slots()) |slot| {
             const play = slot.play;
@@ -256,7 +256,7 @@ pub const TickResolver = struct {
                 // Compute defender's combat state (stationary, flanking)
                 const defender_computed = if (w.encounter) |enc| blk: {
                     const is_stationary = if (enc.stateFor(defender.id)) |state|
-                        !combat.hasFootworkInTimeline(&state.current.timeline, &w.card_registry)
+                        !combat.hasFootworkInTimeline(&state.current.timeline, &w.action_registry)
                     else
                         true; // No timeline = stationary
 

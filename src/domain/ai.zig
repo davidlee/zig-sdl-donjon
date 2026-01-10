@@ -90,7 +90,7 @@ fn createPlayForInPlayCard(
         .target = target,
         .source = play_result.source,
         .added_in_phase = .selection,
-    }, &w.card_registry);
+    }, &w.action_registry);
 }
 
 pub const SimpleDeckDirector = struct {
@@ -108,9 +108,9 @@ pub const SimpleDeckDirector = struct {
         var hand_index: usize = 0;
         while (to_play > 0 and hand_index < cs.hand.items.len) : (hand_index += 1) {
             const card_id = cs.hand.items[hand_index];
-            const card = w.card_registry.get(card_id) orelse continue;
+            const card = w.action_registry.get(card_id) orelse continue;
             if (apply.isCardSelectionValid(agent, card, w.encounter)) {
-                const play_result = try apply.playValidCardReservingCosts(&w.events, agent, card, &w.card_registry, null);
+                const play_result = try apply.playValidCardReservingCosts(&w.events, agent, card, &w.action_registry, null);
                 createPlayForInPlayCard(agent, play_result, null, w) catch |err| switch (err) {
                     error.Conflict => continue, // card conflicts with timeline, skip it
                     else => return err,
@@ -147,11 +147,11 @@ pub const PoolDirector = struct {
             const r2 = try w.drawRandom(.combat);
             const idx = @as(usize, @intFromFloat(r2 * @as(f32, @floatFromInt(available.len))));
             const card_id = available[idx];
-            const card = w.card_registry.get(card_id) orelse continue;
+            const card = w.action_registry.get(card_id) orelse continue;
 
             // Check if playable (not on cooldown, meets requirements)
             if (apply.isCardSelectionValid(agent, card, w.encounter)) {
-                const play_result = try apply.playValidCardReservingCosts(&w.events, agent, card, &w.card_registry, null);
+                const play_result = try apply.playValidCardReservingCosts(&w.events, agent, card, &w.action_registry, null);
                 createPlayForInPlayCard(agent, play_result, null, w) catch |err| switch (err) {
                     error.Conflict => continue, // card conflicts with timeline, skip it
                     else => return err,

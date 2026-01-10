@@ -150,7 +150,7 @@ pub fn resolvePlayTargetIDs(
     actor: *const Agent,
     world: *const World,
 ) !?[]const entity.ID {
-    const card = world.card_registry.getConst(play.action) orelse return null;
+    const card = world.action_registry.getConst(play.action) orelse return null;
     if (!card.template.tags.offensive) return null;
 
     // Get target query from card's technique expression
@@ -412,8 +412,8 @@ fn playMatchesPredicate(
     predicate: cards.Predicate,
     world: *const World,
 ) bool {
-    // Look up card via card_registry (new system)
-    const card = world.card_registry.getConst(play.action) orelse return false;
+    // Look up card via action_registry (new system)
+    const card = world.action_registry.getConst(play.action) orelse return false;
 
     // For play predicates, we only support tag checking for now
     return switch (predicate) {
@@ -575,13 +575,13 @@ test "getModifierTargetPredicate returns null for non-modifier" {
 }
 
 test "canModifierAttachToPlay validates offensive tag match" {
-    // Setup: need a World with card_registry containing an offensive play
+    // Setup: need a World with action_registry containing an offensive play
     var wrld = try w.World.init(testing.allocator);
     defer wrld.deinit();
 
     // Create a play with an offensive action card (thrust)
     const thrust_template = card_list.byName("thrust");
-    const thrust_card = try wrld.card_registry.create(thrust_template);
+    const thrust_card = try wrld.action_registry.create(thrust_template);
     var play = combat.Play{ .action = thrust_card.id };
 
     // High modifier targets offensive plays
@@ -597,7 +597,7 @@ test "canModifierAttachToPlay rejects non-offensive play" {
 
     // Create a play with a non-offensive action card (parry is defensive)
     const parry_template = card_list.byName("parry");
-    const parry_card = try wrld.card_registry.create(parry_template);
+    const parry_card = try wrld.action_registry.create(parry_template);
     var play = combat.Play{ .action = parry_card.id };
 
     // High modifier targets offensive plays - should reject defensive

@@ -136,7 +136,7 @@ fn validateCards(
     // Hand cards
     if (player.combat_state) |cs| {
         for (cs.hand.items) |card_id| {
-            const inst = world.card_registry.getConst(card_id) orelse continue;
+            const inst = world.action_registry.getConst(card_id) orelse continue;
             const playable = validation.validateCardSelection(player, inst, phase, encounter) catch false;
             const has_targets = targeting.hasAnyValidTarget(inst, player, world);
             try snapshot.card_statuses.put(card_id, .{
@@ -150,7 +150,7 @@ fn validateCards(
         if (encounter.stateForConst(player.id)) |enc_state| {
             for (enc_state.current.timeline.slots()) |slot| {
                 // Action card
-                const action_inst = world.card_registry.getConst(slot.play.action) orelse continue;
+                const action_inst = world.action_registry.getConst(slot.play.action) orelse continue;
                 const action_playable = validation.validateCardSelection(player, action_inst, phase, encounter) catch false;
                 const action_has_targets = targeting.hasAnyValidTarget(action_inst, player, world);
                 try snapshot.card_statuses.put(slot.play.action, .{
@@ -161,7 +161,7 @@ fn validateCards(
 
                 // Modifier cards
                 for (slot.play.modifiers()) |mod| {
-                    const mod_inst = world.card_registry.getConst(mod.card_id) orelse continue;
+                    const mod_inst = world.action_registry.getConst(mod.card_id) orelse continue;
                     const mod_playable = validation.validateCardSelection(player, mod_inst, phase, encounter) catch false;
                     // Modifiers don't have range requirements themselves
                     try snapshot.card_statuses.put(mod.card_id, .{
@@ -176,7 +176,7 @@ fn validateCards(
 
     // Always-available techniques
     for (player.always_available.items) |card_id| {
-        const inst = world.card_registry.getConst(card_id) orelse continue;
+        const inst = world.action_registry.getConst(card_id) orelse continue;
         const playable = validation.validateCardSelection(player, inst, phase, encounter) catch false;
         const has_targets = targeting.hasAnyValidTarget(inst, player, world);
         try snapshot.card_statuses.put(card_id, .{
@@ -188,7 +188,7 @@ fn validateCards(
 
     // Spells known
     for (player.spells_known.items) |card_id| {
-        const inst = world.card_registry.getConst(card_id) orelse continue;
+        const inst = world.action_registry.getConst(card_id) orelse continue;
         const playable = validation.validateCardSelection(player, inst, phase, encounter) catch false;
         const has_targets = targeting.hasAnyValidTarget(inst, player, world);
         try snapshot.card_statuses.put(card_id, .{
@@ -262,7 +262,7 @@ fn checkModifierAgainstPlays(
     slots: []const combat.TimeSlot,
     world: *const World,
 ) !void {
-    const inst = world.card_registry.getConst(card_id) orelse return;
+    const inst = world.action_registry.getConst(card_id) orelse return;
     if (inst.template.kind != .modifier) return;
 
     for (slots, 0..) |slot, play_index| {

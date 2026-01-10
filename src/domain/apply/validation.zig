@@ -45,8 +45,8 @@ pub fn canPlayerPlayCard(world: *World, card_id: entity.ID) bool {
     const phase = world.turnPhase() orelse return false;
     const player = world.player;
 
-    // Look up card via card_registry (new system)
-    const card = world.card_registry.get(card_id) orelse return false;
+    // Look up card via action_registry (new system)
+    const card = world.action_registry.get(card_id) orelse return false;
 
     // Check if any dud card in hand blocks this play attempt
     if (checkOnPlayAttemptBlockers(player, card.template, world) != null) {
@@ -113,7 +113,7 @@ pub fn validateCardSelection(
 
 /// Check if a play can be withdrawn.
 /// Requires: no modifiers attached AND card is not involuntary.
-pub fn canWithdrawPlay(play: *const combat.Play, registry: *const w.CardRegistry) bool {
+pub fn canWithdrawPlay(play: *const combat.Play, registry: *const w.ActionRegistry) bool {
     // Cannot withdraw if modifiers are attached (would need to unstack them first)
     if (play.modifier_stack_len > 0) return false;
 
@@ -219,7 +219,7 @@ pub fn checkOnPlayAttemptBlockers(
 
     // Iterate all cards in hand
     for (cs.hand.items) |hand_card_id| {
-        const hand_card = world.card_registry.getConst(hand_card_id) orelse continue;
+        const hand_card = world.action_registry.getConst(hand_card_id) orelse continue;
 
         // Check each rule on the hand card
         for (hand_card.template.rules) |rule| {
@@ -390,7 +390,7 @@ test "compareReach operators" {
 }
 
 test "canWithdrawPlay returns true for play with no modifiers" {
-    var registry = try w.CardRegistry.init(testing.allocator);
+    var registry = try w.ActionRegistry.init(testing.allocator);
     defer registry.deinit();
 
     var play = combat.Play{
@@ -400,7 +400,7 @@ test "canWithdrawPlay returns true for play with no modifiers" {
 }
 
 test "canWithdrawPlay returns false for play with modifiers attached" {
-    var registry = try w.CardRegistry.init(testing.allocator);
+    var registry = try w.ActionRegistry.init(testing.allocator);
     defer registry.deinit();
 
     var play = combat.Play{
@@ -411,7 +411,7 @@ test "canWithdrawPlay returns false for play with modifiers attached" {
 }
 
 test "canWithdrawPlay returns false for involuntary cards" {
-    var registry = try w.CardRegistry.init(testing.allocator);
+    var registry = try w.ActionRegistry.init(testing.allocator);
     defer registry.deinit();
 
     // Create an involuntary card template
@@ -439,7 +439,7 @@ test "canWithdrawPlay returns false for involuntary cards" {
 }
 
 test "canWithdrawPlay returns true for non-involuntary cards with no modifiers" {
-    var registry = try w.CardRegistry.init(testing.allocator);
+    var registry = try w.ActionRegistry.init(testing.allocator);
     defer registry.deinit();
 
     // Create a normal card template

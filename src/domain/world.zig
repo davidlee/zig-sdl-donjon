@@ -63,13 +63,13 @@ pub const ItemRegistry = struct {
 };
 
 /// Central registry for all card instances. Containers (Agent, Encounter) hold IDs.
-pub const CardRegistry = struct {
+pub const ActionRegistry = struct {
     alloc: std.mem.Allocator,
     entities: SlotMap(*cards.Instance),
     // Tracks indices whose memory was freed via destroy() (not just removed)
     destroyed_indices: std.AutoHashMap(u32, void),
 
-    pub fn init(alloc: std.mem.Allocator) !CardRegistry {
+    pub fn init(alloc: std.mem.Allocator) !ActionRegistry {
         return .{
             .alloc = alloc,
             .entities = try SlotMap(*cards.Instance).init(alloc, .action),
@@ -77,7 +77,7 @@ pub const CardRegistry = struct {
         };
     }
 
-    pub fn deinit(self: *CardRegistry) void {
+    pub fn deinit(self: *ActionRegistry) void {
         // Free only instances that weren't already destroyed via destroy()
         for (self.entities.items.items, 0..) |instance, i| {
             if (!self.destroyed_indices.contains(@intCast(i))) {
@@ -89,7 +89,7 @@ pub const CardRegistry = struct {
     }
 
     /// Create a new card instance from a template
-    pub fn create(self: *CardRegistry, template: *const cards.Template) !*cards.Instance {
+    pub fn create(self: *ActionRegistry, template: *const cards.Template) !*cards.Instance {
         const instance = try self.alloc.create(cards.Instance);
         const id = try self.entities.insert(instance);
         instance.* = .{ .id = id, .template = template };
@@ -97,13 +97,13 @@ pub const CardRegistry = struct {
     }
 
     /// Look up a card instance by ID (mutable)
-    pub fn get(self: *CardRegistry, id: lib.entity.ID) ?*cards.Instance {
+    pub fn get(self: *ActionRegistry, id: lib.entity.ID) ?*cards.Instance {
         const ptr = self.entities.get(id) orelse return null;
         return ptr.*;
     }
 
     /// Look up a card instance by ID (const)
-    pub fn getConst(self: *const CardRegistry, id: lib.entity.ID) ?*const cards.Instance {
+    pub fn getConst(self: *const ActionRegistry, id: lib.entity.ID) ?*const cards.Instance {
         const ptr = self.entities.getConst(id) orelse return null;
         return ptr.*;
     }
@@ -119,20 +119,20 @@ pub const CardRegistry = struct {
     ///
     /// TODO: If memory becomes an issue, implement destroyAndFree with
     /// tracking to avoid double-free in deinit.
-    pub fn remove(self: *CardRegistry, id: lib.entity.ID) void {
+    pub fn remove(self: *ActionRegistry, id: lib.entity.ID) void {
         self.entities.remove(id);
     }
 
     /// Clone an existing card instance, returning a new instance with fresh ID.
     /// Used for ephemeral copies when playing pool cards (always_available, spells_known).
-    pub fn clone(self: *CardRegistry, id: lib.entity.ID) !*cards.Instance {
+    pub fn clone(self: *ActionRegistry, id: lib.entity.ID) !*cards.Instance {
         const original = self.get(id) orelse return error.CardNotFound;
         return self.create(original.template);
     }
 
     /// Remove and free a card instance immediately.
     /// Used for ephemeral copies after resolution.
-    pub fn destroy(self: *CardRegistry, id: lib.entity.ID) void {
+    pub fn destroy(self: *ActionRegistry, id: lib.entity.ID) void {
         if (self.entities.get(id)) |ptr| {
             const instance = ptr.*;
             self.entities.remove(id);
@@ -144,7 +144,7 @@ pub const CardRegistry = struct {
     /// Create cards from templates and return their IDs.
     /// Used to populate Agent.deck_cards.
     pub fn createFromTemplates(
-        self: *CardRegistry,
+        self: *ActionRegistry,
         templates: []const cards.Template,
         copies_per_template: usize,
     ) !std.ArrayList(lib.entity.ID) {
@@ -166,7 +166,7 @@ pub const CardRegistry = struct {
     /// Create cards from template pointers and return their IDs.
     /// Used for arrays of template pointers.
     pub fn createFromTemplatePtrs(
-        self: *CardRegistry,
+        self: *ActionRegistry,
         templates: []const *const cards.Template,
         copies_per_template: usize,
     ) !std.ArrayList(lib.entity.ID) {
@@ -237,7 +237,7 @@ pub const World = struct {
     random_impl: random.StreamRandomProvider,
     random_provider: random.RandomProvider,
     entities: EntityMap,
-    card_registry: CardRegistry,
+    action_registry: ActionRegistry,
     player: *combat.Agent,
     fsm: zigfsm.StateMachine(GameState, GameEvent, .splash),
     tickResolver: TickResolver,
@@ -266,7 +266,7 @@ pub const World = struct {
             .random_impl = random.StreamRandomProvider.init(),
             .random_provider = undefined, // set after struct init
             .entities = try EntityMap.init(alloc),
-            .card_registry = try CardRegistry.init(alloc),
+            .action_registry = try ActionRegistry.init(alloc),
             .player = undefined, // set after entities exist
             .fsm = fsm,
             .tickResolver = try TickResolver.init(alloc),
@@ -281,14 +281,14 @@ pub const World = struct {
         self.player = try player.newPlayer(alloc, self, &species.DWARF, playerStats);
 
         // Populate always_available with techniques (1 copy each)
-        var technique_ids = try self.card_registry.createFromTemplatePtrs(&BaseTechniques, 1);
+        var technique_ids = try self.action_registry.createFromTemplatePtrs(&BaseTechniques, 1);
         defer technique_ids.deinit(alloc);
         for (technique_ids.items) |id| {
             try self.player.always_available.append(alloc, id);
         }
 
         // Populate deck_cards from BeginnerDeck
-        var modifier_ids = try self.card_registry.createFromTemplatePtrs(&BeginnerDeck, 1);
+        var modifier_ids = try self.action_registry.createFromTemplatePtrs(&BeginnerDeck, 1);
         defer modifier_ids.deinit(alloc);
         for (modifier_ids.items) |id| {
             try self.player.deck_cards.append(alloc, id);
@@ -317,7 +317,7 @@ pub const World = struct {
         self.player.deinit();
 
         // Deinit card registry (frees all card instances)
-        self.card_registry.deinit();
+        self.action_registry.deinit();
 
         // Deinit entity containers (items already freed above)
         self.entities.deinit(self.alloc);
@@ -334,7 +334,7 @@ pub const World = struct {
     /// based on the ID's kind field.
     pub fn getEntity(self: *World, id: lib.entity.ID) ?Entity {
         return switch (id.kind) {
-            .action => if (self.card_registry.get(id)) |inst|
+            .action => if (self.action_registry.get(id)) |inst|
                 .{ .action = inst }
             else
                 null,
@@ -412,7 +412,7 @@ pub const World = struct {
         }
 
         // Cleanup: apply costs, move cards
-        try apply.applyCommittedCosts(self.tickResolver.committed.items, &self.events, &self.card_registry);
+        try apply.applyCommittedCosts(self.tickResolver.committed.items, &self.events, &self.action_registry);
 
         // Tick down and expire conditions
         try apply.tickConditions(self.player, &self.events);
@@ -447,9 +447,9 @@ pub const World = struct {
 // Tests
 // ============================================================================
 
-test "CardRegistry: create and lookup" {
+test "ActionRegistry: create and lookup" {
     const alloc = std.testing.allocator;
-    var registry = try CardRegistry.init(alloc);
+    var registry = try ActionRegistry.init(alloc);
     defer registry.deinit();
 
     // Use a test template
@@ -465,9 +465,9 @@ test "CardRegistry: create and lookup" {
     try std.testing.expectEqual(instance, found.?);
 }
 
-test "CardRegistry: remove invalidates ID" {
+test "ActionRegistry: remove invalidates ID" {
     const alloc = std.testing.allocator;
-    var registry = try CardRegistry.init(alloc);
+    var registry = try ActionRegistry.init(alloc);
     defer registry.deinit();
 
     const template = card_list.BeginnerDeck[0];
@@ -488,7 +488,7 @@ test "World.getEntity: dispatches to correct registry by kind" {
 
     // Test action lookup (cards)
     const template = card_list.BeginnerDeck[0];
-    const card_instance = try world.card_registry.create(template);
+    const card_instance = try world.action_registry.create(template);
     const card_id = card_instance.id;
 
     const action_entity = world.getEntity(card_id);

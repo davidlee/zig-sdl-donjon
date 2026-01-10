@@ -105,7 +105,7 @@ pub const Play = struct {
     }
 
     /// Compute effective cost multiplier from modifier stack + stored override.
-    pub fn effectiveCostMult(self: *const Play, registry: *const world.CardRegistry) f32 {
+    pub fn effectiveCostMult(self: *const Play, registry: *const world.ActionRegistry) f32 {
         var mult: f32 = 1.0;
         for (self.modifiers()) |entry| {
             const card = registry.getConst(entry.card_id) orelse continue;
@@ -117,7 +117,7 @@ pub const Play = struct {
     }
 
     /// Compute effective damage multiplier from modifier stack + stored override.
-    pub fn effectiveDamageMult(self: *const Play, registry: *const world.CardRegistry) f32 {
+    pub fn effectiveDamageMult(self: *const Play, registry: *const world.ActionRegistry) f32 {
         var mult: f32 = 1.0;
         for (self.modifiers()) |entry| {
             const card = registry.getConst(entry.card_id) orelse continue;
@@ -129,7 +129,7 @@ pub const Play = struct {
     }
 
     /// Compute effective height from modifier stack (last override wins).
-    pub fn effectiveHeight(self: *const Play, registry: *const world.CardRegistry, base: body.Height) body.Height {
+    pub fn effectiveHeight(self: *const Play, registry: *const world.ActionRegistry, base: body.Height) body.Height {
         var height = base;
         for (self.modifiers()) |entry| {
             const card = registry.getConst(entry.card_id) orelse continue;
@@ -142,7 +142,7 @@ pub const Play = struct {
 
     /// Check if adding a modifier would conflict with existing modifiers.
     /// Currently detects: conflicting height_override (e.g., Low + High).
-    pub fn wouldConflict(self: *const Play, new_modifier: *const cards.Template, registry: *const world.CardRegistry) bool {
+    pub fn wouldConflict(self: *const Play, new_modifier: *const cards.Template, registry: *const world.ActionRegistry) bool {
         const new_effect = getModifyPlayEffect(new_modifier) orelse return false;
         const new_height = new_effect.height_override orelse return false;
 
@@ -170,17 +170,17 @@ pub const TimeSlot = struct {
     play: Play,
 
     /// Compute duration from play's current state (includes modifier effects).
-    pub fn duration(self: TimeSlot, registry: *const world.CardRegistry) f32 {
+    pub fn duration(self: TimeSlot, registry: *const world.ActionRegistry) f32 {
         return getPlayDuration(self.play, registry);
     }
 
     /// Compute end time from play's current state.
-    pub fn timeEnd(self: TimeSlot, registry: *const world.CardRegistry) f32 {
+    pub fn timeEnd(self: TimeSlot, registry: *const world.ActionRegistry) f32 {
         return self.time_start + self.duration(registry);
     }
 
     /// Check if this slot overlaps with a time range.
-    pub fn overlapsWith(self: TimeSlot, start: f32, end: f32, registry: *const world.CardRegistry) bool {
+    pub fn overlapsWith(self: TimeSlot, start: f32, end: f32, registry: *const world.ActionRegistry) bool {
         return self.timeEnd(registry) > start and self.time_start < end;
     }
 };
@@ -220,7 +220,7 @@ pub const Timeline = struct {
         time_start: f32,
         time_end: f32,
         channels: cards.ChannelSet,
-        registry: *const world.CardRegistry,
+        registry: *const world.ActionRegistry,
     ) bool {
         if (self.slots_len >= max_slots) return false;
         if (time_end > 1.0) return false;
@@ -245,7 +245,7 @@ pub const Timeline = struct {
         time_end: f32,
         play: Play,
         channels: cards.ChannelSet,
-        registry: *const world.CardRegistry,
+        registry: *const world.ActionRegistry,
     ) error{ Conflict, Overflow }!void {
         const snapped_start = snap(time_start);
         const snapped_end = snapped_start + (time_end - time_start);
@@ -306,7 +306,7 @@ pub const Timeline = struct {
         self: *const Timeline,
         channels: cards.ChannelSet,
         duration: f32,
-        registry: *const world.CardRegistry,
+        registry: *const world.ActionRegistry,
     ) ?f32 {
         var candidate: f32 = 0.0;
         while (candidate + duration <= 1.0) {
@@ -322,7 +322,7 @@ pub const Timeline = struct {
     pub fn channelsOccupiedAt(
         self: *const Timeline,
         time: f32,
-        registry: *const world.CardRegistry,
+        registry: *const world.ActionRegistry,
     ) cards.ChannelSet {
         var occupied = cards.ChannelSet{};
         for (self.slots()) |slot| {
@@ -344,14 +344,14 @@ pub const Timeline = struct {
 // ============================================================================
 
 /// Get duration of a play from its card's time cost.
-pub fn getPlayDuration(play: Play, registry: *const world.CardRegistry) f32 {
+pub fn getPlayDuration(play: Play, registry: *const world.ActionRegistry) f32 {
     const card = registry.getConst(play.action) orelse return 0.0;
     return card.template.cost.time * play.effectiveCostMult(registry);
 }
 
 /// Get combined channels occupied by a play (lead card + modifiers).
 /// If the play has channel_override set, returns that instead of deriving from template.
-pub fn getPlayChannels(play: Play, registry: *const world.CardRegistry) cards.ChannelSet {
+pub fn getPlayChannels(play: Play, registry: *const world.ActionRegistry) cards.ChannelSet {
     // Explicit override takes precedence
     if (play.channel_override) |override| {
         return override;
@@ -398,7 +398,7 @@ pub fn getPlayChannels(play: Play, registry: *const world.CardRegistry) cards.Ch
 }
 
 /// Returns true if any play in the timeline uses the footwork channel.
-pub fn hasFootworkInTimeline(timeline: *const Timeline, registry: *const world.CardRegistry) bool {
+pub fn hasFootworkInTimeline(timeline: *const Timeline, registry: *const world.ActionRegistry) bool {
     for (timeline.slots()) |slot| {
         const channels = getPlayChannels(slot.play, registry);
         if (channels.footwork) return true;
@@ -437,7 +437,7 @@ pub const TurnState = struct {
     pub fn addPlay(
         self: *TurnState,
         play: Play,
-        registry: *const world.CardRegistry,
+        registry: *const world.ActionRegistry,
     ) error{ Overflow, Conflict, NoSpace }!void {
         // Check capacity first for clearer error
         if (self.timeline.slots_len >= Timeline.max_slots) return error.Overflow;
@@ -457,7 +457,7 @@ pub const TurnState = struct {
         self: *TurnState,
         play: Play,
         time_start: f32,
-        registry: *const world.CardRegistry,
+        registry: *const world.ActionRegistry,
     ) error{ Overflow, Conflict }!void {
         const channels = getPlayChannels(play, registry);
         const duration = getPlayDuration(play, registry);
@@ -615,7 +615,7 @@ test "Play.canStack false when added in commit phase" {
 }
 
 test "TurnState tracks plays and clears" {
-    var registry = try world.CardRegistry.init(testing.allocator);
+    var registry = try world.ActionRegistry.init(testing.allocator);
     defer registry.deinit();
 
     var state = TurnState{};
@@ -665,7 +665,7 @@ test "TurnHistory ring buffer evicts oldest" {
 }
 
 test "AgentEncounterState.endTurn pushes to history" {
-    var registry = try world.CardRegistry.init(testing.allocator);
+    var registry = try world.ActionRegistry.init(testing.allocator);
     defer registry.deinit();
 
     var state = AgentEncounterState{};
@@ -701,7 +701,7 @@ test "Play.addModifier overflow returns error" {
 }
 
 test "TurnState.addPlay overflow returns error" {
-    var registry = try world.CardRegistry.init(testing.allocator);
+    var registry = try world.ActionRegistry.init(testing.allocator);
     defer registry.deinit();
 
     var state = TurnState{};
@@ -718,7 +718,7 @@ test "TurnState.addPlay overflow returns error" {
 }
 
 test "TurnState.removePlay shifts remaining plays" {
-    var registry = try world.CardRegistry.init(testing.allocator);
+    var registry = try world.ActionRegistry.init(testing.allocator);
     defer registry.deinit();
 
     var state = TurnState{};
@@ -736,7 +736,7 @@ test "TurnState.removePlay shifts remaining plays" {
 }
 
 test "TurnState.removePlay handles out of bounds" {
-    var registry = try world.CardRegistry.init(testing.allocator);
+    var registry = try world.ActionRegistry.init(testing.allocator);
     defer registry.deinit();
 
     var state = TurnState{};
@@ -748,7 +748,7 @@ test "TurnState.removePlay handles out of bounds" {
 }
 
 test "TurnState.findPlayByCard returns correct index" {
-    var registry = try world.CardRegistry.init(testing.allocator);
+    var registry = try world.ActionRegistry.init(testing.allocator);
     defer registry.deinit();
 
     var state = TurnState{};
@@ -764,7 +764,7 @@ test "TurnState.findPlayByCard returns correct index" {
 }
 
 test "Play.wouldConflict detects conflicting height_override" {
-    var registry = try world.CardRegistry.init(testing.allocator);
+    var registry = try world.ActionRegistry.init(testing.allocator);
     defer registry.deinit();
 
     const card_list = @import("../card_list.zig");
@@ -784,7 +784,7 @@ test "Play.wouldConflict detects conflicting height_override" {
 }
 
 test "Play.wouldConflict allows same height_override" {
-    var registry = try world.CardRegistry.init(testing.allocator);
+    var registry = try world.ActionRegistry.init(testing.allocator);
     defer registry.deinit();
 
     const card_list = @import("../card_list.zig");
@@ -800,7 +800,7 @@ test "Play.wouldConflict allows same height_override" {
 }
 
 test "Play.wouldConflict allows non-conflicting modifiers" {
-    var registry = try world.CardRegistry.init(testing.allocator);
+    var registry = try world.ActionRegistry.init(testing.allocator);
     defer registry.deinit();
 
     const card_list = @import("../card_list.zig");
@@ -814,7 +814,7 @@ test "Play.wouldConflict allows non-conflicting modifiers" {
 }
 
 test "Play.wouldConflict returns false for empty modifier stack" {
-    var registry = try world.CardRegistry.init(testing.allocator);
+    var registry = try world.ActionRegistry.init(testing.allocator);
     defer registry.deinit();
 
     const card_list = @import("../card_list.zig");
@@ -826,7 +826,7 @@ test "Play.wouldConflict returns false for empty modifier stack" {
 }
 
 test "Timeline.canInsert allows non-overlapping same channel" {
-    var registry = try world.CardRegistry.init(testing.allocator);
+    var registry = try world.ActionRegistry.init(testing.allocator);
     defer registry.deinit();
 
     var timeline = Timeline{};
@@ -841,7 +841,7 @@ test "Timeline.canInsert allows non-overlapping same channel" {
 
 test "Timeline.canInsert rejects overlapping same channel" {
     const card_list = @import("../card_list.zig");
-    var registry = try world.CardRegistry.init(testing.allocator);
+    var registry = try world.ActionRegistry.init(testing.allocator);
     defer registry.deinit();
 
     // Register a real card with duration
@@ -860,7 +860,7 @@ test "Timeline.canInsert rejects overlapping same channel" {
 }
 
 test "Timeline.canInsert allows overlapping different channels" {
-    var registry = try world.CardRegistry.init(testing.allocator);
+    var registry = try world.ActionRegistry.init(testing.allocator);
     defer registry.deinit();
 
     var timeline = Timeline{};
@@ -876,7 +876,7 @@ test "Timeline.canInsert allows overlapping different channels" {
 
 test "Timeline.nextAvailableStart finds first gap" {
     const card_list = @import("../card_list.zig");
-    var registry = try world.CardRegistry.init(testing.allocator);
+    var registry = try world.ActionRegistry.init(testing.allocator);
     defer registry.deinit();
 
     // Register a real card with duration
@@ -898,7 +898,7 @@ test "Timeline.nextAvailableStart finds first gap" {
 
 test "Timeline.nextAvailableStart returns null when no space" {
     const card_list = @import("../card_list.zig");
-    var registry = try world.CardRegistry.init(testing.allocator);
+    var registry = try world.ActionRegistry.init(testing.allocator);
     defer registry.deinit();
 
     // Register a real card with duration
@@ -923,7 +923,7 @@ test "Timeline.nextAvailableStart returns null when no space" {
 }
 
 test "Timeline.insert snaps time_start to granularity" {
-    var registry = try world.CardRegistry.init(testing.allocator);
+    var registry = try world.ActionRegistry.init(testing.allocator);
     defer registry.deinit();
 
     var timeline = Timeline{};
@@ -936,7 +936,7 @@ test "Timeline.insert snaps time_start to granularity" {
 }
 
 test "TimeSlot.overlapsWith adjacent slots do not overlap" {
-    var registry = try world.CardRegistry.init(testing.allocator);
+    var registry = try world.ActionRegistry.init(testing.allocator);
     defer registry.deinit();
 
     const slot = TimeSlot{
@@ -951,7 +951,7 @@ test "TimeSlot.overlapsWith adjacent slots do not overlap" {
 
 test "TimeSlot.overlapsWith exact same range overlaps" {
     const card_list = @import("../card_list.zig");
-    var registry = try world.CardRegistry.init(testing.allocator);
+    var registry = try world.ActionRegistry.init(testing.allocator);
     defer registry.deinit();
 
     // Register a card with actual duration
@@ -969,7 +969,7 @@ test "TimeSlot.overlapsWith exact same range overlaps" {
 }
 
 test "hasFootworkInTimeline returns false when empty" {
-    var registry = try world.CardRegistry.init(testing.allocator);
+    var registry = try world.ActionRegistry.init(testing.allocator);
     defer registry.deinit();
 
     var timeline = Timeline{};
@@ -978,7 +978,7 @@ test "hasFootworkInTimeline returns false when empty" {
 
 test "hasFootworkInTimeline returns true when footwork card present" {
     const card_list = @import("../card_list.zig");
-    var registry = try world.CardRegistry.init(testing.allocator);
+    var registry = try world.ActionRegistry.init(testing.allocator);
     defer registry.deinit();
 
     // Create a footwork card (advance uses footwork channel)
@@ -994,7 +994,7 @@ test "hasFootworkInTimeline returns true when footwork card present" {
 
 test "hasFootworkInTimeline returns false when only weapon card present" {
     const card_list = @import("../card_list.zig");
-    var registry = try world.CardRegistry.init(testing.allocator);
+    var registry = try world.ActionRegistry.init(testing.allocator);
     defer registry.deinit();
 
     // Create a weapon card (thrust uses weapon channel)
@@ -1010,7 +1010,7 @@ test "hasFootworkInTimeline returns false when only weapon card present" {
 
 test "getPlayChannels returns channel_override when set" {
     const card_list = @import("../card_list.zig");
-    var registry = try world.CardRegistry.init(testing.allocator);
+    var registry = try world.ActionRegistry.init(testing.allocator);
     defer registry.deinit();
 
     // Create a weapon technique card

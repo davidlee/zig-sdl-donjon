@@ -547,7 +547,7 @@ pub const View = struct {
         return self.turn_phase == phase;
     }
 
-    // --- New query methods (use CombatState zones + card_registry) ---
+    // --- New query methods (use CombatState zones + action_registry) ---
 
     /// Dealt cards in player's hand
     pub fn handCards(self: *const View, alloc: std.mem.Allocator) []const CardViewData {
@@ -588,7 +588,7 @@ pub const View = struct {
         play_index: usize,
     ) ?PlayViewData {
         const play = &slot.play;
-        const action_inst = self.world.card_registry.getConst(play.action) orelse return null;
+        const action_inst = self.world.action_registry.getConst(play.action) orelse return null;
 
         var pvd = PlayViewData{
             .owner_id = owner.id,
@@ -596,13 +596,13 @@ pub const View = struct {
             .action = CardViewData.fromInstance(action_inst, .in_play, true, true),
             .stakes = play.effectiveStakes(),
             .time_start = slot.time_start,
-            .time_end = slot.timeEnd(&self.world.card_registry),
-            .channels = domain_combat.getPlayChannels(slot.play, &self.world.card_registry),
+            .time_end = slot.timeEnd(&self.world.action_registry),
+            .channels = domain_combat.getPlayChannels(slot.play, &self.world.action_registry),
         };
 
         // Add modifiers
         for (play.modifiers()) |entry| {
-            const mod_inst = self.world.card_registry.getConst(entry.card_id) orelse continue;
+            const mod_inst = self.world.action_registry.getConst(entry.card_id) orelse continue;
             pvd.modifier_stack_buf[pvd.modifier_stack_len] = CardViewData.fromInstance(mod_inst, .in_play, true, true);
             pvd.modifier_stack_len += 1;
         }
@@ -742,7 +742,7 @@ pub const View = struct {
         var count: usize = 0;
 
         for (ids) |id| {
-            const inst = self.world.card_registry.getConst(id) orelse continue;
+            const inst = self.world.action_registry.getConst(id) orelse continue;
             const playable = self.isCardPlayable(id);
             const has_targets = self.cardHasValidTargets(id);
             result[count] = CardViewData.fromInstance(inst, source, playable, has_targets);
@@ -866,7 +866,7 @@ pub const View = struct {
         new_cs.drag.?.is_valid_drop = false;
 
         // Get the dragged card
-        const card = self.world.card_registry.getConst(drag.id) orelse
+        const card = self.world.action_registry.getConst(drag.id) orelse
             return .{ .vs = vs.withCombat(new_cs) };
 
         if (self.inPhase(.commit_phase)) {
@@ -888,7 +888,7 @@ pub const View = struct {
                     return .{ .vs = vs.withCombat(new_cs) };
 
                 const play = &slots[play_index].play;
-                if (play.wouldConflict(card.template, &self.world.card_registry))
+                if (play.wouldConflict(card.template, &self.world.action_registry))
                     return .{ .vs = vs.withCombat(new_cs) };
 
                 new_cs.drag.?.target_play_index = play_index;
@@ -930,7 +930,7 @@ pub const View = struct {
     /// Selection phase cards use click-or-drag timing instead.
     fn shouldStartImmediateDrag(self: *const View, hit: HitResult) bool {
         const id = hit.cardId();
-        const card = self.world.card_registry.getConst(id) orelse return false;
+        const card = self.world.action_registry.getConst(id) orelse return false;
 
         // Only commit phase modifiers start drag immediately
         if (self.inPhase(.commit_phase)) {
@@ -942,12 +942,12 @@ pub const View = struct {
     /// Returns true if card can be dragged (used for visual feedback, not drag initiation).
     fn isCardDraggable(self: *const View, hit: HitResult) bool {
         const id = hit.cardId();
-        const card = self.world.card_registry.getConst(id) orelse return false;
+        const card = self.world.action_registry.getConst(id) orelse return false;
         _ = card;
 
         if (self.inPhase(.commit_phase)) {
             // Commit phase: only modifiers
-            return self.isCardPlayable(id) and self.world.card_registry.getConst(id).?.template.kind == .modifier;
+            return self.isCardPlayable(id) and self.world.action_registry.getConst(id).?.template.kind == .modifier;
         } else if (self.inPhase(.player_card_selection)) {
             // Selection phase: playable hand cards or timeline cards
             return switch (hit) {
@@ -1192,7 +1192,7 @@ pub const View = struct {
 
     /// Handle playing a card - checks if targeting is required
     fn playCard(self: *View, vs: ViewState, card_id: entity.ID, from_rect: Rect) InputResult {
-        const card = self.world.card_registry.getConst(card_id) orelse
+        const card = self.world.action_registry.getConst(card_id) orelse
             return self.startCardAnimation(vs, card_id, from_rect, null);
 
         if (card.template.requiresSingleTarget()) {
@@ -1215,7 +1215,7 @@ pub const View = struct {
     /// Commit phase: add a card from hand/available (costs 1 Focus).
     /// Prompts for target selection if card requires single target.
     fn commitAddCard(self: *View, vs: ViewState, card_id: entity.ID) InputResult {
-        const card = self.world.card_registry.getConst(card_id) orelse
+        const card = self.world.action_registry.getConst(card_id) orelse
             return .{ .command = .{ .commit_add = .{ .card_id = card_id } } };
 
         if (card.template.requiresSingleTarget()) {
@@ -1320,7 +1320,7 @@ pub const View = struct {
 
         // Render animating cards at their current interpolated position
         for (cs.activeAnimations()) |anim| {
-            if (self.world.card_registry.getConst(anim.card_id)) |card| {
+            if (self.world.action_registry.getConst(anim.card_id)) |card| {
                 // Compute destination lazily from timeline if not set
                 const to_rect = anim.to_rect orelse self.findCardRectInTimeline(anim.card_id, alloc);
                 const current_rect = if (to_rect) |dest|
@@ -1344,7 +1344,7 @@ pub const View = struct {
 
         // Render dragged card following cursor
         if (cs.drag) |drag| {
-            if (self.world.card_registry.getConst(drag.id)) |card| {
+            if (self.world.action_registry.getConst(drag.id)) |card| {
                 const dims = card_mod.Layout.defaultDimensions();
                 // Center card on cursor
                 const card_rect = Rect{

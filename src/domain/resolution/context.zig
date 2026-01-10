@@ -201,10 +201,10 @@ pub fn getOverlayBonuses(
 
     for (enc_state.current.slots()) |slot| {
         // Check time overlap
-        if (!slot.overlapsWith(time_start, time_end, &w.card_registry)) continue;
+        if (!slot.overlapsWith(time_start, time_end, &w.action_registry)) continue;
 
         // Get the card and check if it's a manoeuvre with overlay bonus
-        const card = w.card_registry.getConst(slot.play.action) orelse continue;
+        const card = w.action_registry.getConst(slot.play.action) orelse continue;
         if (!card.template.tags.manoeuvre) continue;
 
         // Get technique info for overlay bonus
@@ -255,7 +255,7 @@ fn makeTestAgent(
 
 fn findCardByName(w: *World, name: []const u8) ?entity.ID {
     for (w.player.always_available.items) |card_id| {
-        const card = w.card_registry.getConst(card_id) orelse continue;
+        const card = w.action_registry.getConst(card_id) orelse continue;
         if (std.mem.eql(u8, card.template.name, name)) {
             return card_id;
         }
@@ -293,7 +293,7 @@ test "getOverlayBonuses aggregates advance damage bonus" {
     // Add advance play (footwork channel, 0.3s duration)
     try enc_state.current.addPlay(
         .{ .action = advance_id, .target = null },
-        &w.card_registry,
+        &w.action_registry,
     );
 
     // Query overlay bonuses for offensive technique overlapping with advance
@@ -317,7 +317,7 @@ test "getOverlayBonuses aggregates sidestep to_hit bonus" {
 
     try enc_state.current.addPlay(
         .{ .action = sidestep_id, .target = null },
-        &w.card_registry,
+        &w.action_registry,
     );
 
     const result = getOverlayBonuses(w, w.player.id, 0.0, 0.5, true);
@@ -339,7 +339,7 @@ test "getOverlayBonuses aggregates retreat defense bonus" {
 
     try enc_state.current.addPlay(
         .{ .action = retreat_id, .target = null },
-        &w.card_registry,
+        &w.action_registry,
     );
 
     // Query for defensive overlay
@@ -364,13 +364,13 @@ test "getOverlayBonuses aggregates multiple overlapping manoeuvres" {
     // Add both manoeuvres (they use same footwork channel, so second goes after first)
     try enc_state.current.addPlay(
         .{ .action = advance_id, .target = null },
-        &w.card_registry,
+        &w.action_registry,
     );
     // Note: advance takes 0.3s, sidestep would start at 0.3 due to channel conflict
     // For this test, we'll check over the full timeline
     try enc_state.current.addPlay(
         .{ .action = sidestep_id, .target = null },
-        &w.card_registry,
+        &w.action_registry,
     );
 
     // Query over time window that covers both manoeuvres (0.0 to 1.0)

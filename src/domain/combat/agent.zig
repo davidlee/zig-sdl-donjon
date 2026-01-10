@@ -67,7 +67,7 @@ pub const Agent = struct {
     weapons: Armament,
     dominant_side: body.Side = .right, // .center == ambidextrous
 
-    // Card containers (IDs reference World.card_registry)
+    // Card containers (IDs reference World.action_registry)
     // See doc/card_storage_design.md for architecture
     // NOTE: Default to empty - use .init(alloc) pattern for non-test code
     always_available: std.ArrayList(entity.ID) = .{}, // Techniques/modifiers usable without drawing

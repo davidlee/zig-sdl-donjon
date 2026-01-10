@@ -595,7 +595,7 @@ test "AdvantageEffect.apply modifies engagement and balance" {
 
 fn findCardByName(w: *World, name: []const u8) ?entity.ID {
     for (w.player.always_available.items) |card_id| {
-        const card = w.card_registry.getConst(card_id) orelse continue;
+        const card = w.action_registry.getConst(card_id) orelse continue;
         if (std.mem.eql(u8, card.template.name, name)) {
             return card_id;
         }
@@ -619,7 +619,7 @@ test "resolveOutcome applies overlay to_hit_bonus from attacker manoeuvres" {
     // Find sidestep card (+5% to_hit) and add to player's timeline
     const sidestep_id = findCardByName(w, "sidestep") orelse return error.TestSkipped;
     const enc_state = w.encounter.?.stateFor(attacker.id) orelse return error.TestSkipped;
-    try enc_state.current.addPlay(.{ .action = sidestep_id }, &w.card_registry);
+    try enc_state.current.addPlay(.{ .action = sidestep_id }, &w.action_registry);
 
     const technique = &cards.Technique.byID(.thrust);
 

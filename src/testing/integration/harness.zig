@@ -133,7 +133,7 @@ pub const Harness = struct {
     /// Creates a new instance and adds to hand.
     pub fn giveCard(self: *Harness, agent: *Agent, comptime template_name: []const u8) !entity.ID {
         const template = card_list.byName(template_name);
-        const instance = try self.world.card_registry.create(template);
+        const instance = try self.world.action_registry.create(template);
 
         // Add to combat state hand
         const cs = agent.combat_state orelse return error.NoCombatState;
@@ -145,7 +145,7 @@ pub const Harness = struct {
     /// Find a card in player's always_available by name.
     pub fn findAlwaysAvailable(self: *Harness, name: []const u8) ?entity.ID {
         for (self.player().always_available.items) |id| {
-            if (self.world.card_registry.getConst(id)) |card| {
+            if (self.world.action_registry.getConst(id)) |card| {
                 if (std.mem.eql(u8, card.template.name, name)) {
                     return id;
                 }

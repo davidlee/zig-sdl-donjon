@@ -22,7 +22,7 @@ pub const CombatZone = enum {
 };
 
 /// Transient combat state - created per encounter, holds draw/hand/discard cycle.
-/// Card IDs reference World.card_registry.
+/// Card IDs reference World.action_registry.
 ///
 /// Note: "in_play" cards are tracked by the Timeline, not here. The CombatZone.in_play
 /// enum value exists for event semantics, but has no backing ArrayList.
@@ -163,7 +163,7 @@ pub const CombatState = struct {
         _: *CombatState,
         master_id: entity.ID,
         source_zone: plays.PlaySource.SourceZone,
-        registry: *world.CardRegistry,
+        registry: *world.ActionRegistry,
     ) !PoolCloneResult {
         const clone = try registry.clone(master_id);
         return .{

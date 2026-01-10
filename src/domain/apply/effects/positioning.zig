@@ -15,7 +15,7 @@ const random = @import("../../random.zig");
 const weapon = @import("../../weapon.zig");
 const world_mod = @import("../../world.zig");
 const World = world_mod.World;
-const CardRegistry = world_mod.CardRegistry;
+const ActionRegistry = world_mod.ActionRegistry;
 
 /// Type of footwork being attempted.
 pub const ManoeuvreType = enum {
@@ -136,7 +136,7 @@ pub fn resolveManoeuvreConflict(
 pub fn getAgentFootwork(
     agent: *const combat.Agent,
     enc: *const combat.Encounter,
-    registry: *const CardRegistry,
+    registry: *const ActionRegistry,
 ) ?ManoeuvreType {
     const enc_state = enc.stateForConst(agent.id) orelse return null;
 
@@ -198,8 +198,8 @@ pub fn resolvePositioningContests(world: *World) !void {
     for (enc.enemies.items) |enemy| {
         const engagement = enc.getEngagement(world.player.id, enemy.id) orelse continue;
 
-        const player_footwork = getAgentFootwork(world.player, enc, &world.card_registry) orelse .hold;
-        const enemy_footwork = getAgentFootwork(enemy, enc, &world.card_registry) orelse .hold;
+        const player_footwork = getAgentFootwork(world.player, enc, &world.action_registry) orelse .hold;
+        const enemy_footwork = getAgentFootwork(enemy, enc, &world.action_registry) orelse .hold;
 
         // Skip if both holding (no contest)
         if (player_footwork == .hold and enemy_footwork == .hold) continue;

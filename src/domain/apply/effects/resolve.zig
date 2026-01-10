@@ -119,12 +119,12 @@ pub fn executeResolvePhaseRules(world: *World, actor: *Agent) !void {
     // Iterate over plays in timeline - includes both action cards and modifiers
     for (enc_state.current.timeline.slots()) |slot| {
         // Process the action card's rules
-        const action_card = world.card_registry.get(slot.play.action) orelse continue;
+        const action_card = world.action_registry.get(slot.play.action) orelse continue;
         try executeCardResolveRules(action_card, actor, is_player, world);
 
         // Process modifier cards' rules
         for (slot.play.modifiers()) |mod_entry| {
-            const mod_card = world.card_registry.get(mod_entry.card_id) orelse continue;
+            const mod_card = world.action_registry.get(mod_entry.card_id) orelse continue;
             try executeCardResolveRules(mod_card, actor, is_player, world);
         }
     }

@@ -35,13 +35,13 @@ based on context. This works but:
 ### Key files
 
 - `src/entity.zig` - ID definition, EntityKind enum
-- `src/domain/world.zig` - CardRegistry, EntityMap, Entity union, ItemRegistry
+- `src/domain/world.zig` - ActionRegistry, EntityMap, Entity union, ItemRegistry
 - `src/domain/slot_map.zig` - Underlying storage with kind field
 
 ### Existing systems
 
 Registries now include kind:
-- `world.card_registry: CardRegistry` → `SlotMap(*cards.Instance)` with `.action`
+- `world.action_registry: ActionRegistry` → `SlotMap(*cards.Instance)` with `.action`
 - `world.entities.agents: *SlotMap(*combat.Agent)` with `.agent`
 - `world.entities.weapons: *SlotMap(*weapon.Instance)` with `.weapon`
 
@@ -98,3 +98,8 @@ errors as they arise.
 - Added `World.getEntity()` with `Entity` tagged union for polymorphic lookup
 - Added `ItemRegistry` placeholder for T048
 - All tests pass (`just check` green)
+
+2026-01-11: Follow-up naming consistency.
+- Renamed `CardRegistry` → `ActionRegistry`
+- Renamed `card_registry` → `action_registry` across codebase
+- Created T048 card for future `cards.zig` → `actions.zig` rename

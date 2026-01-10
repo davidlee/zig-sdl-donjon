@@ -11,7 +11,7 @@ const world = @import("../world.zig");
 
 const EventSystem = events.EventSystem;
 const Agent = combat.Agent;
-const CardRegistry = world.CardRegistry;
+const ActionRegistry = world.ActionRegistry;
 
 /// Finalize costs for all committed actions after tick resolution.
 /// - Converts committed stamina to spent
@@ -21,7 +21,7 @@ const CardRegistry = world.CardRegistry;
 pub fn applyCommittedCosts(
     committed: []const tick.CommittedAction,
     event_system: *EventSystem,
-    registry: *CardRegistry,
+    registry: *ActionRegistry,
 ) !void {
     for (committed) |action| {
         const card = action.card orelse continue;

@@ -52,7 +52,7 @@ pub fn playValidCardReservingCosts(
     evs: *EventSystem,
     actor: *Agent,
     card: *Instance,
-    registry: *w.CardRegistry,
+    registry: *w.ActionRegistry,
     target: ?entity.ID,
 ) !PlayResult {
     const cs = actor.combat_state orelse return error.InvalidGameState;
@@ -185,12 +185,12 @@ pub const CommandHandler = struct {
             return CommandError.CardNotInPlay;
         const play = enc_state.current.slots()[play_index].play;
 
-        const card = self.world.card_registry.get(id) orelse return CommandError.BadInvariant;
+        const card = self.world.action_registry.get(id) orelse return CommandError.BadInvariant;
 
         // Check play.source to determine lifecycle handling
         if (play.source) |source| {
             // Pool card clone - destroy it and clear cooldown
-            self.world.card_registry.destroy(id);
+            self.world.action_registry.destroy(id);
             // Refund cooldown on cancel
             _ = cs.cooldowns.remove(source.master_id);
             // Event uses master_id since clone is destroyed
@@ -225,7 +225,7 @@ pub const CommandHandler = struct {
         const enc_state = enc.stateFor(player.id) orelse return CommandError.BadInvariant;
 
         // Look up card instance
-        const card = self.world.card_registry.get(id) orelse return CommandError.BadInvariant;
+        const card = self.world.action_registry.get(id) orelse return CommandError.BadInvariant;
 
         // Check card is in hand or available
         if (!cs.isInZone(id, .hand) and !player.poolContains(id))
@@ -235,14 +235,14 @@ pub const CommandHandler = struct {
             return CommandError.InvalidGameState;
 
         if (try validation.validateCardSelection(player, card, turn_phase, self.world.encounter)) {
-            const play_result = try playValidCardReservingCosts(&self.world.events, player, card, &self.world.card_registry, target);
+            const play_result = try playValidCardReservingCosts(&self.world.events, player, card, &self.world.action_registry, target);
 
             try enc_state.current.addPlay(.{
                 .action = play_result.in_play_id,
                 .target = target,
                 .source = play_result.source,
                 .added_in_phase = .selection,
-            }, &self.world.card_registry);
+            }, &self.world.action_registry);
 
             // Auto-set primary target for player when playing a targeted card
             // (asymmetric mechanic - enemies don't use attention system)
@@ -274,7 +274,7 @@ pub const CommandHandler = struct {
 
         // Validate: play can be withdrawn (no modifiers, not involuntary)
         const play = &enc_state.current.slots()[play_index].play;
-        if (!validation.canWithdrawPlay(play, &self.world.card_registry))
+        if (!validation.canWithdrawPlay(play, &self.world.action_registry))
             return CommandError.CommandInvalid;
 
         // Validate: sufficient focus
@@ -284,7 +284,7 @@ pub const CommandHandler = struct {
         // All validation passed - apply changes
         _ = player.focus.spend(FOCUS_COST);
 
-        const card = self.world.card_registry.get(card_id) orelse return CommandError.BadInvariant;
+        const card = self.world.action_registry.get(card_id) orelse return CommandError.BadInvariant;
         player.stamina.uncommit(card.template.cost.stamina);
         player.time_available += card.template.cost.time;
 
@@ -313,7 +313,7 @@ pub const CommandHandler = struct {
             return CommandError.CardNotInHand;
 
         // Validate: card exists
-        const card = self.world.card_registry.get(card_id) orelse
+        const card = self.world.action_registry.get(card_id) orelse
             return CommandError.BadInvariant;
 
         // Validate: card selection rules (phase, costs, predicates)
@@ -328,7 +328,7 @@ pub const CommandHandler = struct {
         _ = player.focus.spend(FOCUS_COST);
 
         // Play card (move to in_play, commit stamina)
-        const play_result = try playValidCardReservingCosts(&self.world.events, player, card, &self.world.card_registry, target);
+        const play_result = try playValidCardReservingCosts(&self.world.events, player, card, &self.world.action_registry, target);
 
         // Add to plays (commit phase plays cannot be stacked)
         try enc_state.current.addPlay(.{
@@ -336,7 +336,7 @@ pub const CommandHandler = struct {
             .target = target,
             .added_in_phase = .commit,
             .source = play_result.source,
-        }, &self.world.card_registry);
+        }, &self.world.action_registry);
 
         // Auto-set primary target for player when playing a targeted card
         // (asymmetric mechanic - enemies don't use attention system)
@@ -416,11 +416,11 @@ pub const CommandHandler = struct {
             return CommandError.CardOnCooldown;
 
         // Look up stack card
-        const stack_card = self.world.card_registry.get(card_id) orelse
+        const stack_card = self.world.action_registry.get(card_id) orelse
             return CommandError.BadInvariant;
 
         // Look up action card
-        const action_card = self.world.card_registry.getConst(target_play.action) orelse
+        const action_card = self.world.action_registry.getConst(target_play.action) orelse
             return CommandError.BadInvariant;
 
         // Validate compatibility
@@ -434,7 +434,7 @@ pub const CommandHandler = struct {
             if (!try targeting.canModifierAttachToPlay(stack_card.template, target_play, self.world))
                 return CommandError.PredicateFailed;
 
-            if (target_play.wouldConflict(stack_card.template, &self.world.card_registry))
+            if (target_play.wouldConflict(stack_card.template, &self.world.action_registry))
                 return CommandError.ModifierConflict;
         } else {
             // Different template, not a modifier - invalid
@@ -466,7 +466,7 @@ pub const CommandHandler = struct {
         // Move card to in_play first - this creates a clone for pool cards
         // Returns the ID that ends up in play and source info
         // Modifiers don't target enemies
-        const play_result = try playValidCardReservingCosts(&self.world.events, player, stack_validation.stack_card, &self.world.card_registry, null);
+        const play_result = try playValidCardReservingCosts(&self.world.events, player, stack_validation.stack_card, &self.world.action_registry, null);
 
         // Add the in_play ID (clone if pool card) to modifier stack with source
         try target_play.addModifier(play_result.in_play_id, play_result.source);
@@ -507,7 +507,7 @@ pub const CommandHandler = struct {
 
         // Get the play data and current channels
         var play = enc_state.current.slots()[play_index].play;
-        const current_channels = combat.getPlayChannels(play, &self.world.card_registry);
+        const current_channels = combat.getPlayChannels(play, &self.world.action_registry);
 
         // Validate and apply channel override
         const target_channels = if (new_channel) |nc| blk: {
@@ -520,7 +520,7 @@ pub const CommandHandler = struct {
         } else current_channels;
 
         // Get duration and original time BEFORE removing
-        const duration = combat.getPlayDuration(play, &self.world.card_registry);
+        const duration = combat.getPlayDuration(play, &self.world.action_registry);
         const old_time_start = enc_state.current.slots()[play_index].time_start;
 
         // Remove from current position
@@ -532,7 +532,7 @@ pub const CommandHandler = struct {
             new_time_start + duration,
             play,
             target_channels,
-            &self.world.card_registry,
+            &self.world.action_registry,
         ) catch |err| {
             // Restore play at original position on failure
             // Reset channel_override if we changed it
@@ -544,7 +544,7 @@ pub const CommandHandler = struct {
                 old_time_start + duration,
                 play,
                 current_channels,
-                &self.world.card_registry,
+                &self.world.action_registry,
             ) catch {
                 // This shouldn't fail since we just removed it from there
                 return CommandError.BadInvariant;
