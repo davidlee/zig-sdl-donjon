@@ -205,6 +205,7 @@ pub const UX = struct {
             switch (r) {
                 .sprite => |sprite| try self.renderSprite(sprite),
                 .filled_rect => |fr| try self.renderFilledRect(fr),
+                .filled_triangle => |ft| try self.renderFilledTriangle(ft),
                 .card => |card| try self.renderCard(card),
                 .text => |text| try self.renderText(text),
                 .log_pane => |pane| try self.renderLogPane(pane),
@@ -238,6 +239,7 @@ pub const UX = struct {
             switch (r) {
                 .sprite => |sprite| try self.renderSprite(sprite),
                 .filled_rect => |fr| try self.renderFilledRect(fr),
+                .filled_triangle => |ft| try self.renderFilledTriangle(ft),
                 .card => |card| try self.renderCard(card),
                 .text => |text| try self.renderText(text),
                 .log_pane => |pane| try self.renderLogPane(pane),
@@ -301,6 +303,21 @@ pub const UX = struct {
     fn renderFilledRect(self: *UX, fr: view.FilledRect) !void {
         try self.renderer.setDrawColor(fr.color);
         try self.renderer.renderFillRect(fr.rect);
+    }
+
+    fn renderFilledTriangle(self: *UX, ft: view.FilledTriangle) !void {
+        const color = s.pixels.FColor{
+            .r = @as(f32, @floatFromInt(ft.color.r)) / 255.0,
+            .g = @as(f32, @floatFromInt(ft.color.g)) / 255.0,
+            .b = @as(f32, @floatFromInt(ft.color.b)) / 255.0,
+            .a = @as(f32, @floatFromInt(ft.color.a)) / 255.0,
+        };
+        const vertices = [3]s.render.Vertex{
+            .{ .position = ft.points[0], .color = color, .tex_coord = .{ .x = 0, .y = 0 } },
+            .{ .position = ft.points[1], .color = color, .tex_coord = .{ .x = 0, .y = 0 } },
+            .{ .position = ft.points[2], .color = color, .tex_coord = .{ .x = 0, .y = 0 } },
+        };
+        try self.renderer.renderGeometry(null, &vertices, null);
     }
 
     fn renderText(self: *UX, text: view.Text) !void {

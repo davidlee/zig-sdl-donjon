@@ -112,7 +112,12 @@ Start with random uniform; refine later.
 
 ### UI Rendering (in progress)
 - [x] Integrate stance view into combat view (renderables + handleInput)
-- [ ] Add triangle/polygon rendering capability (graphics layer work) — blocked, needs SDL GPU or Bresenham
+- [x] Add viewport field to ViewState, coordinator sets before dispatch
+- [x] Add StanceWeights renderable (graphics layer formats text)
+- [x] Confirm button with hover/active states + click handler
+- [x] Add filled triangle rendering via SDL_RenderGeometry
+- [ ] Remove placeholder outline lines (appendLine calls in stance.zig)
+- [ ] Experiment: color triangle fill using RGB from stance weights (ATK=R, MOV=G, DEF=B)
 - [ ] Integration test for phase flow
 
 ## Test / Verification Strategy
@@ -241,3 +246,58 @@ This is independent of the triangle rendering blocker — can be done now with p
 - Or extract to separate modules like we did with stance.zig
 
 Same applies to `renderables()` — currently ~180 lines with lots of conditional logic.
+
+### 2026-01-11: UI Integration complete, triangle rendering unblocked
+
+**Session summary:** Integrated stance view into combat view, fixed visual issues, researched triangle rendering.
+
+**Files modified:**
+- `src/domain/query/combat_snapshot.zig` — added `turn_phase` field (DTO pattern for decoupling)
+- `src/presentation/view_state.zig` — added `viewport` rect field, `confirm_hovered` to StanceCursor
+- `src/presentation/coordinator.zig` — sets `vs.viewport` from `chrome.viewport_rect` before dispatch
+- `src/presentation/views/chrome.zig` — added `viewport_rect` (FRect) alongside existing `viewport` (IRect)
+- `src/presentation/views/view.zig` — export StanceWeights
+- `src/presentation/views/types.zig` — added `StanceWeights` renderable, added to Renderable union
+- `src/presentation/graphics.zig` — added `renderStanceWeights()` handler
+- `src/presentation/views/combat/view.zig` — phase dispatch to stance view in handleInput/renderables
+- `src/presentation/views/combat/stance.zig` — multiple fixes:
+  - Clamp cursor to triangle on lock (was jumping to raw mouse coords)
+  - Use StanceWeights renderable (fixes garbled unicode from stack buffer)
+  - Added "Select Stance" title
+  - Doubled radius (120→240)
+  - Added confirm button with background rect, hover/active colors, click handler
+  - Swapped MOV/DEF vertices (MOV now bottom-left, DEF bottom-right)
+
+**Triangle rendering research:**
+
+Evaluated two approaches:
+
+1. **Dumb hack (rotated occlusion rects):** Would need to add rotation to FilledRect first, which doesn't exist. Adding rotation would require either render-to-texture (expensive) or using renderGeometry anyway (defeats purpose).
+
+2. **Native SDL_RenderGeometry:** ✅ Already wrapped in zig-sdl3. Simple API:
+```zig
+// In render.zig:
+pub const Vertex = extern struct {
+    position: rect.FPoint,
+    color: pixels.FColor,
+    tex_coord: rect.FPoint,
+};
+
+// Usage - pass null texture for solid color:
+renderer.renderGeometry(null, &[3]s.render.Vertex{
+    .{ .position = verts[0], .color = fill_color, .tex_coord = .{} },
+    .{ .position = verts[1], .color = fill_color, .tex_coord = .{} },
+    .{ .position = verts[2], .color = fill_color, .tex_coord = .{} },
+}, null);
+```
+
+**Recommendation:** Use native `renderGeometry`. Implementation steps:
+1. Add `triangle: Triangle` variant to Renderable union (types.zig)
+2. Add `renderTriangle()` to graphics.zig using `renderer.renderGeometry()`
+3. Update stance.zig to emit triangle renderable instead of line approximations
+
+**Current state:** UI is functional with placeholder line rendering. Triangle is outlined, cursor tracks correctly, button works, phase transitions work. Just needs proper filled triangle rendering.
+
+**Remaining:**
+- [ ] Implement triangle renderable via renderGeometry (~20 lines)
+- [ ] Integration test for phase flow

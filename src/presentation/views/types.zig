@@ -40,6 +40,7 @@ pub const Renderable = union(enum) {
     sprite: Sprite,
     text: Text,
     filled_rect: FilledRect,
+    filled_triangle: FilledTriangle,
     card: Card,
     log_pane: LogPane,
     stance_weights: StanceWeights,
@@ -82,6 +83,11 @@ pub const Text = struct {
 
 pub const FilledRect = struct {
     rect: Rect,
+    color: Color,
+};
+
+pub const FilledTriangle = struct {
+    points: [3]Point,
     color: Color,
 };
 

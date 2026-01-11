@@ -224,11 +224,15 @@ pub const View = struct {
             .color = .{ .r = 255, .g = 255, .b = 255, .a = 255 },
         } });
 
-        // Draw triangle outline using filled rects (lines)
+        // Draw filled triangle
+        try list.append(alloc, .{ .filled_triangle = .{
+            .points = verts,
+            .color = .{ .r = 30, .g = 30, .b = 35, .a = 255 },
+        } });
+
+        // Draw triangle outline
         const line_width: f32 = 3;
         const line_color = s.pixels.Color{ .r = 180, .g = 180, .b = 180, .a = 255 };
-
-        // Draw edges as thin rectangles
         try self.appendLine(alloc, list, verts[0], verts[1], line_width, line_color);
         try self.appendLine(alloc, list, verts[1], verts[2], line_width, line_color);
         try self.appendLine(alloc, list, verts[2], verts[0], line_width, line_color);

@@ -31,6 +31,7 @@ pub const Sprite = types.Sprite;
 pub const FontSize = types.FontSize;
 pub const Text = types.Text;
 pub const FilledRect = types.FilledRect;
+pub const FilledTriangle = types.FilledTriangle;
 pub const StanceWeights = types.StanceWeights;
 
 // Re-export view state types (from types.zig)
