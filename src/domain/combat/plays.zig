@@ -441,7 +441,8 @@ pub const TurnState = struct {
         self.timeline.clear();
         self.focus_spent = 0;
         self.stack_focus_paid = false;
-        self.stance = .{};
+        // Note: stance is NOT cleared here - it's selected at start of turn
+        // and persists through resolution. Reset happens at endTurn().
     }
 
     /// Add a play at the next available time slot.
