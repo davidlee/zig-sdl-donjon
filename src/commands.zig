@@ -12,7 +12,18 @@
 // };
 
 const entity = @import("entity.zig");
+
 pub const ID = entity.ID;
+
+/// Stance weights for attack/defense/movement.
+/// Barycentric coordinates (sum to 1.0).
+pub const Stance = struct {
+    attack: f32 = 1.0 / 3.0,
+    defense: f32 = 1.0 / 3.0,
+    movement: f32 = 1.0 / 3.0,
+
+    pub const balanced: Stance = .{};
+};
 
 /// Channel set for command interface (mirrors cards.ChannelSet).
 /// Converted to/from domain ChannelSet in command handler.
@@ -29,6 +40,9 @@ pub const Command = union(enum) {
     pause_game: void,
     resume_game: void,
     collect_loot: void, // finish encounter summary, transition to world map
+
+    // Combat - stance selection
+    confirm_stance: Stance, // commit stance weights, transition to draw phase
 
     // Combat - card selection
     play_card: struct { card_id: ID, target: ?ID = null },

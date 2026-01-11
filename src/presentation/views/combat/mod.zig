@@ -6,6 +6,7 @@ pub const view = @import("view.zig");
 pub const hit = @import("hit.zig");
 pub const play = @import("play.zig");
 pub const avatar = @import("avatar.zig");
+pub const stance = @import("stance.zig");
 
 // Convenience re-exports for combat-specific types
 pub const View = view.View;
@@ -18,3 +19,5 @@ pub const TimelineView = play.TimelineView;
 pub const Player = avatar.Player;
 pub const Enemy = avatar.Enemy;
 pub const Opposition = avatar.Opposition;
+pub const StanceView = stance.View;
+pub const StanceTriangle = stance.Triangle;

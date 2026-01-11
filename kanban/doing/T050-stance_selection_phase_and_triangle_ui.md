@@ -96,15 +96,23 @@ Start with random uniform; refine later.
 
 ## Tasks / Sequence of Work
 
-- [ ] Add `stance_selection` to TurnPhase enum
-- [ ] Add Stance struct to TurnState in plays.zig
-- [ ] Add phase transition logic (stance_selection → draw_hand)
-- [ ] Add stance_cursor to CombatUIState
-- [ ] Implement barycentric coordinate calculation
-- [ ] Create stance triangle view (render + input handling)
-- [ ] Wire view into combat mod dispatch
-- [ ] AI random stance selection
-- [ ] Tests for barycentric math
+### Domain (complete)
+- [x] Add `stance_selection` to TurnPhase enum
+- [x] Add Stance struct to TurnState in plays.zig
+- [x] Add phase transition logic (stance_selection → draw_hand)
+- [x] AI random stance selection (sorted uniforms method for barycentric)
+
+### UI Logic (complete)
+- [x] Add stance_cursor to CombatUIState
+- [x] Implement barycentric coordinate calculation (screen coords → weights)
+- [x] Create stance triangle view (logic + input handling)
+- [x] Wire view into combat mod.zig exports
+- [x] Add confirm_stance command + handler
+- [x] Tests for barycentric math
+
+### UI Rendering (in progress)
+- [ ] Integrate stance view into combat view (renderables + handleInput) — **do this first, works with placeholder rects**
+- [ ] Add triangle/polygon rendering capability (graphics layer work) — blocked, needs SDL GPU or Bresenham
 - [ ] Integration test for phase flow
 
 ## Test / Verification Strategy
@@ -140,3 +148,96 @@ Start with random uniform; refine later.
 - Ensure phase can't be skipped/bypassed
 
 ## Progress Log / Notes
+
+### 2026-01-11: Domain layer complete
+
+**Files modified:**
+- `src/domain/combat/types.zig` — added `stance_selection` to TurnPhase, `confirm_stance` to TurnEvent, updated FSM initial state
+- `src/domain/combat/plays.zig` — added `Stance` struct, added `stance` field to TurnState, updated clear()
+- `src/domain/combat/encounter.zig` — added FSM transitions, added `forceTransitionTo` for tests
+- `src/domain/ai.zig` — added `selectStanceFn` to Director interface, implemented in all directors using sorted uniforms method
+- `src/domain/apply/event_processor.zig` — added stance_selection phase handler, updated encounter entry and animating handler
+- `src/testing/integration/harness.zig` — updated beginSelection to bypass stance phase for tests
+
+**Flow:**
+1. Encounter starts → `stance_selection` phase
+2. AI selects random stance via Director.selectStance()
+3. Player confirms stance → transition to `draw_hand`
+4. `draw_hand` does shuffle/draw → transition to `player_card_selection`
+5. After `animating`, next turn goes to `stance_selection` (not draw_hand)
+
+**Next:** UI implementation (stance triangle view, barycentric coords, input handling)
+
+### 2026-01-11: UI layer partially complete
+
+**Files added/modified:**
+- `src/presentation/view_state.zig` — added `StanceCursor` struct, added `stance_cursor` field to `CombatUIState`
+- `src/presentation/views/combat/stance.zig` — NEW: complete stance selection view with:
+  - `Triangle` struct: geometry, barycentric coordinate math, point clamping
+  - `View` struct: input handling (mouse follow, click-to-lock, space-to-confirm), renderable generation
+  - Unit tests for barycentric math (vertices, center, outside, sum-to-1)
+- `src/presentation/views/combat/mod.zig` — exports `StanceView`, `StanceTriangle`
+- `src/commands.zig` — added `Stance` struct, added `confirm_stance` command
+- `src/domain/apply/command_handler.zig` — added `confirmStance` handler (stores stance, transitions to draw_hand)
+
+**What works:**
+- Barycentric coordinate calculation (screen point → weights)
+- Point clamping to triangle boundary
+- Input handling logic (mouse tracking, lock toggle, space confirm)
+- Command flow (confirm_stance → store in TurnState → transition to draw_hand)
+- All tests pass
+
+**BLOCKING: Triangle/polygon rendering**
+
+Current `Renderable` union only supports: `sprite`, `text`, `filled_rect`, `card`, `log_pane`.
+The stance.zig view attempts to draw triangle edges using `filled_rect` but this only works for axis-aligned rectangles.
+
+To properly render the triangle, need one of:
+1. **New Renderable type for polygons** — add `.polygon` or `.triangle` variant
+2. **SDL GPU support** — use `zig-sdl3/src/gpu.zig` for Direct3D triangle rendering
+3. **Algorithmic line drawing** — implement Bresenham or similar for arbitrary lines
+
+For circles (the inscribed circle in the spec mockup):
+- Midpoint Circle Algorithm for outlines
+- Triangle fan with `SDL_RenderDrawLines` for filled
+- Or render to texture once and reuse
+
+**Remaining tasks:**
+- [ ] Add triangle/polygon rendering capability (requires graphics layer work)
+- [ ] Integrate stance view into combat view's renderables() and handleInput()
+- [ ] Integration test for full phase flow
+
+**Files to modify for integration:**
+- `src/presentation/views/combat/view.zig` — check phase in renderables/handleInput, dispatch to stance view during stance_selection
+- `src/presentation/views/types.zig` — add new Renderable variant if needed
+- `src/presentation/graphics.zig` — implement new rendering primitives
+
+**NOTE:** Currently the game still shows timeline/carousel/enemies during stance_selection phase.
+The combat view's `renderables()` and `handleInput()` methods need a phase check at the top:
+
+```zig
+// In View.renderables():
+if (self.inPhase(.stance_selection)) {
+    // Render stance triangle UI instead of cards/timeline
+    var stance_view = stance.View.init(center, radius);
+    try stance_view.appendRenderables(alloc, &list, vs);
+    return list;
+}
+// ... rest of normal combat rendering
+
+// In View.handleInput():
+if (self.inPhase(.stance_selection)) {
+    var stance_view = stance.View.init(center, radius);
+    return stance_view.handleInput(event, vs);
+}
+// ... rest of normal input handling
+```
+
+This is independent of the triangle rendering blocker — can be done now with placeholder rectangles.
+
+**Code quality concern:** `View.handleInput()` in combat/view.zig is already sprawling (~70 lines, nested switches). Adding stance_selection handling risks making it a monolithic tangle. Consider:
+- Phase-specific input handlers (e.g., `handleStanceInput`, `handleSelectionInput`, `handleCommitInput`)
+- Dispatch at top level based on phase, delegate to focused handlers
+- Or extract to separate modules like we did with stance.zig
+
+Same applies to `renderables()` — currently ~180 lines with lots of conditional logic.

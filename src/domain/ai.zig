@@ -52,9 +52,14 @@ pub const Director = struct {
     ptr: *anyopaque,
 
     playCardsFn: *const fn (ptr: *anyopaque, agent: *Agent, w: *World) anyerror!void,
+    selectStanceFn: *const fn (ptr: *anyopaque, agent: *Agent, w: *World) anyerror!void,
 
     pub fn playCards(self: *Director, agent: *Agent, w: *World) !void {
         return self.playCardsFn(self.ptr, agent, w);
+    }
+
+    pub fn selectStance(self: *Director, agent: *Agent, w: *World) !void {
+        return self.selectStanceFn(self.ptr, agent, w);
     }
 };
 
@@ -64,13 +69,39 @@ pub const NullDirector = struct {
         return Director{
             .ptr = self,
             .playCardsFn = playCards,
+            .selectStanceFn = selectStance,
         };
     }
 
     pub fn playCards(ptr: *anyopaque, agent: *Agent, w: *World) !void {
         _ = .{ ptr, agent, w };
     }
+
+    pub fn selectStance(ptr: *anyopaque, agent: *Agent, w: *World) !void {
+        _ = .{ ptr, agent, w };
+        // NullDirector does nothing - leaves default balanced stance
+    }
 };
+
+/// Select a random stance for an AI agent.
+/// Uses barycentric coordinates: picks a random point in the triangle.
+fn selectRandomStance(agent: *Agent, w: *World) !void {
+    const enc = w.encounter orelse return;
+    const enc_state = enc.stateFor(agent.id) orelse return;
+
+    // Generate random barycentric coordinates using the "sorted uniforms" method:
+    // Draw two uniform [0,1] values, sort them, use gaps as weights.
+    const r1 = try w.drawRandom(.combat);
+    const r2 = try w.drawRandom(.combat);
+    const lo = @min(r1, r2);
+    const hi = @max(r1, r2);
+
+    enc_state.current.stance = .{
+        .attack = lo,
+        .defense = hi - lo,
+        .movement = 1.0 - hi,
+    };
+}
 
 /// Just spams the first playable card whenever it can
 /// requires combat_state (deck-based agent)
@@ -98,6 +129,7 @@ pub const SimpleDeckDirector = struct {
         return Director{
             .ptr = self,
             .playCardsFn = playCards,
+            .selectStanceFn = selectStance,
         };
     }
 
@@ -119,6 +151,11 @@ pub const SimpleDeckDirector = struct {
             }
         }
     }
+
+    pub fn selectStance(ptr: *anyopaque, agent: *Agent, w: *World) !void {
+        _ = ptr;
+        try selectRandomStance(agent, w);
+    }
 };
 
 /// Randomly picks 2-3 cards from always_available to play.
@@ -128,6 +165,7 @@ pub const PoolDirector = struct {
         return Director{
             .ptr = self,
             .playCardsFn = playCards,
+            .selectStanceFn = selectStance,
         };
     }
 
@@ -159,6 +197,11 @@ pub const PoolDirector = struct {
                 played += 1;
             }
         }
+    }
+
+    pub fn selectStance(ptr: *anyopaque, agent: *Agent, w: *World) !void {
+        _ = ptr;
+        try selectRandomStance(agent, w);
     }
 };
 

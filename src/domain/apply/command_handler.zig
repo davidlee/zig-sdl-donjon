@@ -130,7 +130,10 @@ pub const CommandHandler = struct {
         switch (cmd) {
             .start_game => {
                 try self.world.transitionTo(.in_encounter);
-                // Encounter starts in draw_hand phase (initial FSM state)
+                // Encounter starts in stance_selection phase (initial FSM state)
+            },
+            .confirm_stance => |stance| {
+                try self.confirmStance(stance);
             },
             .play_card => |data| {
                 try self.playActionCard(data.card_id, data.target);
@@ -169,6 +172,25 @@ pub const CommandHandler = struct {
                 std.debug.print("UNHANDLED COMMAND: -- {any}", .{cmd});
             },
         }
+    }
+
+    /// Confirm player's stance selection and transition to draw phase.
+    pub fn confirmStance(self: *CommandHandler, stance: lib.commands.Stance) !void {
+        if (!self.world.inTurnPhase(.stance_selection)) {
+            return CommandError.InvalidGameState;
+        }
+        const enc = self.world.encounter orelse return CommandError.BadInvariant;
+        const enc_state = enc.stateFor(self.world.player.id) orelse return CommandError.BadInvariant;
+
+        // Store stance in player's turn state
+        enc_state.current.stance = .{
+            .attack = stance.attack,
+            .defense = stance.defense,
+            .movement = stance.movement,
+        };
+
+        // Transition to draw phase
+        try self.world.transitionTurnTo(.draw_hand);
     }
 
     pub fn cancelActionCard(self: *CommandHandler, id: entity.ID) !void {

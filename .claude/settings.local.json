@@ -36,7 +36,8 @@
       "Bash(just generate)",
       "Bash(just new-card:*)",
       "Bash(just:*)",
-      "Skill(preflight)"
+      "Skill(preflight)",
+      "Bash(find:*)"
     ]
   }
 }

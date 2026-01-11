@@ -51,11 +51,12 @@ pub const Encounter = struct {
         var fsm = TurnFSM.init();
 
         // Turn phase transitions
+        try fsm.addEventAndTransition(.confirm_stance, .stance_selection, .draw_hand);
         try fsm.addEventAndTransition(.begin_player_card_selection, .draw_hand, .player_card_selection);
         try fsm.addEventAndTransition(.begin_commit_phase, .player_card_selection, .commit_phase);
         try fsm.addEventAndTransition(.begin_tick_resolution, .commit_phase, .tick_resolution);
         try fsm.addEventAndTransition(.animate_resolution, .tick_resolution, .animating);
-        try fsm.addEventAndTransition(.redraw, .animating, .draw_hand);
+        try fsm.addEventAndTransition(.redraw, .animating, .stance_selection);
 
         const enc = try alloc.create(Encounter);
         enc.* = Encounter{
@@ -152,6 +153,11 @@ pub const Encounter = struct {
         } else {
             return error.InvalidTurnPhaseTransition;
         }
+    }
+
+    /// Force transition without FSM validation. For tests only.
+    pub fn forceTransitionTo(self: *Encounter, target: TurnPhase) void {
+        self.turn_fsm.transitionToSilently(target, false) catch unreachable;
     }
 
     /// Assess flanking status for an agent based on engagement count and position values.

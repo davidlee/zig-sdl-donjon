@@ -165,7 +165,7 @@ pub const Harness = struct {
 
     /// Ensure we're in selection phase (common setup).
     /// Initializes combat state and transitions directly to selection phase
-    /// (bypassing draw/shuffle to give tests control over hand contents).
+    /// (bypassing stance selection and draw/shuffle to give tests control).
     pub fn beginSelection(self: *Harness) !void {
         // Start encounter if not already
         if (self.world.turnPhase() == null) {
@@ -180,10 +180,10 @@ pub const Harness = struct {
             try enemy.initCombatState();
         }
 
-        // Transition through phases to reach selection
+        // Force transition to selection phase (bypasses FSM validation for tests)
         const current = self.world.turnPhase() orelse return error.NoPhase;
-        if (current == .draw_hand) {
-            try self.transitionTo(.player_card_selection);
+        if (current != .player_card_selection) {
+            self.encounter().forceTransitionTo(.player_card_selection);
         }
     }
 

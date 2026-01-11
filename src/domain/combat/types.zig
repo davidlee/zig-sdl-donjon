@@ -53,6 +53,7 @@ pub const CombatOutcome = enum {
 
 /// Phases within a combat turn.
 pub const TurnPhase = enum {
+    stance_selection, // choose attack/defense/movement weighting
     draw_hand,
     player_card_selection, // choose cards in secret
     commit_phase, // reveal; vary or reinforce selections
@@ -63,6 +64,7 @@ pub const TurnPhase = enum {
 
 /// Events that trigger turn phase transitions.
 pub const TurnEvent = enum {
+    confirm_stance, // stance_selection -> draw_hand
     begin_player_card_selection,
     begin_commit_phase,
     begin_tick_resolution,
@@ -71,4 +73,4 @@ pub const TurnEvent = enum {
 };
 
 /// State machine for turn phase transitions.
-pub const TurnFSM = zigfsm.StateMachine(TurnPhase, TurnEvent, .draw_hand);
+pub const TurnFSM = zigfsm.StateMachine(TurnPhase, TurnEvent, .stance_selection);

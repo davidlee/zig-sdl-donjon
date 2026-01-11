@@ -254,15 +254,15 @@ pub const EventProcessor = struct {
 
                     switch (state) {
                         .in_encounter => {
-                            // Encounter starting - begin draw phase
-                            // (Encounter FSM starts in draw_hand state)
-                            std.debug.print("Starting encounter - triggering draw_hand\n", .{});
-                            // End-of-turn cleanup (no-op on first turn when combat_state is null)
+                            // Encounter starting - begin with stance selection
+                            // (FSM starts in stance_selection state)
+                            std.debug.print("Starting encounter - stance selection\n", .{});
+                            // End-of-turn cleanup (no-op on first turn)
                             try self.endTurnCleanup();
-                            // Initialize combat_state for all agents if not already done
+                            // Initialize combat_state for all agents
                             try self.initAllCombatStates();
-                            try self.allShuffleAndDraw(5);
-                            try self.world.transitionTurnTo(.player_card_selection);
+                            // Trigger stance selection phase (AI selects, player uses UI)
+                            try self.world.events.push(.{ .turn_phase_transitioned_to = .stance_selection });
                         },
                         .encounter_summary => {
                             // Post-combat - nothing to do here, handled by summary view
@@ -282,6 +282,18 @@ pub const EventProcessor = struct {
                     std.debug.print("\nTURN PHASE ==> {}\n\n", .{phase});
 
                     switch (phase) {
+                        .stance_selection => {
+                            // AI agents select stance when entering stance selection phase
+                            for (self.world.encounter.?.enemies.items) |agent| {
+                                switch (agent.director) {
+                                    .ai => |*director| {
+                                        try director.selectStance(agent, self.world);
+                                    },
+                                    else => unreachable,
+                                }
+                            }
+                            // Player selects via UI; transition to draw_hand on confirm
+                        },
                         .player_card_selection => {
                             // AI plays cards when player enters selection phase
                             for (self.world.encounter.?.enemies.items) |agent| {
@@ -328,8 +340,8 @@ pub const EventProcessor = struct {
                                     .flee, .surrender => try self.world.transitionTo(.encounter_summary),
                                 }
                             } else {
-                                // Combat continues - next turn
-                                try self.world.transitionTurnTo(.draw_hand);
+                                // Combat continues - next turn starts with stance selection
+                                try self.world.transitionTurnTo(.stance_selection);
                             }
                         },
                         .player_reaction => {

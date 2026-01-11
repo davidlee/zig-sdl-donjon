@@ -54,6 +54,14 @@ pub const EntityRef = union(enum) {
     enemy: entity.ID,
 };
 
+/// Stance triangle cursor state for pre-round stance selection.
+pub const StanceCursor = struct {
+    /// Screen position of cursor, or null if following mouse.
+    position: ?Point = null,
+    /// Whether cursor is locked (click to lock/unlock).
+    locked: bool = false,
+};
+
 /// Combat view UI state (interaction: hover, drag, selection)
 /// Named to distinguish from domain combat.CombatState (card zones).
 pub const CombatUIState = struct {
@@ -64,6 +72,7 @@ pub const CombatUIState = struct {
     focused_enemy: ?entity.ID = null, // UI focus for timeline display / default targeting
     hover: EntityRef = .none,
     log_scroll: i32 = 0, // pixel scroll offset for combat log (0 = bottom/most recent)
+    stance_cursor: StanceCursor = .{}, // stance triangle selection cursor
     card_animations: [max_card_animations]CardAnimation = undefined,
     card_animation_len: u8 = 0,
 

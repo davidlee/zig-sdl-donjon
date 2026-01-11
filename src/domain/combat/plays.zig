@@ -410,11 +410,22 @@ pub fn hasFootworkInTimeline(timeline: *const Timeline, registry: *const world.A
 // Turn State
 // ============================================================================
 
+/// Pre-round commitment: attack/defense/movement weighting.
+/// Barycentric coordinates (sum to 1.0). Defaults to balanced.
+pub const Stance = struct {
+    attack: f32 = 1.0 / 3.0,
+    defense: f32 = 1.0 / 3.0,
+    movement: f32 = 1.0 / 3.0,
+
+    pub const balanced: Stance = .{};
+};
+
 /// Ephemeral state for the current turn - exists from commit through resolution.
 pub const TurnState = struct {
     timeline: Timeline = .{},
     focus_spent: f32 = 0,
     stack_focus_paid: bool = false, // 1F covers all stacking for the turn
+    stance: Stance = .{},
 
     /// Get all slots (sorted by time_start).
     pub fn slots(self: *const TurnState) []const TimeSlot {
@@ -430,6 +441,7 @@ pub const TurnState = struct {
         self.timeline.clear();
         self.focus_spent = 0;
         self.stack_focus_paid = false;
+        self.stance = .{};
     }
 
     /// Add a play at the next available time slot.
