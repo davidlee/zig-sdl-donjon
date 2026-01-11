@@ -8,6 +8,7 @@ pub const advantage = @import("advantage.zig");
 pub const damage = @import("damage.zig");
 pub const height = @import("height.zig");
 pub const outcome = @import("outcome.zig");
+pub const contested = @import("contested.zig");
 pub const tuning = @import("tuning.zig");
 
 // Re-export commonly used types at top level
@@ -34,3 +35,13 @@ pub const selectHitLocation = height.selectHitLocation;
 pub const selectHitLocationFromExposures = height.selectHitLocationFromExposures;
 pub const getHeightMultiplier = height.getHeightMultiplier;
 pub const findPartIndex = height.findPartIndex;
+
+// Force test discovery for all resolution submodules
+test {
+    _ = context;
+    _ = advantage;
+    _ = damage;
+    _ = height;
+    _ = outcome;
+    _ = contested;
+}
