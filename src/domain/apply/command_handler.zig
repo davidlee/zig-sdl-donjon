@@ -447,7 +447,7 @@ pub const CommandHandler = struct {
 
         // Validate compatibility
         const same_template = stack_card.template.id == action_card.template.id;
-        const is_modifier = stack_card.template.kind == .modifier;
+        const is_modifier = stack_card.template.tags.modifier;
 
         if (same_template) {
             // Same template stacking - always OK

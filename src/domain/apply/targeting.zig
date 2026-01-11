@@ -339,7 +339,7 @@ fn isValidTargetForExpression(
 
 /// Get the target predicate from a modifier card template.
 pub fn getModifierTargetPredicate(template: *const cards.Template) !?cards.Predicate {
-    if (template.kind != .modifier) return null;
+    if (!template.tags.modifier) return null;
 
     var found: ?cards.Predicate = null;
     for (template.rules) |rule| {

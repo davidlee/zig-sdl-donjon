@@ -502,7 +502,7 @@ pub const View = struct {
 
         if (self.inPhase(.commit_phase)) {
             // Commit phase: modifier attachment to plays
-            if (card.template.kind != .modifier)
+            if (!card.template.tags.modifier)
                 return .{ .vs = vs.withCombat(new_cs) };
 
             const tl = self.timeline(self.arena);
@@ -565,7 +565,7 @@ pub const View = struct {
 
         // Only commit phase modifiers start drag immediately
         if (self.inPhase(.commit_phase)) {
-            return self.isCardPlayable(id) and card.template.kind == .modifier;
+            return self.isCardPlayable(id) and card.template.tags.modifier;
         }
         return false;
     }
@@ -578,7 +578,7 @@ pub const View = struct {
 
         if (self.inPhase(.commit_phase)) {
             // Commit phase: only modifiers
-            return self.isCardPlayable(id) and self.world.action_registry.getConst(id).?.template.kind == .modifier;
+            return self.isCardPlayable(id) and self.world.action_registry.getConst(id).?.template.tags.modifier;
         } else if (self.inPhase(.player_card_selection)) {
             // Selection phase: playable hand cards or timeline cards
             return switch (hit) {

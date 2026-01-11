@@ -267,7 +267,7 @@ fn checkModifierAgainstPlays(
     world: *const World,
 ) !void {
     const inst = world.action_registry.getConst(card_id) orelse return;
-    if (inst.template.kind != .modifier) return;
+    if (!inst.template.tags.modifier) return;
 
     for (slots, 0..) |slot, play_index| {
         const can_attach = targeting.canModifierAttachToPlay(inst.template, &slot.play, world) catch false;
