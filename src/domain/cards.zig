@@ -18,19 +18,6 @@ const TechniqueEntries = @import("card_list.zig").TechniqueEntries;
 
 pub const ID = u64;
 
-pub const Kind = enum {
-    action,
-    passive,
-    reaction,
-    encounter,
-    mob,
-    // Ally,
-    environment,
-    resource,
-    meta_progression,
-    modifier, // enhances another card's action
-};
-
 pub const Rarity = enum {
     common,
     uncommon,
@@ -399,7 +386,6 @@ pub const RuneIcon = enum {
 
 pub const Template = struct {
     id: ID,
-    kind: Kind,
     name: []const u8,
     description: []const u8,
     rarity: Rarity,
@@ -569,7 +555,6 @@ test "Template.requiresSingleTarget detects .single targeting" {
     // Template with .single target
     const single_target_template = Template{
         .id = 1,
-        .kind = .action,
         .name = "test single",
         .description = "",
         .rarity = .common,
@@ -589,7 +574,6 @@ test "Template.requiresSingleTarget detects .single targeting" {
     // Template with .all_enemies target
     const all_enemies_template = Template{
         .id = 2,
-        .kind = .action,
         .name = "test all",
         .description = "",
         .rarity = .common,
@@ -609,7 +593,6 @@ test "Template.requiresSingleTarget detects .single targeting" {
     // Template with no expressions
     const empty_template = Template{
         .id = 3,
-        .kind = .action,
         .name = "test empty",
         .description = "",
         .rarity = .common,

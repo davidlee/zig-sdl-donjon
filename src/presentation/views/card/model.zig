@@ -62,7 +62,7 @@ pub const Model = struct {
             .id = id,
             .name = template.name,
             .description = template.description,
-            .kind = mapKind(template.kind),
+            .kind = kindFromTags(template.tags),
             .rarity = mapRarity(template.rarity),
             .stamina_cost = template.cost.stamina,
             .time_cost = template.cost.time,
@@ -82,14 +82,11 @@ pub const Model = struct {
         };
     }
 
-    fn mapKind(kind: cards.Kind) Kind {
-        return switch (kind) {
-            .action => .action,
-            .passive => .passive,
-            .reaction => .reaction,
-            .modifier => .modifier,
-            else => .other,
-        };
+    /// Derive visual kind from tag set
+    fn kindFromTags(tags: cards.TagSet) Kind {
+        if (tags.modifier) return .modifier;
+        if (tags.reaction) return .reaction;
+        return .action;
     }
 
     fn mapRarity(rarity: cards.Rarity) Rarity {

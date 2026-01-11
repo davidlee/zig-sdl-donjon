@@ -417,7 +417,6 @@ test "canWithdrawPlay returns false for involuntary cards" {
     // Create an involuntary card template
     const involuntary_template = &cards.Template{
         .id = 999,
-        .kind = .action,
         .name = "test involuntary",
         .description = "cannot be withdrawn",
         .rarity = .common,
@@ -445,7 +444,6 @@ test "canWithdrawPlay returns true for non-involuntary cards with no modifiers" 
     // Create a normal card template
     const normal_template = &cards.Template{
         .id = 888,
-        .kind = .action,
         .name = "test normal",
         .description = "can be withdrawn",
         .rarity = .common,
@@ -469,7 +467,6 @@ test "canWithdrawPlay returns true for non-involuntary cards with no modifiers" 
 test "cardTemplateMatchesPredicate with always predicate" {
     const template = &cards.Template{
         .id = 1,
-        .kind = .action,
         .name = "test",
         .description = "",
         .rarity = .common,
@@ -483,7 +480,6 @@ test "cardTemplateMatchesPredicate with always predicate" {
 test "cardTemplateMatchesPredicate with has_tag matches" {
     const precision_card = &cards.Template{
         .id = 1,
-        .kind = .action,
         .name = "precision strike",
         .description = "",
         .rarity = .common,
@@ -503,7 +499,6 @@ test "cardTemplateMatchesPredicate with has_tag matches" {
 test "cardTemplateMatchesPredicate with not predicate" {
     const finesse_card = &cards.Template{
         .id = 1,
-        .kind = .action,
         .name = "finesse",
         .description = "",
         .rarity = .common,
@@ -521,7 +516,6 @@ test "cardTemplateMatchesPredicate with not predicate" {
 test "cardTemplateMatchesPredicate with all predicate" {
     const melee_precision = &cards.Template{
         .id = 1,
-        .kind = .action,
         .name = "melee precision",
         .description = "",
         .rarity = .common,
@@ -549,7 +543,6 @@ test "cardTemplateMatchesPredicate with all predicate" {
 test "cardTemplateMatchesPredicate with any predicate" {
     const melee_only = &cards.Template{
         .id = 1,
-        .kind = .action,
         .name = "melee only",
         .description = "",
         .rarity = .common,

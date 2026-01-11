@@ -158,7 +158,6 @@ pub const BeginnerDeck = [_]*const Template{
 
 const t_thrust = Template{
     .id = hashName("thrust"),
-    .kind = .action,
     .name = "thrust",
     .description = "hit them with the pokey bit",
     .rarity = .common,
@@ -178,7 +177,6 @@ const t_thrust = Template{
 
 const t_slash = Template{
     .id = hashName("slash"),
-    .kind = .action,
     .name = "slash",
     .description = "slash them like a pirate",
     .rarity = .common,
@@ -198,7 +196,6 @@ const t_slash = Template{
 
 const t_throw = Template{
     .id = hashName("throw"),
-    .kind = .action,
     .name = "throw",
     .description = "hurl something at them",
     .rarity = .common,
@@ -218,7 +215,6 @@ const t_throw = Template{
 
 const t_shield_block = Template{
     .id = hashName("shield_block"),
-    .kind = .action,
     .name = "shield block",
     .description = "shields were made to be splintered",
     .rarity = .common,
@@ -238,7 +234,6 @@ const t_shield_block = Template{
 
 const t_riposte = Template{
     .id = hashName("riposte"),
-    .kind = .action,
     .name = "riposte",
     .description = "seize the opening",
     .rarity = .uncommon,
@@ -263,7 +258,6 @@ const t_riposte = Template{
 
 const t_deflect = Template{
     .id = hashName("deflect"),
-    .kind = .action,
     .name = "deflect",
     .description = "redirect incoming attacks",
     .rarity = .common,
@@ -283,7 +277,6 @@ const t_deflect = Template{
 
 const t_parry = Template{
     .id = hashName("parry"),
-    .kind = .action,
     .name = "parry",
     .description = "beat aside their weapon",
     .rarity = .common,
@@ -307,7 +300,6 @@ const t_parry = Template{
 
 const t_advance = Template{
     .id = hashName("advance"),
-    .kind = .action,
     .name = "advance",
     .description = "close distance, boost damage",
     .rarity = .common,
@@ -334,7 +326,6 @@ const t_advance = Template{
 
 const t_retreat = Template{
     .id = hashName("retreat"),
-    .kind = .action,
     .name = "retreat",
     .description = "open distance, boost defense",
     .rarity = .common,
@@ -361,7 +352,6 @@ const t_retreat = Template{
 
 const t_sidestep = Template{
     .id = hashName("sidestep"),
-    .kind = .action,
     .name = "sidestep",
     .description = "lateral movement, boost accuracy",
     .rarity = .common,
@@ -381,7 +371,6 @@ const t_sidestep = Template{
 
 const t_hold = Template{
     .id = hashName("hold"),
-    .kind = .action,
     .name = "hold",
     .description = "stand firm (stationary penalty applies)",
     .rarity = .common,
@@ -405,7 +394,6 @@ const t_hold = Template{
 
 const t_circle = Template{
     .id = hashName("circle"),
-    .kind = .action,
     .name = "circle",
     .description = "improve position vs all enemies",
     .rarity = .common,
@@ -432,7 +420,6 @@ const t_circle = Template{
 
 const t_disengage = Template{
     .id = hashName("disengage"),
-    .kind = .action,
     .name = "disengage",
     .description = "open range from all enemies",
     .rarity = .common,
@@ -459,7 +446,6 @@ const t_disengage = Template{
 
 const t_pivot = Template{
     .id = hashName("pivot"),
-    .kind = .action,
     .name = "pivot",
     .description = "switch focus + position bonus vs one",
     .rarity = .common,
@@ -518,7 +504,6 @@ pub const BaseAlwaysAvailableTemplates = [_]*const Template{
 
 const m_high = Template{
     .id = hashName("high"),
-    .kind = .modifier,
     .name = "high",
     .description = "strike high - more damage, harder to land",
     .rarity = .common,
@@ -541,7 +526,6 @@ const m_high = Template{
 
 const m_low = Template{
     .id = hashName("low"),
-    .kind = .modifier,
     .name = "low",
     .description = "strike low - faster, less damage",
     .rarity = .common,
@@ -565,7 +549,6 @@ const m_low = Template{
 
 const m_feint = Template{
     .id = hashName("feint"),
-    .kind = .modifier,
     .name = "feint",
     .playable_from = .{ .always_available = true, .hand = true },
     .description = "feign commitment - no damage, gain initiative",
@@ -606,7 +589,6 @@ const m_feint = Template{
 
 const t_breath_work = Template{
     .id = hashName("breath work"),
-    .kind = .action,
     .name = "breath work",
     .description = "steady your breathing, recover stamina",
     .rarity = .common,
@@ -626,7 +608,6 @@ const t_breath_work = Template{
 
 const t_probing_stare = Template{
     .id = hashName("probing stare"),
-    .kind = .action,
     .name = "probing stare",
     .description = "read your opponent, sharpen your focus",
     .rarity = .common,
@@ -646,7 +627,6 @@ const t_probing_stare = Template{
 
 const t_sand_in_the_eyes = Template{
     .id = hashName("sand in the eyes"),
-    .kind = .action,
     .name = "sand in the eyes",
     .description = "a handful of grit to blind your foe",
     .rarity = .uncommon,
@@ -676,7 +656,6 @@ const t_sand_in_the_eyes = Template{
 /// Wince: minor distraction from pain. Just wastes time.
 pub const dud_wince = Template{
     .id = hashName("wince"),
-    .kind = .action,
     .name = "Wince",
     .description = "Involuntary flinch. Wastes time.",
     .rarity = .common,
@@ -689,7 +668,6 @@ pub const dud_wince = Template{
 /// Tremor: trembling hands block precision techniques while in hand.
 pub const dud_tremor = Template{
     .id = hashName("tremor"),
-    .kind = .action,
     .name = "Trembling Hands",
     .description = "Blocks precision techniques while in hand.",
     .rarity = .common,
@@ -706,7 +684,6 @@ pub const dud_tremor = Template{
 /// Retch: nausea blocks finesse techniques while in hand.
 pub const dud_retch = Template{
     .id = hashName("retch"),
-    .kind = .action,
     .name = "Retch",
     .description = "Nausea. Blocks finesse techniques while in hand.",
     .rarity = .common,
@@ -723,7 +700,6 @@ pub const dud_retch = Template{
 /// Stagger: unsteady footing blocks manoeuvres while in hand.
 pub const dud_stagger = Template{
     .id = hashName("stagger"),
-    .kind = .action,
     .name = "Stagger",
     .description = "Unsteady footing. Blocks manoeuvres while in hand.",
     .rarity = .common,
@@ -740,7 +716,6 @@ pub const dud_stagger = Template{
 /// Blackout: severe trauma blocks offensive techniques while in hand.
 pub const dud_blackout = Template{
     .id = hashName("blackout"),
-    .kind = .action,
     .name = "Blackout",
     .description = "Vision swimming. Blocks offensive techniques while in hand.",
     .rarity = .common,
