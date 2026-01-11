@@ -100,8 +100,8 @@ pub const hit_chance_max: f32 = 0.95;
 pub const ContestedRollMode = enum { single, independent_pair };
 
 /// Which mode to use for contested rolls. `.single` is rollback-friendly.
-/// Set to .single for test compatibility; .independent_pair for full contested behavior.
-pub const contested_roll_mode: ContestedRollMode = .single;
+/// `.independent_pair` gives triangular distribution for more nuanced outcomes.
+pub const contested_roll_mode: ContestedRollMode = .independent_pair;
 
 /// Scales overall randomness magnitude in contested rolls.
 pub const contested_roll_variance: f32 = 1.0;

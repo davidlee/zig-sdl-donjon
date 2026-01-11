@@ -506,10 +506,12 @@ pub const Harness = struct {
         };
 
         // Inject scripted random provider for deterministic results:
-        // - First value (0.1): hit roll - low value means hit (roll < final_chance)
-        // - Second value (0.99): gap roll - high value means no gap (roll >= gap_chance)
-        // Values cycle, so this handles multiple gap checks per resolution
-        var scripted = random.ScriptedRandomProvider{ .values = &.{ 0.1, 0.99 } };
+        // Contested roll system draws: attack_roll, defense_roll, then gap_roll(s)
+        // - 0.8: attack roll (high favors attacker)
+        // - 0.2: defense roll (low favors attacker)
+        // - 0.99: gap roll (high means no gap, armour blocks)
+        // Values cycle for multiple gap checks per resolution
+        var scripted = random.ScriptedRandomProvider{ .values = &.{ 0.8, 0.2, 0.99 } };
         const original_provider = self.world.random_provider;
         self.world.random_provider = scripted.provider();
         defer self.world.random_provider = original_provider;
