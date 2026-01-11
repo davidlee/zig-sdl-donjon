@@ -126,6 +126,12 @@ pub const Coordinator = struct {
             else => {},
         }
 
+        // Set viewport dimensions for active view (in logical coords, origin-relative)
+        self.vs.viewport = if (self.isChromeActive())
+            .{ .x = 0, .y = 0, .w = chrome.viewport_rect.w, .h = chrome.viewport_rect.h }
+        else
+            self.vs.screen;
+
         // Dispatch to active view
         var v = self.activeView();
         const result = v.handleInput(sdl_event, self.world, self.vs);
@@ -195,6 +201,12 @@ pub const Coordinator = struct {
         const frame_alloc = self.frameAlloc();
 
         try self.ux.renderClear();
+
+        // Set viewport dimensions for active view (in logical coords, origin-relative)
+        self.vs.viewport = if (self.isChromeActive())
+            .{ .x = 0, .y = 0, .w = chrome.viewport_rect.w, .h = chrome.viewport_rect.h }
+        else
+            self.vs.screen;
 
         var v = self.activeView();
         // LAYER 1: Game / Active View

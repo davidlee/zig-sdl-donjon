@@ -17,6 +17,7 @@ pub const Rect = s.rect.FRect;
 pub const ViewState = struct {
     // System - Coordinator keeps updated on relevant events
     screen: Rect = .{ .x = 0, .y = 0, .w = 800, .h = 600 },
+    viewport: Rect = .{ .x = 0, .y = 0, .w = 800, .h = 600 }, // area available to active view
     mouse_vp: Point = .{ .x = 0, .y = 0 },
     mouse_novp: Point = .{ .x = 0, .y = 0 }, // no viewport (for chrome, etc)
 
@@ -60,6 +61,8 @@ pub const StanceCursor = struct {
     position: ?Point = null,
     /// Whether cursor is locked (click to lock/unlock).
     locked: bool = false,
+    /// Whether confirm button is hovered.
+    confirm_hovered: bool = false,
 };
 
 /// Combat view UI state (interaction: hover, drag, selection)

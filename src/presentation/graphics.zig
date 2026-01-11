@@ -208,6 +208,7 @@ pub const UX = struct {
                 .card => |card| try self.renderCard(card),
                 .text => |text| try self.renderText(text),
                 .log_pane => |pane| try self.renderLogPane(pane),
+                .stance_weights => |sw| try self.renderStanceWeights(sw),
             }
         }
     }
@@ -240,6 +241,7 @@ pub const UX = struct {
                 .card => |card| try self.renderCard(card),
                 .text => |text| try self.renderText(text),
                 .log_pane => |pane| try self.renderLogPane(pane),
+                .stance_weights => |sw| try self.renderStanceWeights(sw),
             }
         }
 
@@ -327,6 +329,29 @@ pub const UX = struct {
         const dst = rect.FRect{
             .x = text.pos.x,
             .y = text.pos.y,
+            .w = tex_w,
+            .h = tex_h,
+        };
+        try self.renderer.renderTexture(tex, null, dst);
+    }
+
+    fn renderStanceWeights(self: *UX, sw: view.StanceWeights) !void {
+        var buf: [64]u8 = undefined;
+        const text = std.fmt.bufPrint(&buf, "ATK: {d:.0}%  DEF: {d:.0}%  MOV: {d:.0}%", .{
+            sw.attack * 100,
+            sw.defense * 100,
+            sw.movement * 100,
+        }) catch return;
+
+        const color: s.ttf.Color = .{ .r = 220, .g = 220, .b = 220, .a = 255 };
+        const surface = self.font.renderTextBlended(text, color) catch return;
+        const tex = textureFromSurface(self.renderer, surface) catch return;
+        defer tex.deinit();
+
+        const tex_w, const tex_h = try tex.getSize();
+        const dst = rect.FRect{
+            .x = sw.pos.x,
+            .y = sw.pos.y,
             .w = tex_w,
             .h = tex_h,
         };

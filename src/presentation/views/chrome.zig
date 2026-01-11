@@ -37,6 +37,16 @@ pub const footer_h: f32 = 8;
 pub const sidebar_w: f32 = 500;
 
 pub const origin = s.rect.FPoint{ .x = 0, .y = header_h };
+
+/// Game viewport dimensions in logical coordinates
+pub const viewport_rect = s.rect.FRect{
+    .x = 0,
+    .y = header_h,
+    .w = logical_w - sidebar_w,
+    .h = logical_h - header_h - footer_h,
+};
+
+/// Game viewport in integer coords (for SDL viewport calls)
 pub const viewport = IRect{
     .x = 0,
     .y = @intFromFloat(header_h),

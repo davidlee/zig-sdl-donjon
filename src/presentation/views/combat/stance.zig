@@ -31,7 +31,7 @@ pub const Triangle = struct {
     /// Distance from center to each vertex.
     radius: f32,
 
-    /// Vertex positions (attack=top, defense=bottom-left, movement=bottom-right).
+    /// Vertex positions (attack=top, movement=bottom-left, defense=bottom-right).
     pub fn vertices(self: Triangle) [3]Point {
         const angle_top = -std.math.pi / 2.0; // -90 degrees (up)
         const angle_left = angle_top + 2.0 * std.math.pi / 3.0; // +120 degrees
@@ -40,9 +40,9 @@ pub const Triangle = struct {
         return .{
             // Attack (top)
             .{ .x = self.center.x + self.radius * @cos(angle_top), .y = self.center.y + self.radius * @sin(angle_top) },
-            // Defense (bottom-left)
+            // Movement (bottom-left)
             .{ .x = self.center.x + self.radius * @cos(angle_left), .y = self.center.y + self.radius * @sin(angle_left) },
-            // Movement (bottom-right)
+            // Defense (bottom-right)
             .{ .x = self.center.x + self.radius * @cos(angle_right), .y = self.center.y + self.radius * @sin(angle_right) },
         };
     }
@@ -52,8 +52,8 @@ pub const Triangle = struct {
     pub fn toBarycentric(self: Triangle, p: Point) ?Stance {
         const v = self.vertices();
         const v0 = v[0]; // attack
-        const v1 = v[1]; // defense
-        const v2 = v[2]; // movement
+        const v1 = v[1]; // movement
+        const v2 = v[2]; // defense
 
         // Compute vectors
         const d00 = dot(sub(v1, v0), sub(v1, v0));
@@ -65,9 +65,9 @@ pub const Triangle = struct {
         const denom = d00 * d11 - d01 * d01;
         if (@abs(denom) < 1e-10) return null; // degenerate triangle
 
-        const defense = (d11 * d20 - d01 * d21) / denom;
-        const movement = (d00 * d21 - d01 * d20) / denom;
-        const attack = 1.0 - defense - movement;
+        const movement = (d11 * d20 - d01 * d21) / denom;
+        const defense = (d00 * d21 - d01 * d20) / denom;
+        const attack = 1.0 - movement - defense;
 
         // Check if inside triangle (all coords in [0,1])
         if (attack < 0 or defense < 0 or movement < 0) return null;
@@ -139,28 +139,59 @@ fn nearestPointOnSegment(p: Point, a: Point, b: Point) Point {
 pub const View = struct {
     triangle: Triangle,
 
+    // Button dimensions
+    const button_w: f32 = 200;
+    const button_h: f32 = 36;
+    const button_y_offset: f32 = 50; // below triangle
+
     pub fn init(center: Point, radius: f32) View {
         return .{ .triangle = .{ .center = center, .radius = radius } };
+    }
+
+    fn confirmButtonRect(self: *const View) Rect {
+        return .{
+            .x = self.triangle.center.x - button_w / 2,
+            .y = self.triangle.center.y + self.triangle.radius + button_y_offset,
+            .w = button_w,
+            .h = button_h,
+        };
+    }
+
+    fn pointInRect(p: Point, r: Rect) bool {
+        return p.x >= r.x and p.x < r.x + r.w and p.y >= r.y and p.y < r.y + r.h;
     }
 
     /// Handle input during stance selection phase.
     pub fn handleInput(self: *View, event: s.events.Event, vs: ViewState) InputResult {
         var cs = vs.combat orelse CombatUIState{};
+        const button_rect = self.confirmButtonRect();
 
         switch (event) {
             .mouse_button_down => {
+                // Check button click first (when locked)
+                if (cs.stance_cursor.locked and pointInRect(vs.mouse_vp, button_rect)) {
+                    const cursor_pos = cs.stance_cursor.position orelse self.triangle.center;
+                    const stance = self.triangle.toBarycentric(cursor_pos) orelse Stance.balanced;
+                    return .{ .command = .{ .confirm_stance = stance } };
+                }
                 // Toggle lock state
                 cs.stance_cursor.locked = !cs.stance_cursor.locked;
                 if (cs.stance_cursor.locked) {
-                    // Lock at current position
-                    cs.stance_cursor.position = vs.mouse_vp;
+                    // Lock at current position (clamped to triangle)
+                    cs.stance_cursor.position = self.triangle.clampToTriangle(vs.mouse_vp);
                 }
                 return .{ .vs = vs.withCombat(cs) };
             },
             .mouse_motion => {
-                // Update cursor position if not locked
-                if (!cs.stance_cursor.locked) {
-                    // Clamp to triangle
+                // Update button hover state when locked
+                if (cs.stance_cursor.locked) {
+                    const hovered = pointInRect(vs.mouse_vp, button_rect);
+                    if (hovered != cs.stance_cursor.confirm_hovered) {
+                        cs.stance_cursor.confirm_hovered = hovered;
+                        return .{ .vs = vs.withCombat(cs) };
+                    }
+                } else {
+                    // Update cursor position when not locked
                     cs.stance_cursor.position = self.triangle.clampToTriangle(vs.mouse_vp);
                     return .{ .vs = vs.withCombat(cs) };
                 }
@@ -185,6 +216,14 @@ pub const View = struct {
         const cs = vs.combat orelse CombatUIState{};
         const verts = self.triangle.vertices();
 
+        // Title
+        try list.append(alloc, .{ .text = .{
+            .content = "Select Stance",
+            .pos = .{ .x = self.triangle.center.x - 70, .y = self.triangle.center.y - self.triangle.radius - 50 },
+            .font_size = .normal,
+            .color = .{ .r = 255, .g = 255, .b = 255, .a = 255 },
+        } });
+
         // Draw triangle outline using filled rects (lines)
         const line_width: f32 = 3;
         const line_color = s.pixels.Color{ .r = 180, .g = 180, .b = 180, .a = 255 };
@@ -199,20 +238,20 @@ pub const View = struct {
         try list.append(alloc, .{ .text = .{
             .content = "ATK",
             .pos = .{ .x = verts[0].x - 15, .y = verts[0].y - label_offset - 15 },
-            .font_size = .medium,
+            .font_size = .normal,
             .color = .{ .r = 255, .g = 100, .b = 100, .a = 255 },
         } });
         try list.append(alloc, .{ .text = .{
-            .content = "DEF",
+            .content = "MOV",
             .pos = .{ .x = verts[1].x - label_offset - 20, .y = verts[1].y + 5 },
-            .font_size = .medium,
-            .color = .{ .r = 100, .g = 100, .b = 255, .a = 255 },
+            .font_size = .normal,
+            .color = .{ .r = 100, .g = 255, .b = 100, .a = 255 },
         } });
         try list.append(alloc, .{ .text = .{
-            .content = "MOV",
+            .content = "DEF",
             .pos = .{ .x = verts[2].x + label_offset - 10, .y = verts[2].y + 5 },
-            .font_size = .medium,
-            .color = .{ .r = 100, .g = 255, .b = 100, .a = 255 },
+            .font_size = .normal,
+            .color = .{ .r = 100, .g = 100, .b = 255, .a = 255 },
         } });
 
         // Draw cursor
@@ -237,31 +276,40 @@ pub const View = struct {
 
         // Draw weight percentages
         const stance = self.triangle.toBarycentric(cursor_pos) orelse Stance.balanced;
-        var buf: [64]u8 = undefined;
-        const weights_text = std.fmt.bufPrint(&buf, "ATK: {d:.0}%  DEF: {d:.0}%  MOV: {d:.0}%", .{
-            stance.attack * 100,
-            stance.defense * 100,
-            stance.movement * 100,
-        }) catch "---";
-
-        try list.append(alloc, .{ .text = .{
-            .content = weights_text,
+        try list.append(alloc, .{ .stance_weights = .{
+            .attack = stance.attack,
+            .defense = stance.defense,
+            .movement = stance.movement,
             .pos = .{ .x = self.triangle.center.x - 100, .y = self.triangle.center.y + self.triangle.radius + 30 },
-            .font_size = .medium,
-            .color = .{ .r = 220, .g = 220, .b = 220, .a = 255 },
         } });
 
-        // Instructions
-        const instruction = if (cs.stance_cursor.locked)
-            "Press SPACE to confirm"
+        // Confirm button (only active when locked)
+        const button_rect = self.confirmButtonRect();
+        const button_color = if (!cs.stance_cursor.locked)
+            s.pixels.Color{ .r = 40, .g = 40, .b = 40, .a = 255 } // disabled
+        else if (cs.stance_cursor.confirm_hovered)
+            s.pixels.Color{ .r = 80, .g = 120, .b = 80, .a = 255 } // hover
         else
-            "Click to lock position";
+            s.pixels.Color{ .r = 60, .g = 90, .b = 60, .a = 255 }; // active
+
+        try list.append(alloc, .{
+            .filled_rect = .{
+                .rect = button_rect,
+                .color = button_color,
+            },
+        });
+
+        const instruction = if (cs.stance_cursor.locked) "Confirm" else "Click to lock";
+        const text_color = if (cs.stance_cursor.locked)
+            s.pixels.Color{ .r = 220, .g = 220, .b = 220, .a = 255 }
+        else
+            s.pixels.Color{ .r = 100, .g = 100, .b = 100, .a = 255 };
 
         try list.append(alloc, .{ .text = .{
             .content = instruction,
-            .pos = .{ .x = self.triangle.center.x - 80, .y = self.triangle.center.y + self.triangle.radius + 55 },
-            .font_size = .small,
-            .color = .{ .r = 150, .g = 150, .b = 150, .a = 255 },
+            .pos = .{ .x = button_rect.x + button_w / 2 - 35, .y = button_rect.y + 8 },
+            .font_size = .normal,
+            .color = text_color,
         } });
     }
 
@@ -312,17 +360,17 @@ test "barycentric coords at vertices" {
     try testing.expectApproxEqAbs(@as(f32, 0.0), at_attack.defense, 0.01);
     try testing.expectApproxEqAbs(@as(f32, 0.0), at_attack.movement, 0.01);
 
-    // At defense vertex
-    const at_defense = tri.toBarycentric(verts[1]).?;
-    try testing.expectApproxEqAbs(@as(f32, 0.0), at_defense.attack, 0.01);
-    try testing.expectApproxEqAbs(@as(f32, 1.0), at_defense.defense, 0.01);
-    try testing.expectApproxEqAbs(@as(f32, 0.0), at_defense.movement, 0.01);
-
-    // At movement vertex
-    const at_movement = tri.toBarycentric(verts[2]).?;
+    // At movement vertex (bottom-left)
+    const at_movement = tri.toBarycentric(verts[1]).?;
     try testing.expectApproxEqAbs(@as(f32, 0.0), at_movement.attack, 0.01);
     try testing.expectApproxEqAbs(@as(f32, 0.0), at_movement.defense, 0.01);
     try testing.expectApproxEqAbs(@as(f32, 1.0), at_movement.movement, 0.01);
+
+    // At defense vertex (bottom-right)
+    const at_defense = tri.toBarycentric(verts[2]).?;
+    try testing.expectApproxEqAbs(@as(f32, 0.0), at_defense.attack, 0.01);
+    try testing.expectApproxEqAbs(@as(f32, 1.0), at_defense.defense, 0.01);
+    try testing.expectApproxEqAbs(@as(f32, 0.0), at_defense.movement, 0.01);
 }
 
 test "barycentric coords at center" {

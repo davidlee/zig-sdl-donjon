@@ -111,7 +111,7 @@ Start with random uniform; refine later.
 - [x] Tests for barycentric math
 
 ### UI Rendering (in progress)
-- [ ] Integrate stance view into combat view (renderables + handleInput) — **do this first, works with placeholder rects**
+- [x] Integrate stance view into combat view (renderables + handleInput)
 - [ ] Add triangle/polygon rendering capability (graphics layer work) — blocked, needs SDL GPU or Bresenham
 - [ ] Integration test for phase flow
 

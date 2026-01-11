@@ -40,6 +40,7 @@ pub const PlayStatus = struct {
 
 /// Pre-computed combat state for UI consumption.
 pub const CombatSnapshot = struct {
+    turn_phase: combat.TurnPhase,
     card_statuses: std.AutoHashMap(entity.ID, CardStatus),
     play_statuses: std.ArrayList(PlayStatus),
     /// Maps (modifier_id, play_index) -> true for valid attachments.
@@ -47,8 +48,9 @@ pub const CombatSnapshot = struct {
     modifier_attachability: std.AutoHashMap(ModifierPlayKey, void),
     allocator: std.mem.Allocator,
 
-    pub fn init(allocator: std.mem.Allocator) !CombatSnapshot {
+    pub fn init(allocator: std.mem.Allocator, turn_phase: combat.TurnPhase) !CombatSnapshot {
         return .{
+            .turn_phase = turn_phase,
             .card_statuses = std.AutoHashMap(entity.ID, CardStatus).init(allocator),
             .play_statuses = try std.ArrayList(PlayStatus).initCapacity(allocator, 8),
             .modifier_attachability = std.AutoHashMap(ModifierPlayKey, void).init(allocator),
@@ -98,26 +100,28 @@ pub const CombatSnapshot = struct {
 /// Build a combat snapshot from current world state.
 /// Validates all player cards and resolves play targets.
 pub fn buildSnapshot(allocator: std.mem.Allocator, world: *const World) !CombatSnapshot {
-    var snapshot = try CombatSnapshot.init(allocator);
+    const encounter = world.encounter;
+    const phase = if (encounter) |e| e.turnPhase() else .stance_selection;
+
+    var snapshot = try CombatSnapshot.init(allocator, phase);
     errdefer snapshot.deinit();
 
     const player = world.player;
-    const encounter = world.encounter orelse return snapshot;
-    const phase = encounter.turnPhase();
+    const enc = encounter orelse return snapshot;
 
     // Validate cards from all player sources
-    try validateCards(&snapshot, allocator, player, phase, encounter, world);
+    try validateCards(&snapshot, allocator, player, phase, enc, world);
 
     // Resolve play targets for commit phase
-    try resolvePlayTargets(&snapshot, allocator, player.id, encounter, world);
+    try resolvePlayTargets(&snapshot, allocator, player.id, enc, world);
 
     // Also resolve enemy play targets
-    for (encounter.enemies.items) |enemy| {
-        try resolvePlayTargets(&snapshot, allocator, enemy.id, encounter, world);
+    for (enc.enemies.items) |enemy| {
+        try resolvePlayTargets(&snapshot, allocator, enemy.id, enc, world);
     }
 
     // Compute which modifiers can attach to which plays
-    try computeModifierAttachability(&snapshot, player, encounter, world);
+    try computeModifierAttachability(&snapshot, player, enc, world);
 
     return snapshot;
 }
@@ -280,7 +284,7 @@ fn checkModifierAgainstPlays(
 const testing = std.testing;
 
 test "empty snapshot returns false for unknown cards" {
-    var snapshot = try CombatSnapshot.init(testing.allocator);
+    var snapshot = try CombatSnapshot.init(testing.allocator, .stance_selection);
     defer snapshot.deinit();
 
     const fake_id = entity.ID{ .index = 0, .generation = 0, .kind = .action };
@@ -288,14 +292,14 @@ test "empty snapshot returns false for unknown cards" {
 }
 
 test "playTarget returns null for unknown play" {
-    var snapshot = try CombatSnapshot.init(testing.allocator);
+    var snapshot = try CombatSnapshot.init(testing.allocator, .stance_selection);
     defer snapshot.deinit();
 
     try testing.expect(snapshot.playTarget(0) == null);
 }
 
 test "canModifierAttachToPlay returns false for unknown modifier" {
-    var snapshot = try CombatSnapshot.init(testing.allocator);
+    var snapshot = try CombatSnapshot.init(testing.allocator, .stance_selection);
     defer snapshot.deinit();
 
     const fake_id = entity.ID{ .index = 0, .generation = 0, .kind = .action };

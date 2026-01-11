@@ -42,6 +42,7 @@ pub const Renderable = union(enum) {
     filled_rect: FilledRect,
     card: Card,
     log_pane: LogPane,
+    stance_weights: StanceWeights,
 };
 
 /// Combat log pane - UX renders with texture caching
@@ -82,6 +83,14 @@ pub const Text = struct {
 pub const FilledRect = struct {
     rect: Rect,
     color: Color,
+};
+
+/// Stance weight display - graphics layer formats the values
+pub const StanceWeights = struct {
+    attack: f32,
+    defense: f32,
+    movement: f32,
+    pos: Point,
 };
 
 // Re-export view state types

@@ -54,6 +54,7 @@ const EnemyTimelineStrip = play_mod.EnemyTimelineStrip;
 const PlayerAvatar = combat_mod.Player;
 const EnemySprite = combat_mod.Enemy;
 const Opposition = combat_mod.Opposition;
+const StanceView = combat_mod.StanceView;
 
 fn getLayout(zone: ViewZone) CardLayout {
     return .{
@@ -530,7 +531,8 @@ pub const View = struct {
         arena: std.mem.Allocator,
         snapshot: ?*const query.CombatSnapshot,
     ) View {
-        const phase = world.turnPhase();
+        // Prefer snapshot's turn_phase (DTO pattern) over direct world query
+        const phase = if (snapshot) |snap| snap.turn_phase else world.turnPhase();
 
         return .{
             .world = world,
@@ -771,6 +773,13 @@ pub const View = struct {
     pub fn handleInput(self: *View, event: s.events.Event, world: *const World, vs: ViewState) InputResult {
         _ = world;
         const cs = vs.combat orelse CombatUIState{};
+
+        // Stance selection phase uses dedicated view
+        if (self.inPhase(.stance_selection)) {
+            const center = Point{ .x = vs.viewport.w / 2, .y = vs.viewport.h / 2 };
+            var stance_view = StanceView.init(center, 240);
+            return stance_view.handleInput(event, vs);
+        }
 
         switch (event) {
             .mouse_button_down => |data| {
@@ -1259,6 +1268,14 @@ pub const View = struct {
         const cs = vs.combat orelse CombatUIState{};
 
         var list = try std.ArrayList(Renderable).initCapacity(alloc, 32);
+
+        // Stance selection phase uses dedicated view
+        if (self.inPhase(.stance_selection)) {
+            const center = Point{ .x = vs.viewport.w / 2, .y = vs.viewport.h / 2 };
+            const stance_view = StanceView.init(center, 240);
+            try stance_view.appendRenderables(alloc, &list, vs);
+            return list;
+        }
 
         // Get encounter and primary target for enemy rendering
         const enc = self.world.encounter;
