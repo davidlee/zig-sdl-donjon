@@ -22,9 +22,12 @@ pub const CommittedAction = committed_action.CommittedAction;
 pub const ResolutionEntry = committed_action.ResolutionEntry;
 pub const TickResult = committed_action.TickResult;
 
+const plays = @import("../combat/plays.zig");
+
 const Agent = combat.Agent;
 const Engagement = combat.Engagement;
 const Technique = cards.Technique;
+const Stance = plays.Stance;
 const World = world.World;
 
 pub const TickResolver = struct {
@@ -240,6 +243,14 @@ pub const TickResolver = struct {
                     break :blk @as(f32, 0);
                 } else 0;
 
+                // Get attacker's stance from encounter state
+                const attacker_stance = if (w.encounter) |enc| blk: {
+                    if (enc.stateForConst(action.actor.id)) |state| {
+                        break :blk state.current.stance;
+                    }
+                    break :blk Stance.balanced;
+                } else Stance.balanced;
+
                 // Build contexts and resolve
                 const attack_ctx = resolution.AttackContext{
                     .attacker = action.actor,
@@ -251,6 +262,7 @@ pub const TickResolver = struct {
                     .time_start = action.time_start,
                     .time_end = action.time_end,
                     .attention_penalty = attention_penalty,
+                    .attacker_stance = attacker_stance,
                 };
 
                 // Compute defender's combat state (stationary, flanking)
@@ -266,6 +278,17 @@ pub const TickResolver = struct {
                     };
                 } else resolution.ComputedCombatState{ .is_stationary = true };
 
+                // Get defender's stance from encounter state
+                const defender_stance = if (w.encounter) |enc| blk: {
+                    if (enc.stateForConst(defender.id)) |state| {
+                        break :blk state.current.stance;
+                    }
+                    break :blk Stance.balanced;
+                } else Stance.balanced;
+
+                // Check if defender has offensive action in overlapping time window
+                const defender_is_attacking = self.isDefenderAttacking(defender.id, action.time_start, action.time_end);
+
                 const defense_ctx = resolution.DefenseContext{
                     .defender = defender,
                     .technique = defense_tech,
@@ -275,6 +298,8 @@ pub const TickResolver = struct {
                     // Use attack time window - defender's manoeuvres during this window provide bonus
                     .time_start = action.time_start,
                     .time_end = action.time_end,
+                    .defender_stance = defender_stance,
+                    .defender_is_attacking = defender_is_attacking,
                 };
 
                 // Select hit location
@@ -315,6 +340,21 @@ pub const TickResolver = struct {
         _ = self;
         // All actions now have card instances with proper tags
         return if (action.card) |card| card.template.tags.offensive else false;
+    }
+
+    /// Check if defender has an offensive action overlapping the given time window.
+    /// Used to determine weapon defense scaling (attacking = reduced parry contribution).
+    fn isDefenderAttacking(self: *TickResolver, defender_id: entity.ID, time_start: f32, time_end: f32) bool {
+        for (self.committed.items) |*action| {
+            if (!action.actor.id.eql(defender_id)) continue;
+            if (!self.isOffensiveAction(action)) continue;
+
+            // Check time overlap
+            if (action.time_end > time_start and action.time_start < time_end) {
+                return true;
+            }
+        }
+        return false;
     }
 
     fn findDefensiveAction(
