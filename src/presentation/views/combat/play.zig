@@ -7,7 +7,7 @@
 const std = @import("std");
 const entity = @import("infra").entity;
 const combat = @import("../../../domain/combat.zig");
-const domain_cards = @import("../../../domain/cards.zig");
+const domain_actions = @import("../../../domain/actions.zig");
 const types = @import("../types.zig");
 const card_mod = @import("../card/mod.zig");
 const hit_mod = @import("hit.zig");
@@ -36,7 +36,7 @@ pub const Data = struct {
     action: CardViewData,
     modifier_stack_buf: [max_modifiers]CardViewData = undefined,
     modifier_stack_len: u4 = 0,
-    stakes: domain_cards.Stakes,
+    stakes: domain_actions.Stakes,
 
     // Targeting (if offensive)
     target_id: ?entity.ID = null,
@@ -44,7 +44,7 @@ pub const Data = struct {
     // Timeline position (Phase 0: direct from domain)
     time_start: f32 = 0,
     time_end: f32 = 0,
-    channels: domain_cards.ChannelSet = .{},
+    channels: domain_actions.ChannelSet = .{},
 
     pub fn modifiers(self: *const Data) []const CardViewData {
         return self.modifier_stack_buf[0..self.modifier_stack_len];
@@ -343,7 +343,7 @@ pub const TimelineView = struct {
     /// Result of timeline position hit test
     pub const DropPosition = struct {
         time: f32, // 0.0-1.0, snapped to 0.1
-        channel: domain_cards.ChannelSet,
+        channel: domain_actions.ChannelSet,
     };
 
     /// Convert Y position to lane index (0-3), or null if outside timeline
@@ -355,7 +355,7 @@ pub const TimelineView = struct {
     }
 
     /// Convert lane index to ChannelSet
-    pub fn laneToChannel(lane: usize) domain_cards.ChannelSet {
+    pub fn laneToChannel(lane: usize) domain_actions.ChannelSet {
         return switch (lane) {
             0 => .{ .weapon = true },
             1 => .{ .off_hand = true },
@@ -621,7 +621,7 @@ pub const channel_colors = struct {
     pub const footwork = Color{ .r = 60, .g = 160, .b = 80, .a = 255 }; // green
     pub const concentration = Color{ .r = 140, .g = 80, .b = 180, .a = 255 }; // purple
 
-    pub fn forChannels(channels: domain_cards.ChannelSet) Color {
+    pub fn forChannels(channels: domain_actions.ChannelSet) Color {
         // Priority: weapon > off_hand > footwork > concentration
         if (channels.weapon) return weapon;
         if (channels.off_hand) return off_hand;

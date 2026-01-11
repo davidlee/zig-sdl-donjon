@@ -10,7 +10,7 @@ const SlotMap = @import("../slot_map.zig").SlotMap;
 
 const armour = @import("../armour.zig");
 const body = @import("../body.zig");
-const cards = @import("../cards.zig");
+const actions = @import("../actions.zig");
 const cond = @import("../condition.zig");
 const damage = @import("../damage.zig");
 const events = @import("../events.zig");
@@ -62,7 +62,7 @@ pub const Agent = struct {
     stats: stats.Block,
     // may be humanoid, or not
     body: body.Body,
-    // sourced from cards.equipped
+    // sourced from actions.equipped
     armour: armour.Stack,
     weapons: Armament,
     dominant_side: body.Side = .right, // .center == ambidextrous
@@ -555,7 +555,7 @@ pub const Agent = struct {
     /// Returns the appropriate weapon for weapon/off_hand channels, null otherwise.
     /// - weapon channel: primary equipped or first natural weapon
     /// - off_hand channel: secondary equipped (dual-wield only)
-    pub fn weaponForChannel(self: *const Agent, channel: cards.ChannelSet) ?WeaponRef {
+    pub fn weaponForChannel(self: *const Agent, channel: actions.ChannelSet) ?WeaponRef {
         if (channel.weapon) {
             return switch (self.weapons.equipped) {
                 .unarmed => blk: {

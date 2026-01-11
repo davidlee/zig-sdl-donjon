@@ -3,7 +3,7 @@
 //! Handles the transition of reserved stamina to spent stamina,
 //! and moves cards to their post-resolution zones (discard, exhaust, etc.).
 
-const cards = @import("../cards.zig");
+const actions = @import("../actions.zig");
 const combat = @import("../combat.zig");
 const events = @import("../events.zig");
 const tick = @import("../tick.zig");
@@ -59,8 +59,8 @@ pub fn applyCommittedCosts(
 
             cs.moveCard(card.id, .in_play, combat_dest) catch continue;
 
-            // Event uses cards.Zone (not combat.CombatZone)
-            const event_dest: cards.Zone = if (card.template.cost.exhausts)
+            // Event uses actions.Zone (not combat.CombatZone)
+            const event_dest: actions.Zone = if (card.template.cost.exhausts)
                 .exhaust
             else
                 .discard;

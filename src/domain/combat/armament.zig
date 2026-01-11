@@ -4,7 +4,7 @@
 
 const std = @import("std");
 const weapon = @import("../weapon.zig");
-const cards = @import("../cards.zig");
+const actions = @import("../actions.zig");
 const species = @import("../species.zig");
 
 /// Weapon configuration for an agent.
@@ -65,7 +65,7 @@ pub const Armament = struct {
 
     /// Get the offensive mode (swing/thrust) from the primary equipped weapon.
     /// Returns null if unarmed, weapon lacks that mode, or for .ranged/.none modes.
-    pub fn getOffensiveMode(self: Armament, mode: cards.AttackMode) ?weapon.Offensive {
+    pub fn getOffensiveMode(self: Armament, mode: actions.AttackMode) ?weapon.Offensive {
         const template = switch (self.equipped) {
             .unarmed => return null,
             .single => |w| w.template,

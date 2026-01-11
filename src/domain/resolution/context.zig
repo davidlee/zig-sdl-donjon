@@ -6,7 +6,7 @@ const std = @import("std");
 const lib = @import("infra");
 const entity = lib.entity;
 const combat = @import("../combat.zig");
-const cards = @import("../cards.zig");
+const actions = @import("../actions.zig");
 const damage = @import("../damage.zig");
 const weapon = @import("../weapon.zig");
 const world = @import("../world.zig");
@@ -16,8 +16,8 @@ const plays = @import("../combat/plays.zig");
 const Agent = combat.Agent;
 const Engagement = combat.Engagement;
 const FlankingStatus = combat.FlankingStatus;
-const Technique = cards.Technique;
-const Stakes = cards.Stakes;
+const Technique = actions.Technique;
+const Stakes = actions.Stakes;
 const Stance = plays.Stance;
 const World = world.World;
 
@@ -310,7 +310,7 @@ const ai = @import("../ai.zig");
 const stats = @import("../stats.zig");
 const species = @import("../species.zig");
 const slot_map = @import("../slot_map.zig");
-const card_list = @import("../card_list.zig");
+const card_list = @import("../action_list.zig");
 
 fn makeTestWorld(alloc: std.mem.Allocator) !*World {
     return World.init(alloc);
@@ -518,7 +518,7 @@ test "CombatModifiers.forAttacker applies attention penalty for non-primary targ
     try w.encounter.?.addEnemy(defender);
 
     const engagement = w.encounter.?.getPlayerEngagement(defender.id).?;
-    const technique = &cards.Technique.byID(.thrust);
+    const technique = &actions.Technique.byID(.thrust);
 
     // Set attention penalty to 0.15 (simulating non-primary target)
     const attack = AttackContext{
@@ -548,7 +548,7 @@ test "CombatModifiers.forAttacker no penalty when attention_penalty is zero" {
     try w.encounter.?.addEnemy(defender);
 
     const engagement = w.encounter.?.getPlayerEngagement(defender.id).?;
-    const technique = &cards.Technique.byID(.thrust);
+    const technique = &actions.Technique.byID(.thrust);
 
     // No attention penalty (primary target)
     const attack = AttackContext{
@@ -624,7 +624,7 @@ test "CombatModifiers.forAttacker applies grasp strength penalty" {
     try w.encounter.?.addEnemy(defender);
 
     const engagement = w.encounter.?.getPlayerEngagement(defender.id).?;
-    const technique = &cards.Technique.byID(.thrust);
+    const technique = &actions.Technique.byID(.thrust);
 
     // Damage the dominant hand (right by default)
     const right_hand = attacker.body.graspingPartBySide(.right).?;

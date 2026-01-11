@@ -8,7 +8,7 @@ const std = @import("std");
 const lib = @import("infra");
 const entity = lib.entity;
 const combat = @import("../../combat.zig");
-const cards = @import("../../cards.zig");
+const actions = @import("../../actions.zig");
 const damage = @import("../../damage.zig");
 const stats = @import("../../stats.zig");
 const random = @import("../../random.zig");
@@ -138,7 +138,7 @@ pub fn resolveManoeuvreConflict(
     return .{ .outcome = outcome, .aggressor_score = aggressor_score, .defender_score = defender_score };
 }
 
-/// Determine what footwork an agent is attempting this tick based on their played cards.
+/// Determine what footwork an agent is attempting this tick based on their played actions.
 /// Scans manoeuvre cards for modify_range effects to infer movement intent.
 /// Returns null if agent has no encounter state.
 pub fn getAgentFootwork(

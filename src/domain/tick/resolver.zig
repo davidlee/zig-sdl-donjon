@@ -5,7 +5,7 @@
 const std = @import("std");
 const lib = @import("infra");
 const entity = lib.entity;
-const cards = @import("../cards.zig");
+const actions = @import("../actions.zig");
 const combat = @import("../combat.zig");
 const events = @import("../events.zig");
 const resolution = @import("../resolution.zig");
@@ -26,7 +26,7 @@ const plays = @import("../combat/plays.zig");
 
 const Agent = combat.Agent;
 const Engagement = combat.Engagement;
-const Technique = cards.Technique;
+const Technique = actions.Technique;
 const Stance = plays.Stance;
 const World = world.World;
 
@@ -408,7 +408,7 @@ test "CommittedAction.compareByTime sorts correctly" {
     defer resolver.deinit();
 
     // Create mock technique for testing
-    const mock_technique = cards.Technique{
+    const mock_technique = actions.Technique{
         .id = .swing,
         .name = "test",
         .damage = .{
@@ -460,7 +460,7 @@ test "TickResolver.reset clears committed actions" {
     var resolver = try TickResolver.init(alloc);
     defer resolver.deinit();
 
-    const mock_technique = cards.Technique{
+    const mock_technique = actions.Technique{
         .id = .swing,
         .name = "test",
         .damage = .{

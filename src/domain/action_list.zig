@@ -6,24 +6,24 @@ const std = @import("std");
 const Event = @import("events.zig").Event;
 
 const body = @import("body.zig");
-const cards = @import("cards.zig");
+const actions = @import("actions.zig");
 const combat = @import("combat.zig");
 const damage = @import("damage.zig");
 const stats = @import("stats.zig");
 const weapon = @import("weapon.zig");
 
-const Rule = cards.Rule;
-const TagSet = cards.TagSet;
-const Cost = cards.Cost;
-const Trigger = cards.Trigger;
-const Effect = cards.Effect;
-const Template = cards.Template;
-const Expression = cards.Expression;
-const Technique = cards.Technique;
-const TechniqueID = cards.TechniqueID;
-const PlayableFrom = cards.PlayableFrom;
+const Rule = actions.Rule;
+const TagSet = actions.TagSet;
+const Cost = actions.Cost;
+const Trigger = actions.Trigger;
+const Effect = actions.Effect;
+const Template = actions.Template;
+const Expression = actions.Expression;
+const Technique = actions.Technique;
+const TechniqueID = actions.TechniqueID;
+const PlayableFrom = actions.PlayableFrom;
 
-const ID = cards.ID;
+const ID = actions.ID;
 
 pub fn byName(comptime name: []const u8) *const Template {
     inline for (BeginnerDeck) |template| {
@@ -100,22 +100,22 @@ fn parseTechniqueID(name: []const u8) TechniqueID {
     @compileError("unknown TechniqueID '" ++ name ++ "'");
 }
 
-fn parseAttackMode(value: []const u8) cards.AttackMode {
-    inline for (std.meta.fields(cards.AttackMode)) |field| {
+fn parseAttackMode(value: []const u8) actions.AttackMode {
+    inline for (std.meta.fields(actions.AttackMode)) |field| {
         if (std.mem.eql(u8, value, field.name)) {
-            return @field(cards.AttackMode, field.name);
+            return @field(actions.AttackMode, field.name);
         }
     }
     @compileError("unknown attack mode '" ++ value ++ "'");
 }
 
-fn buildOverlay(def: generated.TechniqueDefinition) ?cards.OverlayBonus {
+fn buildOverlay(def: generated.TechniqueDefinition) ?actions.OverlayBonus {
     const offensive =
         def.overlay_offensive_to_hit_bonus != 0 or def.overlay_offensive_damage_mult != 1;
     const defensive = def.overlay_defensive_defense_bonus != 0;
     if (!offensive and !defensive) return null;
 
-    var bonus: cards.OverlayBonus = .{};
+    var bonus: actions.OverlayBonus = .{};
     if (offensive) {
         bonus.offensive = .{
             .to_hit_bonus = def.overlay_offensive_to_hit_bonus,

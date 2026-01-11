@@ -7,14 +7,14 @@ const lib = @import("infra");
 const entity = lib.entity;
 const RandomStreamID = @import("random.zig").RandomStreamID;
 const Slot = void; // TODO what's this look like?
-const cards = @import("cards.zig");
+const actions = @import("actions.zig");
 const damage = @import("damage.zig");
 const world = @import("world.zig");
 const body = @import("body.zig");
 const combat = @import("combat.zig");
 const resolution = @import("resolution.zig");
 const apply = @import("apply.zig");
-const Zone = cards.Zone;
+const Zone = actions.Zone;
 pub const CardWithSlot = struct {
     card: entity.ID,
     slot: Slot,
@@ -44,7 +44,7 @@ pub const Event = union(enum) {
     card_moved: struct { instance: entity.ID, from: Zone, to: Zone, actor: AgentMeta },
     card_cloned: struct { clone_id: entity.ID, master_id: entity.ID, actor: AgentMeta },
     card_cancelled: struct { instance: entity.ID, actor: AgentMeta },
-    play_moved: struct { card_id: entity.ID, new_time_start: f32, new_channel: ?cards.ChannelSet },
+    play_moved: struct { card_id: entity.ID, new_time_start: f32, new_channel: ?actions.ChannelSet },
 
     game_state_transitioned_to: world.GameState,
     turn_phase_transitioned_to: combat.TurnPhase,
@@ -125,7 +125,7 @@ pub const Event = union(enum) {
     technique_resolved: struct {
         attacker_id: entity.ID,
         defender_id: entity.ID,
-        technique_id: cards.TechniqueID,
+        technique_id: actions.TechniqueID,
         weapon_name: []const u8, // weapon used for attack
         outcome: resolution.Outcome,
         // Roll details
@@ -142,7 +142,7 @@ pub const Event = union(enum) {
     contested_roll_resolved: struct {
         attacker_id: entity.ID,
         defender_id: entity.ID,
-        technique_id: cards.TechniqueID,
+        technique_id: actions.TechniqueID,
         weapon_name: []const u8,
         attack: resolution.contested.AttackBreakdown,
         defense: resolution.contested.DefenseBreakdown,
@@ -156,7 +156,7 @@ pub const Event = union(enum) {
     combat_packet_resolved: struct {
         attacker_id: entity.ID,
         defender_id: entity.ID,
-        technique_id: cards.TechniqueID,
+        technique_id: actions.TechniqueID,
         target_part: body.PartIndex,
         // Input packet (legacy fields)
         initial_amount: f32,
@@ -184,7 +184,7 @@ pub const Event = union(enum) {
     attack_out_of_range: struct {
         attacker_id: entity.ID,
         defender_id: entity.ID,
-        technique_id: cards.TechniqueID,
+        technique_id: actions.TechniqueID,
         weapon_reach: combat.Reach,
         engagement_range: combat.Reach,
     },
@@ -285,7 +285,7 @@ pub const Event = union(enum) {
     },
     cooldown_applied: struct {
         agent_id: entity.ID,
-        template_id: cards.ID,
+        template_id: actions.ID,
         ticks: u8,
     },
 };

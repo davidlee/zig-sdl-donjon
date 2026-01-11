@@ -291,7 +291,7 @@ pub fn formatForConsole(e: anytype) void {
 // Tests
 // ============================================================================
 
-const cards = @import("../cards.zig");
+const actions = @import("../actions.zig");
 const weapon_list = @import("../weapon_list.zig");
 const ai = @import("../ai.zig");
 const stats = @import("../stats.zig");
@@ -328,7 +328,7 @@ test "resolveContested produces valid outcome" {
     try w.encounter.?.addEnemy(defender);
 
     const engagement = w.encounter.?.getPlayerEngagement(defender.id).?;
-    const technique = &cards.Technique.byID(.thrust);
+    const technique = &actions.Technique.byID(.thrust);
 
     const attack_ctx = AttackContext{
         .attacker = attacker,
@@ -373,7 +373,7 @@ test "stance affects contested outcome" {
     try w.encounter.?.addEnemy(defender);
 
     const engagement = w.encounter.?.getPlayerEngagement(defender.id).?;
-    const technique = &cards.Technique.byID(.thrust);
+    const technique = &actions.Technique.byID(.thrust);
 
     // Pure attack stance
     const aggressive_stance = Stance{ .attack = 1.0, .defense = 0.0, .movement = 0.0 };

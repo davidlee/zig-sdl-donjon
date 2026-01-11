@@ -7,13 +7,13 @@ const std = @import("std");
 const lib = @import("infra");
 const entity = lib.entity;
 
-const cards = @import("../cards.zig");
+const actions = @import("../actions.zig");
 const combat = @import("../combat.zig");
 const w = @import("../world.zig");
 
 const World = w.World;
 const Agent = combat.Agent;
-const Instance = cards.Instance;
+const Instance = actions.Instance;
 
 // ============================================================================
 // Error Types
@@ -127,7 +127,7 @@ pub fn canWithdrawPlay(play: *const combat.Play, registry: *const w.ActionRegist
 
 /// Check if all rule predicates on a card template are satisfied.
 pub fn rulePredicatesSatisfied(
-    template: *const cards.Template,
+    template: *const actions.Template,
     actor: *const Agent,
     encounter: ?*const combat.Encounter,
 ) bool {
@@ -141,7 +141,7 @@ pub fn rulePredicatesSatisfied(
 // Internal Validation Helpers
 // ============================================================================
 
-fn isInPlayableSource(actor: *const Agent, cs: *const combat.CombatState, card_id: entity.ID, pf: cards.PlayableFrom) bool {
+fn isInPlayableSource(actor: *const Agent, cs: *const combat.CombatState, card_id: entity.ID, pf: actions.PlayableFrom) bool {
     // Check CombatState.hand
     if (pf.hand and cs.isInZone(card_id, .hand)) return true;
 
@@ -172,7 +172,7 @@ fn isInPlayableSource(actor: *const Agent, cs: *const combat.CombatState, card_i
     return false;
 }
 
-fn getCardChannels(template: *const cards.Template) cards.ChannelSet {
+fn getCardChannels(template: *const actions.Template) actions.ChannelSet {
     if (template.getTechnique()) |technique| {
         return technique.channels;
     }
@@ -185,7 +185,7 @@ fn getCardChannels(template: *const cards.Template) cards.ChannelSet {
 
 /// Check if a card's template matches a predicate (for on_play_attempt rules).
 /// This evaluates predicates against the *attempted* card, not the rule owner.
-pub fn cardTemplateMatchesPredicate(template: *const cards.Template, p: cards.Predicate) bool {
+pub fn cardTemplateMatchesPredicate(template: *const actions.Template, p: actions.Predicate) bool {
     return switch (p) {
         .always => true,
         .has_tag => |tag| template.tags.hasTag(tag),
@@ -212,7 +212,7 @@ pub fn cardTemplateMatchesPredicate(template: *const cards.Template, p: cards.Pr
 /// Returns the blocking card's ID if blocked, null otherwise.
 pub fn checkOnPlayAttemptBlockers(
     actor: *const Agent,
-    attempted_template: *const cards.Template,
+    attempted_template: *const actions.Template,
     world: *const World,
 ) ?entity.ID {
     const cs = actor.combat_state orelse return null;
@@ -247,15 +247,15 @@ pub fn checkOnPlayAttemptBlockers(
 
 /// Context for predicate evaluation (used by both validation and targeting).
 pub const PredicateContext = struct {
-    card: *const cards.Instance,
+    card: *const actions.Instance,
     actor: *const Agent,
     target: *const Agent,
     engagement: ?*const combat.Engagement,
 };
 
 fn evaluateValidityPredicate(
-    p: cards.Predicate,
-    template: *const cards.Template,
+    p: actions.Predicate,
+    template: *const actions.Template,
     actor: *const Agent,
     encounter: ?*const combat.Encounter,
 ) bool {
@@ -295,7 +295,7 @@ fn evaluateValidityPredicate(
 
 /// Evaluate a predicate with full context (used by targeting filters).
 /// Made pub for use by apply/targeting.zig.
-pub fn evaluatePredicate(p: *const cards.Predicate, ctx: PredicateContext) bool {
+pub fn evaluatePredicate(p: *const actions.Predicate, ctx: PredicateContext) bool {
     return switch (p.*) {
         .always => true,
         .has_tag => |tag| ctx.card.template.tags.hasTag(tag),
@@ -342,7 +342,7 @@ pub fn evaluatePredicate(p: *const cards.Predicate, ctx: PredicateContext) bool 
 // Comparison Helpers
 // ============================================================================
 
-pub fn compareReach(lhs: combat.Reach, op: cards.Comparator, rhs: combat.Reach) bool {
+pub fn compareReach(lhs: combat.Reach, op: actions.Comparator, rhs: combat.Reach) bool {
     const l = @intFromEnum(lhs);
     const r = @intFromEnum(rhs);
     return switch (op) {
@@ -354,7 +354,7 @@ pub fn compareReach(lhs: combat.Reach, op: cards.Comparator, rhs: combat.Reach) 
     };
 }
 
-pub fn compareF32(lhs: f32, op: cards.Comparator, rhs: f32) bool {
+pub fn compareF32(lhs: f32, op: actions.Comparator, rhs: f32) bool {
     return switch (op) {
         .lt => lhs < rhs,
         .lte => lhs <= rhs,
@@ -415,7 +415,7 @@ test "canWithdrawPlay returns false for involuntary cards" {
     defer registry.deinit();
 
     // Create an involuntary card template
-    const involuntary_template = &cards.Template{
+    const involuntary_template = &actions.Template{
         .id = 999,
         .name = "test involuntary",
         .description = "cannot be withdrawn",
@@ -442,7 +442,7 @@ test "canWithdrawPlay returns true for non-involuntary cards with no modifiers" 
     defer registry.deinit();
 
     // Create a normal card template
-    const normal_template = &cards.Template{
+    const normal_template = &actions.Template{
         .id = 888,
         .name = "test normal",
         .description = "can be withdrawn",
@@ -465,7 +465,7 @@ test "canWithdrawPlay returns true for non-involuntary cards with no modifiers" 
 }
 
 test "cardTemplateMatchesPredicate with always predicate" {
-    const template = &cards.Template{
+    const template = &actions.Template{
         .id = 1,
         .name = "test",
         .description = "",
@@ -478,7 +478,7 @@ test "cardTemplateMatchesPredicate with always predicate" {
 }
 
 test "cardTemplateMatchesPredicate with has_tag matches" {
-    const precision_card = &cards.Template{
+    const precision_card = &actions.Template{
         .id = 1,
         .name = "precision strike",
         .description = "",
@@ -497,7 +497,7 @@ test "cardTemplateMatchesPredicate with has_tag matches" {
 }
 
 test "cardTemplateMatchesPredicate with not predicate" {
-    const finesse_card = &cards.Template{
+    const finesse_card = &actions.Template{
         .id = 1,
         .name = "finesse",
         .description = "",
@@ -507,14 +507,14 @@ test "cardTemplateMatchesPredicate with not predicate" {
         .rules = &.{},
     };
 
-    const not_precision: cards.Predicate = .{ .has_tag = .{ .precision = true } };
+    const not_precision: actions.Predicate = .{ .has_tag = .{ .precision = true } };
 
     // Card has finesse but not precision, so "not precision" should pass
     try testing.expect(cardTemplateMatchesPredicate(finesse_card, .{ .not = &not_precision }));
 }
 
 test "cardTemplateMatchesPredicate with all predicate" {
-    const melee_precision = &cards.Template{
+    const melee_precision = &actions.Template{
         .id = 1,
         .name = "melee precision",
         .description = "",
@@ -524,7 +524,7 @@ test "cardTemplateMatchesPredicate with all predicate" {
         .rules = &.{},
     };
 
-    const preds: [2]cards.Predicate = .{
+    const preds: [2]actions.Predicate = .{
         .{ .has_tag = .{ .melee = true } },
         .{ .has_tag = .{ .precision = true } },
     };
@@ -533,7 +533,7 @@ test "cardTemplateMatchesPredicate with all predicate" {
     try testing.expect(cardTemplateMatchesPredicate(melee_precision, .{ .all = &preds }));
 
     // Add a non-matching predicate
-    const preds_fail: [2]cards.Predicate = .{
+    const preds_fail: [2]actions.Predicate = .{
         .{ .has_tag = .{ .melee = true } },
         .{ .has_tag = .{ .finesse = true } }, // card doesn't have finesse
     };
@@ -541,7 +541,7 @@ test "cardTemplateMatchesPredicate with all predicate" {
 }
 
 test "cardTemplateMatchesPredicate with any predicate" {
-    const melee_only = &cards.Template{
+    const melee_only = &actions.Template{
         .id = 1,
         .name = "melee only",
         .description = "",
@@ -551,7 +551,7 @@ test "cardTemplateMatchesPredicate with any predicate" {
         .rules = &.{},
     };
 
-    const preds: [2]cards.Predicate = .{
+    const preds: [2]actions.Predicate = .{
         .{ .has_tag = .{ .precision = true } },
         .{ .has_tag = .{ .melee = true } },
     };
@@ -560,7 +560,7 @@ test "cardTemplateMatchesPredicate with any predicate" {
     try testing.expect(cardTemplateMatchesPredicate(melee_only, .{ .any = &preds }));
 
     // None match
-    const preds_fail: [2]cards.Predicate = .{
+    const preds_fail: [2]actions.Predicate = .{
         .{ .has_tag = .{ .precision = true } },
         .{ .has_tag = .{ .finesse = true } },
     };
@@ -571,7 +571,7 @@ test "cardTemplateMatchesPredicate with any predicate" {
 // rulePredicatesSatisfied tests
 // ============================================================================
 
-const card_list = @import("../card_list.zig");
+const card_list = @import("../action_list.zig");
 const weapon_list = @import("../weapon_list.zig");
 const weapon = @import("../weapon.zig");
 const ai = @import("../ai.zig");

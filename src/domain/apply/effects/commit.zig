@@ -3,7 +3,7 @@
 //! These effects modify plays before resolution (e.g., damage/cost multipliers,
 //! advantage overrides, play cancellation).
 
-const cards = @import("../../cards.zig");
+const actions = @import("../../actions.zig");
 const combat = @import("../../combat.zig");
 const World = @import("../../world.zig").World;
 const targeting = @import("../targeting.zig");
@@ -14,7 +14,7 @@ const PlayTarget = targeting.PlayTarget;
 
 /// Apply a single commit-phase effect to a target play.
 pub fn applyCommitPhaseEffect(
-    effect: cards.Effect,
+    effect: actions.Effect,
     play_target: PlayTarget,
     world: *World,
 ) void {
@@ -37,7 +37,7 @@ pub fn applyCommitPhaseEffect(
 }
 
 /// Execute on_commit rules for a single card.
-fn executeCardCommitRules(card: *const cards.Instance, actor: *Agent, world: *World) !void {
+fn executeCardCommitRules(card: *const actions.Instance, actor: *Agent, world: *World) !void {
     for (card.template.rules) |rule| {
         if (rule.trigger != .on_commit) continue;
 

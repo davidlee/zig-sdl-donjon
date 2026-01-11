@@ -6,7 +6,7 @@
 const std = @import("std");
 const lib = @import("infra");
 const entity = lib.entity;
-const cards = @import("../cards.zig");
+const actions = @import("../actions.zig");
 const body = @import("../body.zig");
 const world = @import("../world.zig");
 const advantage = @import("advantage.zig");
@@ -45,14 +45,14 @@ pub const Play = struct {
     source: ?PlaySource = null, // null = hand card, Some = pool clone
     modifier_stack_buf: [max_modifiers]ModifierEntry = undefined,
     modifier_stack_len: usize = 0,
-    stakes: cards.Stakes = .guarded,
+    stakes: actions.Stakes = .guarded,
     added_in_phase: Phase = .selection, // commit phase plays (via Focus) cannot be stacked
 
     // Applied by modify_play effects during commit phase
     cost_mult: f32 = 1.0,
     damage_mult: f32 = 1.0,
     advantage_override: ?TechniqueAdvantage = null,
-    channel_override: ?cards.ChannelSet = null, // override technique's default channel
+    channel_override: ?actions.ChannelSet = null, // override technique's default channel
 
     pub fn modifiers(self: *const Play) []const ModifierEntry {
         return self.modifier_stack_buf[0..self.modifier_stack_len];
@@ -73,7 +73,7 @@ pub const Play = struct {
     }
 
     /// Stakes based on modifier stack depth.
-    pub fn effectiveStakes(self: Play) cards.Stakes {
+    pub fn effectiveStakes(self: Play) actions.Stakes {
         return switch (self.modifier_stack_len) {
             0 => self.stakes,
             1 => .committed,
@@ -82,7 +82,7 @@ pub const Play = struct {
     }
 
     /// Get advantage profile (override if set, else from technique).
-    pub fn getAdvantage(self: Play, technique: *const cards.Technique) ?TechniqueAdvantage {
+    pub fn getAdvantage(self: Play, technique: *const actions.Technique) ?TechniqueAdvantage {
         return self.advantage_override orelse technique.advantage;
     }
 
@@ -91,7 +91,7 @@ pub const Play = struct {
     // -------------------------------------------------------------------------
 
     /// Extract modify_play effect from a template (first on_commit rule with modify_play).
-    fn getModifyPlayEffect(template: *const cards.Template) ?cards.ModifyPlay {
+    fn getModifyPlayEffect(template: *const actions.Template) ?actions.ModifyPlay {
         for (template.rules) |rule| {
             if (rule.trigger != .on_commit) continue;
             for (rule.expressions) |expr| {
@@ -142,7 +142,7 @@ pub const Play = struct {
 
     /// Check if adding a modifier would conflict with existing modifiers.
     /// Currently detects: conflicting height_override (e.g., Low + High).
-    pub fn wouldConflict(self: *const Play, new_modifier: *const cards.Template, registry: *const world.ActionRegistry) bool {
+    pub fn wouldConflict(self: *const Play, new_modifier: *const actions.Template, registry: *const world.ActionRegistry) bool {
         const new_effect = getModifyPlayEffect(new_modifier) orelse return false;
         const new_height = new_effect.height_override orelse return false;
 
@@ -219,7 +219,7 @@ pub const Timeline = struct {
         self: *const Timeline,
         time_start: f32,
         time_end: f32,
-        channels: cards.ChannelSet,
+        channels: actions.ChannelSet,
         registry: *const world.ActionRegistry,
     ) bool {
         if (self.slots_len >= max_slots) return false;
@@ -244,7 +244,7 @@ pub const Timeline = struct {
         time_start: f32,
         time_end: f32,
         play: Play,
-        channels: cards.ChannelSet,
+        channels: actions.ChannelSet,
         registry: *const world.ActionRegistry,
     ) error{ Conflict, Overflow }!void {
         const snapped_start = snap(time_start);
@@ -304,7 +304,7 @@ pub const Timeline = struct {
     /// Returns null if no space available before tick end (1.0).
     pub fn nextAvailableStart(
         self: *const Timeline,
-        channels: cards.ChannelSet,
+        channels: actions.ChannelSet,
         duration: f32,
         registry: *const world.ActionRegistry,
     ) ?f32 {
@@ -323,8 +323,8 @@ pub const Timeline = struct {
         self: *const Timeline,
         time: f32,
         registry: *const world.ActionRegistry,
-    ) cards.ChannelSet {
-        var occupied = cards.ChannelSet{};
+    ) actions.ChannelSet {
+        var occupied = actions.ChannelSet{};
         for (self.slots()) |slot| {
             if (time >= slot.time_start and time < slot.timeEnd(registry)) {
                 occupied = occupied.merge(getPlayChannels(slot.play, registry));
@@ -351,15 +351,15 @@ pub fn getPlayDuration(play: Play, registry: *const world.ActionRegistry) f32 {
 
 /// Get combined channels occupied by a play (lead card + modifiers).
 /// If the play has channel_override set, returns that instead of deriving from template.
-pub fn getPlayChannels(play: Play, registry: *const world.ActionRegistry) cards.ChannelSet {
+pub fn getPlayChannels(play: Play, registry: *const world.ActionRegistry) actions.ChannelSet {
     // Explicit override takes precedence
     if (play.channel_override) |override| {
         return override;
     }
 
-    var channels = cards.ChannelSet{};
+    var channels = actions.ChannelSet{};
     var has_technique = false;
-    var lead_tags: ?cards.TagSet = null;
+    var lead_tags: ?actions.TagSet = null;
 
     // Get channels from lead card
     if (registry.getConst(play.action)) |instance| {
@@ -383,7 +383,7 @@ pub fn getPlayChannels(play: Play, registry: *const world.ActionRegistry) cards.
     // Cards without techniques get default channels based on tags
     if (!has_technique) {
         if (lead_tags) |tags| {
-            channels = channels.merge(cards.defaultChannelsForTags(tags));
+            channels = channels.merge(actions.defaultChannelsForTags(tags));
         }
     }
 
@@ -610,13 +610,13 @@ test "AttentionState.penaltyFor reduced by high awareness" {
 
 test "Play.effectiveStakes escalates with modifiers" {
     var play = Play{ .action = testId(1, .action) };
-    try testing.expectEqual(cards.Stakes.guarded, play.effectiveStakes());
+    try testing.expectEqual(actions.Stakes.guarded, play.effectiveStakes());
 
     try play.addModifier(testId(2, .action), null);
-    try testing.expectEqual(cards.Stakes.committed, play.effectiveStakes());
+    try testing.expectEqual(actions.Stakes.committed, play.effectiveStakes());
 
     try play.addModifier(testId(3, .action), null);
-    try testing.expectEqual(cards.Stakes.reckless, play.effectiveStakes());
+    try testing.expectEqual(actions.Stakes.reckless, play.effectiveStakes());
 }
 
 test "Play.canStack false when added in commit phase" {
@@ -780,7 +780,7 @@ test "Play.wouldConflict detects conflicting height_override" {
     var registry = try world.ActionRegistry.init(testing.allocator);
     defer registry.deinit();
 
-    const card_list = @import("../card_list.zig");
+    const card_list = @import("../action_list.zig");
     const low = card_list.byName("low");
     const high = card_list.byName("high");
 
@@ -800,7 +800,7 @@ test "Play.wouldConflict allows same height_override" {
     var registry = try world.ActionRegistry.init(testing.allocator);
     defer registry.deinit();
 
-    const card_list = @import("../card_list.zig");
+    const card_list = @import("../action_list.zig");
     const low = card_list.byName("low");
 
     // Create a play with low modifier
@@ -816,7 +816,7 @@ test "Play.wouldConflict allows non-conflicting modifiers" {
     var registry = try world.ActionRegistry.init(testing.allocator);
     defer registry.deinit();
 
-    const card_list = @import("../card_list.zig");
+    const card_list = @import("../action_list.zig");
     // Use a modifier without height_override
     const feint = card_list.byName("feint");
 
@@ -830,7 +830,7 @@ test "Play.wouldConflict returns false for empty modifier stack" {
     var registry = try world.ActionRegistry.init(testing.allocator);
     defer registry.deinit();
 
-    const card_list = @import("../card_list.zig");
+    const card_list = @import("../action_list.zig");
     const low = card_list.byName("low");
 
     const play = Play{ .action = testId(1, .action) };
@@ -843,7 +843,7 @@ test "Timeline.canInsert allows non-overlapping same channel" {
     defer registry.deinit();
 
     var timeline = Timeline{};
-    const weapon_channels: cards.ChannelSet = .{ .weapon = true };
+    const weapon_channels: actions.ChannelSet = .{ .weapon = true };
 
     // Insert first play at 0.0-0.2
     try timeline.insert(0.0, 0.2, .{ .action = testId(1, .action) }, weapon_channels, &registry);
@@ -853,7 +853,7 @@ test "Timeline.canInsert allows non-overlapping same channel" {
 }
 
 test "Timeline.canInsert rejects overlapping same channel" {
-    const card_list = @import("../card_list.zig");
+    const card_list = @import("../action_list.zig");
     var registry = try world.ActionRegistry.init(testing.allocator);
     defer registry.deinit();
 
@@ -863,7 +863,7 @@ test "Timeline.canInsert rejects overlapping same channel" {
     const duration = getPlayDuration(.{ .action = slash_instance.id }, &registry);
 
     var timeline = Timeline{};
-    const weapon_channels: cards.ChannelSet = .{ .weapon = true };
+    const weapon_channels: actions.ChannelSet = .{ .weapon = true };
 
     // Insert first play at 0.0 with the card's actual duration
     try timeline.insert(0.0, duration, .{ .action = slash_instance.id }, weapon_channels, &registry);
@@ -877,8 +877,8 @@ test "Timeline.canInsert allows overlapping different channels" {
     defer registry.deinit();
 
     var timeline = Timeline{};
-    const weapon_channels: cards.ChannelSet = .{ .weapon = true };
-    const footwork_channels: cards.ChannelSet = .{ .footwork = true };
+    const weapon_channels: actions.ChannelSet = .{ .weapon = true };
+    const footwork_channels: actions.ChannelSet = .{ .footwork = true };
 
     // Insert first play at 0.0-0.2 on weapon channel
     try timeline.insert(0.0, 0.2, .{ .action = testId(1, .action) }, weapon_channels, &registry);
@@ -888,7 +888,7 @@ test "Timeline.canInsert allows overlapping different channels" {
 }
 
 test "Timeline.nextAvailableStart finds first gap" {
-    const card_list = @import("../card_list.zig");
+    const card_list = @import("../action_list.zig");
     var registry = try world.ActionRegistry.init(testing.allocator);
     defer registry.deinit();
 
@@ -898,7 +898,7 @@ test "Timeline.nextAvailableStart finds first gap" {
     const duration = getPlayDuration(.{ .action = slash_instance.id }, &registry);
 
     var timeline = Timeline{};
-    const weapon_channels: cards.ChannelSet = .{ .weapon = true };
+    const weapon_channels: actions.ChannelSet = .{ .weapon = true };
 
     // Insert play at 0.0 with the card's actual duration
     try timeline.insert(0.0, duration, .{ .action = slash_instance.id }, weapon_channels, &registry);
@@ -910,7 +910,7 @@ test "Timeline.nextAvailableStart finds first gap" {
 }
 
 test "Timeline.nextAvailableStart returns null when no space" {
-    const card_list = @import("../card_list.zig");
+    const card_list = @import("../action_list.zig");
     var registry = try world.ActionRegistry.init(testing.allocator);
     defer registry.deinit();
 
@@ -920,7 +920,7 @@ test "Timeline.nextAvailableStart returns null when no space" {
     const card_duration = getPlayDuration(.{ .action = slash_instance.id }, &registry);
 
     var timeline = Timeline{};
-    const weapon_channels: cards.ChannelSet = .{ .weapon = true };
+    const weapon_channels: actions.ChannelSet = .{ .weapon = true };
 
     // Fill timeline by inserting cards until no space for another full-duration card
     var time: f32 = 0.0;
@@ -940,7 +940,7 @@ test "Timeline.insert snaps time_start to granularity" {
     defer registry.deinit();
 
     var timeline = Timeline{};
-    const channels = cards.ChannelSet{};
+    const channels = actions.ChannelSet{};
 
     // Insert at 0.15 (should snap to 0.1)
     try timeline.insert(0.15, 0.25, .{ .action = testId(1, .action) }, channels, &registry);
@@ -963,7 +963,7 @@ test "TimeSlot.overlapsWith adjacent slots do not overlap" {
 }
 
 test "TimeSlot.overlapsWith exact same range overlaps" {
-    const card_list = @import("../card_list.zig");
+    const card_list = @import("../action_list.zig");
     var registry = try world.ActionRegistry.init(testing.allocator);
     defer registry.deinit();
 
@@ -990,7 +990,7 @@ test "hasFootworkInTimeline returns false when empty" {
 }
 
 test "hasFootworkInTimeline returns true when footwork card present" {
-    const card_list = @import("../card_list.zig");
+    const card_list = @import("../action_list.zig");
     var registry = try world.ActionRegistry.init(testing.allocator);
     defer registry.deinit();
 
@@ -999,14 +999,14 @@ test "hasFootworkInTimeline returns true when footwork card present" {
     const advance_instance = try registry.create(advance);
 
     var timeline = Timeline{};
-    const channels = cards.ChannelSet{ .footwork = true };
+    const channels = actions.ChannelSet{ .footwork = true };
     try timeline.insert(0.0, 0.3, .{ .action = advance_instance.id }, channels, &registry);
 
     try testing.expect(hasFootworkInTimeline(&timeline, &registry));
 }
 
 test "hasFootworkInTimeline returns false when only weapon card present" {
-    const card_list = @import("../card_list.zig");
+    const card_list = @import("../action_list.zig");
     var registry = try world.ActionRegistry.init(testing.allocator);
     defer registry.deinit();
 
@@ -1015,14 +1015,14 @@ test "hasFootworkInTimeline returns false when only weapon card present" {
     const thrust_instance = try registry.create(thrust);
 
     var timeline = Timeline{};
-    const channels = cards.ChannelSet{ .weapon = true };
+    const channels = actions.ChannelSet{ .weapon = true };
     try timeline.insert(0.0, 0.5, .{ .action = thrust_instance.id }, channels, &registry);
 
     try testing.expect(!hasFootworkInTimeline(&timeline, &registry));
 }
 
 test "getPlayChannels returns channel_override when set" {
-    const card_list = @import("../card_list.zig");
+    const card_list = @import("../action_list.zig");
     var registry = try world.ActionRegistry.init(testing.allocator);
     defer registry.deinit();
 

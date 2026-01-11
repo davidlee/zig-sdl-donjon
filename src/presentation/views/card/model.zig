@@ -4,7 +4,7 @@
 // Access as: card.Model, card.Kind, card.State, etc.
 
 const std = @import("std");
-const cards = @import("../../../domain/cards.zig");
+const actions = @import("../../../domain/actions.zig");
 const lib = @import("infra");
 const entity = lib.entity;
 const types = @import("../types.zig");
@@ -52,12 +52,12 @@ pub const Model = struct {
     icon: ?AssetId = null,
 
     /// Create view model from domain instance
-    pub fn fromInstance(instance: cards.Instance, state: State) Model {
+    pub fn fromInstance(instance: actions.Instance, state: State) Model {
         return fromTemplate(instance.id, instance.template, state);
     }
 
     /// Create view model from template (for previews, deck building, etc.)
-    pub fn fromTemplate(id: entity.ID, template: *const cards.Template, state: State) Model {
+    pub fn fromTemplate(id: entity.ID, template: *const actions.Template, state: State) Model {
         return .{
             .id = id,
             .name = template.name,
@@ -71,7 +71,7 @@ pub const Model = struct {
         };
     }
 
-    pub fn mapIcon(icon: ?cards.RuneIcon) ?AssetId {
+    pub fn mapIcon(icon: ?actions.RuneIcon) ?AssetId {
         const i = icon orelse return null;
         return switch (i) {
             .eo => .rune_eo,
@@ -83,13 +83,13 @@ pub const Model = struct {
     }
 
     /// Derive visual kind from tag set
-    fn kindFromTags(tags: cards.TagSet) Kind {
+    fn kindFromTags(tags: actions.TagSet) Kind {
         if (tags.modifier) return .modifier;
         if (tags.reaction) return .reaction;
         return .action;
     }
 
-    fn mapRarity(rarity: cards.Rarity) Rarity {
+    fn mapRarity(rarity: actions.Rarity) Rarity {
         return switch (rarity) {
             .common => .common,
             .uncommon => .uncommon,

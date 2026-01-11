@@ -17,7 +17,8 @@ const domain = root.domain;
 const World = domain.World;
 const combat = domain.combat;
 const cards = domain.cards;
-const card_list = domain.card_list;
+const actions = domain.actions;
+const card_list = domain.action_list;
 const query = domain.query;
 const personas = root.data.personas;
 const fixtures = root.testing_utils.fixtures;
@@ -571,8 +572,8 @@ const resolution = domain.resolution;
 const weapon = domain.weapon;
 const body = domain.body;
 const armour = domain.armour;
-const Technique = cards.Technique;
-const Stakes = cards.Stakes;
+const Technique = actions.Technique;
+const Stakes = actions.Stakes;
 
 /// Look up a technique by its string ID (e.g., "swing", "thrust").
 fn findTechniqueByName(id_str: []const u8) ?*const Technique {

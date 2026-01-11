@@ -7,7 +7,7 @@ const std = @import("std");
 const lib = @import("infra");
 const entity = lib.entity;
 
-const cards = @import("../cards.zig");
+const actions = @import("../actions.zig");
 const combat = @import("../combat.zig");
 const w = @import("../world.zig");
 const validation = @import("validation.zig");
@@ -31,8 +31,8 @@ pub const PlayTarget = struct {
 
 /// Check if an expression applies to a target (considering filters).
 pub fn expressionAppliesToTarget(
-    expr: *const cards.Expression,
-    card: *const cards.Instance,
+    expr: *const actions.Expression,
+    card: *const actions.Instance,
     actor: *const Agent,
     target: *const Agent,
     engagement: ?*const combat.Engagement,
@@ -49,7 +49,7 @@ pub fn expressionAppliesToTarget(
 /// Evaluate targets for an expression query, returning a list of agents.
 pub fn evaluateTargets(
     alloc: std.mem.Allocator,
-    query: cards.TargetQuery,
+    query: actions.TargetQuery,
     actor: *Agent,
     world: *World,
     play_target: ?entity.ID,
@@ -99,7 +99,7 @@ pub fn evaluateTargets(
 /// Evaluate play targets (for modifier cards).
 pub fn evaluatePlayTargets(
     alloc: std.mem.Allocator,
-    query: cards.TargetQuery,
+    query: actions.TargetQuery,
     actor: *Agent,
     world: *World,
 ) !std.ArrayList(PlayTarget) {
@@ -165,7 +165,7 @@ pub fn resolvePlayTargetIDs(
             }
         }
         // Default for offensive cards without explicit target
-        break :blk cards.TargetQuery.all_enemies;
+        break :blk actions.TargetQuery.all_enemies;
     };
 
     // Resolve targets based on query (pass play.target for .single)
@@ -184,7 +184,7 @@ pub fn resolvePlayTargetIDs(
 fn filterTargetsByMeleeRange(
     alloc: std.mem.Allocator,
     target_ids: []const entity.ID,
-    template: *const cards.Template,
+    template: *const actions.Template,
     actor: *const Agent,
     world: *const World,
 ) !?[]const entity.ID {
@@ -264,7 +264,7 @@ fn filterTargetsByMeleeRange(
 /// - Within weapon reach (for technique effects)
 /// - Passing any expression filter (e.g., advantage threshold)
 pub fn hasAnyValidTarget(
-    card: *const cards.Instance,
+    card: *const actions.Instance,
     actor: *const Agent,
     world: *const World,
 ) bool {
@@ -294,8 +294,8 @@ pub fn hasAnyValidTarget(
 /// - Weapon reach (technique effects only)
 /// - Expression filters (advantage thresholds, etc.)
 fn isValidTargetForExpression(
-    expr: *const cards.Expression,
-    card: *const cards.Instance,
+    expr: *const actions.Expression,
+    card: *const actions.Instance,
     actor: *const Agent,
     target: *const Agent,
     encounter: *const combat.Encounter,
@@ -338,10 +338,10 @@ fn isValidTargetForExpression(
 }
 
 /// Get the target predicate from a modifier card template.
-pub fn getModifierTargetPredicate(template: *const cards.Template) !?cards.Predicate {
+pub fn getModifierTargetPredicate(template: *const actions.Template) !?actions.Predicate {
     if (!template.tags.modifier) return null;
 
-    var found: ?cards.Predicate = null;
+    var found: ?actions.Predicate = null;
     for (template.rules) |rule| {
         for (rule.expressions) |expr| {
             switch (expr.target) {
@@ -361,7 +361,7 @@ pub fn getModifierTargetPredicate(template: *const cards.Template) !?cards.Predi
 
 /// Check if a modifier can attach to a play.
 pub fn canModifierAttachToPlay(
-    modifier: *const cards.Template,
+    modifier: *const actions.Template,
     play: *const combat.Play,
     world: *const World,
 ) !bool {
@@ -373,7 +373,7 @@ pub fn canModifierAttachToPlay(
 // Internal Helpers
 // ============================================================================
 
-fn getTargetsForQuery(query: cards.TargetQuery, actor: *const Agent, world: *const World) []const *Agent {
+fn getTargetsForQuery(query: actions.TargetQuery, actor: *const Agent, world: *const World) []const *Agent {
     return switch (query) {
         .self => @as([*]const *Agent, @ptrCast(&actor))[0..1],
         // For validation, .single checks if any enemy is targetable (selection at play time)
@@ -409,7 +409,7 @@ fn getEngagementBetween(encounter: ?*combat.Encounter, actor: *const Agent, targ
 
 fn playMatchesPredicate(
     play: *const combat.Play,
-    predicate: cards.Predicate,
+    predicate: actions.Predicate,
     world: *const World,
 ) bool {
     // Look up card via action_registry (new system)
@@ -438,7 +438,7 @@ fn playMatchesPredicate(
 
 fn evaluateTargetIDsConst(
     alloc: std.mem.Allocator,
-    query: cards.TargetQuery,
+    query: actions.TargetQuery,
     actor: *const Agent,
     world: *const World,
     play_target: ?entity.ID,
@@ -479,7 +479,7 @@ fn evaluateTargetIDsConst(
 // ============================================================================
 
 const testing = std.testing;
-const card_list = @import("../card_list.zig");
+const card_list = @import("../action_list.zig");
 const weapon_list = @import("../weapon_list.zig");
 const weapon = @import("../weapon.zig");
 const ai = @import("../ai.zig");
@@ -512,8 +512,8 @@ fn makeTestAgent(equipped: combat.Armament.Equipped) combat.Agent {
     };
 }
 
-fn makeTestCardInstance(template: *const cards.Template) cards.Instance {
-    return cards.Instance{
+fn makeTestCardInstance(template: *const actions.Template) actions.Instance {
+    return actions.Instance{
         .id = testId(0, .agent),
         .template = template,
     };
@@ -564,7 +564,7 @@ test "getModifierTargetPredicate extracts predicate from modifier template" {
 
     try testing.expect(predicate != null);
     // Modifier targets offensive plays
-    try testing.expectEqual(cards.Predicate{ .has_tag = .{ .offensive = true } }, predicate.?);
+    try testing.expectEqual(actions.Predicate{ .has_tag = .{ .offensive = true } }, predicate.?);
 }
 
 test "getModifierTargetPredicate returns null for non-modifier" {

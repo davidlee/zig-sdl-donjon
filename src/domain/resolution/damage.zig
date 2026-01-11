@@ -4,14 +4,14 @@
 /// instances consumed by the outcome resolver.
 const std = @import("std");
 const combat = @import("../combat.zig");
-const cards = @import("../cards.zig");
+const actions = @import("../actions.zig");
 const weapon = @import("../weapon.zig");
 const damage = @import("../damage.zig");
 const stats = @import("../stats.zig");
 
 const Agent = combat.Agent;
-const Technique = cards.Technique;
-const Stakes = cards.Stakes;
+const Technique = actions.Technique;
+const Stakes = actions.Stakes;
 
 // ============================================================================
 // 3-Axis Derivation Helpers (T037)
@@ -225,7 +225,7 @@ test "createDamagePacket scales by stakes" {
     var attacker = try makeTestAgent(alloc, agents, .player);
     defer attacker.deinit();
 
-    const technique = &cards.Technique.byID(.swing);
+    const technique = &actions.Technique.byID(.swing);
 
     const probing = createDamagePacket(technique, &weapon_list.knights_sword, attacker, .probing);
     const guarded = createDamagePacket(technique, &weapon_list.knights_sword, attacker, .guarded);
@@ -253,7 +253,7 @@ test "createDamagePacket populates 3-axis fields for physical damage" {
     var attacker = try makeTestAgent(alloc, agents, .player);
     defer attacker.deinit();
 
-    const technique = &cards.Technique.byID(.swing);
+    const technique = &actions.Technique.byID(.swing);
     const packet = createDamagePacket(technique, &weapon_list.knights_sword, attacker, .guarded);
 
     // Physical damage should have non-zero axes
@@ -286,7 +286,7 @@ test "createDamagePacket axis energy scales with stakes" {
     var attacker = try makeTestAgent(alloc, agents, .player);
     defer attacker.deinit();
 
-    const technique = &cards.Technique.byID(.thrust);
+    const technique = &actions.Technique.byID(.thrust);
 
     const probing = createDamagePacket(technique, &weapon_list.knights_sword, attacker, .probing);
     const reckless = createDamagePacket(technique, &weapon_list.knights_sword, attacker, .reckless);
@@ -298,7 +298,7 @@ test "createDamagePacket axis energy scales with stakes" {
 test "deriveEnergy: velocity stat scales quadratically (T038)" {
     // Test deriveEnergy directly with stats.Block - no Agent needed.
     // Swing technique uses average([speed, power]) with ratio 1.2.
-    const technique = &cards.Technique.byID(.swing);
+    const technique = &actions.Technique.byID(.swing);
     const weap = &weapon_list.knights_sword;
 
     const baseline = stats.Block.splat(5.0);
@@ -328,7 +328,7 @@ test "deriveEnergy: velocity stat scales quadratically (T038)" {
 }
 
 test "deriveEnergy: larger speed delta amplifies quadratic effect (T038)" {
-    const technique = &cards.Technique.byID(.swing);
+    const technique = &actions.Technique.byID(.swing);
     const weap = &weapon_list.knights_sword;
 
     const baseline = stats.Block.splat(5.0);
@@ -352,7 +352,7 @@ test "deriveEnergy: pure power technique scales linearly (T038)" {
     const weap = &weapon_list.knights_sword;
 
     // Use thrust technique (also average([speed, power]))
-    const technique = &cards.Technique.byID(.thrust);
+    const technique = &actions.Technique.byID(.thrust);
 
     const baseline = stats.Block.splat(5.0);
     var strong = stats.Block.splat(5.0);

@@ -4,12 +4,12 @@
 /// the resolution pipeline. No rendering or combat orchestration occurs here.
 const std = @import("std");
 const combat = @import("../combat.zig");
-const cards = @import("../cards.zig");
+const actions = @import("../actions.zig");
 const body = @import("../body.zig");
 const world = @import("../world.zig");
 
 const Agent = combat.Agent;
-const Technique = cards.Technique;
+const Technique = actions.Technique;
 const World = world.World;
 
 // ============================================================================

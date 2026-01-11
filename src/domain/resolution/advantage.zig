@@ -6,14 +6,14 @@ const std = @import("std");
 const lib = @import("infra");
 const entity = lib.entity;
 const combat = @import("../combat.zig");
-const cards = @import("../cards.zig");
+const actions = @import("../actions.zig");
 const events = @import("../events.zig");
 const world = @import("../world.zig");
 
 const Agent = combat.Agent;
 const Engagement = combat.Engagement;
-const Technique = cards.Technique;
-const Stakes = cards.Stakes;
+const Technique = actions.Technique;
+const Stakes = actions.Stakes;
 const World = world.World;
 
 // Re-export from combat module
@@ -159,7 +159,7 @@ pub fn applyAdvantageWithEvents(
 // ============================================================================
 
 test "getAdvantageEffect scales by stakes" {
-    const technique = &cards.Technique.byID(.swing);
+    const technique = &actions.Technique.byID(.swing);
     const base_hit = getAdvantageEffect(technique, .hit, .guarded);
     const reckless_hit = getAdvantageEffect(technique, .hit, .reckless);
 
@@ -168,7 +168,7 @@ test "getAdvantageEffect scales by stakes" {
 }
 
 test "getAdvantageEffect miss penalty scales with stakes" {
-    const technique = &cards.Technique.byID(.swing);
+    const technique = &actions.Technique.byID(.swing);
     const guarded_miss = getAdvantageEffect(technique, .miss, .guarded);
     const reckless_miss = getAdvantageEffect(technique, .miss, .reckless);
 
@@ -197,7 +197,7 @@ test "getAdvantageEffect uses technique override when present" {
     };
 
     const custom_effect = getAdvantageEffect(&custom_technique, .hit, .guarded);
-    const default_technique = &cards.Technique.byID(.swing);
+    const default_technique = &actions.Technique.byID(.swing);
     const default_effect = getAdvantageEffect(default_technique, .hit, .guarded);
 
     // Custom technique should have higher pressure/control on hit

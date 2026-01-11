@@ -8,7 +8,7 @@ const log = lib.log;
 // domain
 const World = @import("domain/world.zig").World;
 const cards = @import("domain/cards.zig");
-const deck = @import("domain/card_list.zig").BeginnerDeck;
+const deck = @import("domain/action_list.zig").BeginnerDeck;
 const harness = @import("harness.zig");
 const resolution = @import("domain/resolution.zig");
 const weapon_list = @import("domain/weapon_list.zig");

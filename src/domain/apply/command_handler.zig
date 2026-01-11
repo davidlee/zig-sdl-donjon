@@ -5,7 +5,7 @@
 
 const std = @import("std");
 const lib = @import("infra");
-const cards = @import("../cards.zig");
+const actions = @import("../actions.zig");
 const combat = @import("../combat.zig");
 const events = @import("../events.zig");
 const w = @import("../world.zig");
@@ -18,7 +18,7 @@ const Event = events.Event;
 const EventSystem = events.EventSystem;
 const World = w.World;
 const Agent = combat.Agent;
-const Instance = cards.Instance;
+const Instance = actions.Instance;
 
 pub const CommandError = error{
     CommandInvalid,
@@ -156,7 +156,7 @@ pub const CommandHandler = struct {
             },
             .move_play => |data| {
                 // Convert command ChannelSet to domain ChannelSet
-                const domain_channel: ?cards.ChannelSet = if (data.new_channel) |nc|
+                const domain_channel: ?actions.ChannelSet = if (data.new_channel) |nc|
                     .{ .weapon = nc.weapon, .off_hand = nc.off_hand, .footwork = nc.footwork, .concentration = nc.concentration }
                 else
                     null;
@@ -509,7 +509,7 @@ pub const CommandHandler = struct {
         self: *CommandHandler,
         card_id: entity.ID,
         new_time_start: f32,
-        new_channel: ?cards.ChannelSet,
+        new_channel: ?actions.ChannelSet,
     ) !void {
         const player = self.world.player;
 
@@ -587,7 +587,7 @@ pub const CommandHandler = struct {
 
 /// Validate channel switch: only weapon ↔ off_hand allowed.
 /// Returns true if the switch is valid.
-fn isValidChannelSwitch(from: cards.ChannelSet, to: cards.ChannelSet) bool {
+fn isValidChannelSwitch(from: actions.ChannelSet, to: actions.ChannelSet) bool {
     // Both must be weapon-type channels (weapon or off_hand only)
     const from_is_weapon_type = (from.weapon or from.off_hand) and
         !from.footwork and !from.concentration;
@@ -602,38 +602,38 @@ fn isValidChannelSwitch(from: cards.ChannelSet, to: cards.ChannelSet) bool {
 // ============================================================================
 
 test "isValidChannelSwitch allows weapon to off_hand" {
-    const from = cards.ChannelSet{ .weapon = true };
-    const to = cards.ChannelSet{ .off_hand = true };
+    const from = actions.ChannelSet{ .weapon = true };
+    const to = actions.ChannelSet{ .off_hand = true };
     try std.testing.expect(isValidChannelSwitch(from, to));
 }
 
 test "isValidChannelSwitch allows off_hand to weapon" {
-    const from = cards.ChannelSet{ .off_hand = true };
-    const to = cards.ChannelSet{ .weapon = true };
+    const from = actions.ChannelSet{ .off_hand = true };
+    const to = actions.ChannelSet{ .weapon = true };
     try std.testing.expect(isValidChannelSwitch(from, to));
 }
 
 test "isValidChannelSwitch rejects footwork to weapon" {
-    const from = cards.ChannelSet{ .footwork = true };
-    const to = cards.ChannelSet{ .weapon = true };
+    const from = actions.ChannelSet{ .footwork = true };
+    const to = actions.ChannelSet{ .weapon = true };
     try std.testing.expect(!isValidChannelSwitch(from, to));
 }
 
 test "isValidChannelSwitch rejects weapon to footwork" {
-    const from = cards.ChannelSet{ .weapon = true };
-    const to = cards.ChannelSet{ .footwork = true };
+    const from = actions.ChannelSet{ .weapon = true };
+    const to = actions.ChannelSet{ .footwork = true };
     try std.testing.expect(!isValidChannelSwitch(from, to));
 }
 
 test "isValidChannelSwitch rejects concentration to off_hand" {
-    const from = cards.ChannelSet{ .concentration = true };
-    const to = cards.ChannelSet{ .off_hand = true };
+    const from = actions.ChannelSet{ .concentration = true };
+    const to = actions.ChannelSet{ .off_hand = true };
     try std.testing.expect(!isValidChannelSwitch(from, to));
 }
 
 test "isValidChannelSwitch rejects mixed channels" {
     // If source has multiple channel types including non-weapon, reject
-    const from = cards.ChannelSet{ .weapon = true, .footwork = true };
-    const to = cards.ChannelSet{ .off_hand = true };
+    const from = actions.ChannelSet{ .weapon = true, .footwork = true };
+    const to = actions.ChannelSet{ .off_hand = true };
     try std.testing.expect(!isValidChannelSwitch(from, to));
 }

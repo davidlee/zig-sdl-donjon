@@ -3,14 +3,14 @@
 // Decouples view layer from Instance pointers.
 // Access as: card.Data, card.Data.Source
 
-const cards = @import("../../../domain/cards.zig");
+const actions = @import("../../../domain/actions.zig");
 const entity = @import("infra").entity;
 
 /// Minimal card data for view rendering.
 /// Decouples view layer from Instance pointers.
 pub const Data = struct {
     id: entity.ID,
-    template: *const cards.Template,
+    template: *const actions.Template,
     playable: bool,
     has_valid_targets: bool,
     source: Source,
@@ -27,7 +27,7 @@ pub const Data = struct {
         environment, // future
     };
 
-    pub fn fromInstance(inst: *const cards.Instance, source: Source, playable: bool, has_valid_targets: bool) Data {
+    pub fn fromInstance(inst: *const actions.Instance, source: Source, playable: bool, has_valid_targets: bool) Data {
         return .{
             .id = inst.id,
             .template = inst.template,

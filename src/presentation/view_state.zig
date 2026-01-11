@@ -7,7 +7,7 @@ const std = @import("std");
 const s = @import("sdl3");
 const lib = @import("infra");
 const view = @import("views/view.zig");
-const cards = @import("../domain/cards.zig");
+const actions = @import("../domain/actions.zig");
 const entity = lib.entity;
 
 pub const Point = s.rect.FPoint;
@@ -178,7 +178,7 @@ pub const DragState = struct {
 
     // Drop target indicators (updated during drag)
     target_time: ?f32 = null, // timeline position under cursor (0.0-1.0)
-    target_channel: ?cards.ChannelSet = null, // lane under cursor
+    target_channel: ?actions.ChannelSet = null, // lane under cursor
     is_valid_drop: bool = false, // can drop at current position?
 
     // Existing (for modifier stacking in commit phase)

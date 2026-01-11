@@ -5,21 +5,21 @@
 const std = @import("std");
 const lib = @import("infra");
 const entity = lib.entity;
-const cards = @import("../cards.zig");
+const actions = @import("../actions.zig");
 const combat = @import("../combat.zig");
 const resolution = @import("../resolution.zig");
 const weapon = @import("../weapon.zig");
 
 const Agent = combat.Agent;
-const Technique = cards.Technique;
-const Stakes = cards.Stakes;
+const Technique = actions.Technique;
+const Stakes = actions.Stakes;
 
 /// A single action committed by an agent for this tick
 pub const CommittedAction = struct {
     actor: *Agent,
-    card: ?*cards.Instance, // null for pool-based mobs (no card instance)
+    card: ?*actions.Instance, // null for pool-based mobs (no card instance)
     technique: *const Technique,
-    expression: ?*const cards.Expression, // the expression this action came from (for filter evaluation)
+    expression: ?*const actions.Expression, // the expression this action came from (for filter evaluation)
     stakes: Stakes,
     time_start: f32, // when this action begins (0.0-1.0 within tick)
     time_end: f32, // when this action ends (time_start + cost.time)
@@ -40,7 +40,7 @@ pub const CommittedAction = struct {
 pub const ResolutionEntry = struct {
     attacker_id: entity.ID,
     defender_id: entity.ID,
-    technique_id: cards.TechniqueID,
+    technique_id: actions.TechniqueID,
     outcome: resolution.Outcome,
     damage_dealt: f32, // 0 if miss/blocked
 };

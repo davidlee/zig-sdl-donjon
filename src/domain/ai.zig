@@ -8,8 +8,8 @@ const lib = @import("infra");
 
 const damage = @import("damage.zig");
 const stats = @import("stats.zig");
-const cards = @import("cards.zig");
-const card_list = @import("card_list.zig");
+const actions = @import("actions.zig");
+const card_list = @import("action_list.zig");
 const e = @import("events.zig");
 const world = @import("world.zig");
 const random = @import("random.zig");
@@ -23,13 +23,13 @@ const EventSystem = e.EventSystem;
 const EventTag = std.meta.Tag(Event);
 const World = world.World;
 const Agent = combat.Agent;
-const Rule = cards.Rule;
-const TagSet = cards.TagSet;
-const Cost = cards.Cost;
-const Trigger = cards.Trigger;
-const Effect = cards.Effect;
-const Expression = cards.Expression;
-const Technique = cards.Technique;
+const Rule = actions.Rule;
+const TagSet = actions.TagSet;
+const Cost = actions.Cost;
+const Trigger = actions.Trigger;
+const Effect = actions.Effect;
+const Expression = actions.Expression;
+const Technique = actions.Technique;
 
 // convenience constructors for Agent
 

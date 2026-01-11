@@ -6,7 +6,7 @@ const std = @import("std");
 const lib = @import("infra");
 const entity = lib.entity;
 const combat = @import("../combat.zig");
-const cards = @import("../cards.zig");
+const actions = @import("../actions.zig");
 const weapon = @import("../weapon.zig");
 const damage_mod = @import("../damage.zig");
 const armour = @import("../armour.zig");
@@ -35,9 +35,9 @@ pub const getWeaponOffensive = damage.getWeaponOffensive;
 
 const Agent = combat.Agent;
 const Engagement = combat.Engagement;
-const Technique = cards.Technique;
-const TechniqueID = cards.TechniqueID;
-const Stakes = cards.Stakes;
+const Technique = actions.Technique;
+const TechniqueID = actions.TechniqueID;
+const Stakes = actions.Stakes;
 const World = world.World;
 
 // ============================================================================
@@ -439,7 +439,7 @@ test "resolveTechniqueVsDefense emits resolution event" {
     const engagement = w.encounter.?.getPlayerEngagement(defender.id).?;
 
     // Get thrust technique
-    const technique = &cards.Technique.byID(.thrust);
+    const technique = &actions.Technique.byID(.thrust);
 
     // Create attack and defense contexts
     const attack = AttackContext{
@@ -508,7 +508,7 @@ test "resolveTechniqueVsDefense emits advantage_changed events on hit" {
 
     const engagement = w.encounter.?.getPlayerEngagement(defender.id).?;
 
-    const technique = &cards.Technique.byID(.swing);
+    const technique = &actions.Technique.byID(.swing);
 
     const attack = AttackContext{
         .attacker = attacker,
@@ -575,7 +575,7 @@ test "resolveTechniqueVsDefense applies damage on hit" {
 
     const engagement = w.encounter.?.getPlayerEngagement(defender.id).?;
 
-    const technique = &cards.Technique.byID(.thrust);
+    const technique = &actions.Technique.byID(.thrust);
 
     const attack = AttackContext{
         .attacker = attacker,
@@ -684,7 +684,7 @@ test "resolveOutcome applies overlay to_hit_bonus from attacker manoeuvres" {
     const enc_state = w.encounter.?.stateFor(attacker.id) orelse return error.TestSkipped;
     try enc_state.current.addPlay(.{ .action = sidestep_id }, &w.action_registry);
 
-    const technique = &cards.Technique.byID(.thrust);
+    const technique = &actions.Technique.byID(.thrust);
 
     // Attack with timing that overlaps sidestep (0.0 to 0.5s)
     const attack = AttackContext{
@@ -728,7 +728,7 @@ test "CombatModifiers.forAttacker reduces hit_chance when unbalanced" {
         .expiration = .{ .ticks = 2.0 },
     });
 
-    const technique = &cards.Technique.byID(.thrust);
+    const technique = &actions.Technique.byID(.thrust);
 
     const attack = AttackContext{
         .attacker = attacker,
@@ -789,7 +789,7 @@ test "resolveTechniqueVsDefense emits condition_applied for pain threshold" {
     const engagement = w.encounter.?.getPlayerEngagement(defender.id).?;
 
     // Use a heavy technique for maximum damage
-    const technique = &cards.Technique.byID(.swing);
+    const technique = &actions.Technique.byID(.swing);
 
     const attack = AttackContext{
         .attacker = attacker,
@@ -854,7 +854,7 @@ test "resolveTechniqueVsDefense emits combat_packet_resolved on hit" {
 
     const engagement = w.encounter.?.getPlayerEngagement(defender.id).?;
 
-    const technique = &cards.Technique.byID(.thrust);
+    const technique = &actions.Technique.byID(.thrust);
 
     const attack = AttackContext{
         .attacker = attacker,
@@ -893,7 +893,7 @@ test "resolveTechniqueVsDefense emits combat_packet_resolved on hit" {
                     // Verify identities
                     try std.testing.expectEqual(attacker.id, data.attacker_id);
                     try std.testing.expectEqual(defender.id, data.defender_id);
-                    try std.testing.expectEqual(cards.TechniqueID.thrust, data.technique_id);
+                    try std.testing.expectEqual(actions.TechniqueID.thrust, data.technique_id);
                     try std.testing.expectEqual(target_part, data.target_part);
                     // Verify packet data is populated
                     try std.testing.expect(data.initial_amount > 0);

@@ -7,7 +7,7 @@ const std = @import("std");
 const lib = @import("infra");
 const entity = lib.entity;
 const damage = @import("damage.zig");
-const cards = @import("cards.zig");
+const actions = @import("actions.zig");
 
 // =============================================================================
 // Core Types
@@ -22,27 +22,27 @@ pub const ComputationType = union(enum) {
     /// Blood starts full (1.0) and drains; pain/trauma start empty (0.0) and accumulate.
     resource_threshold: struct {
         resource: ResourceAccessor,
-        op: cards.Comparator,
+        op: actions.Comparator,
         value: f32,
     },
 
     /// Active when agent.balance <op> value.
     balance_threshold: struct {
-        op: cards.Comparator,
+        op: actions.Comparator,
         value: f32,
     },
 
     /// Active when body.<sense>Score() <op> value.
     sensory_threshold: struct {
         sense: SensoryType,
-        op: cards.Comparator,
+        op: actions.Comparator,
         value: f32,
     },
 
     /// Active when engagement.<metric> <op> value.
     engagement_threshold: struct {
         metric: EngagementMetric,
-        op: cards.Comparator,
+        op: actions.Comparator,
         value: f32,
     },
 
@@ -307,7 +307,7 @@ fn validateThresholdOrdering() void {
     comptime {
         const resource_count = std.meta.fields(ResourceAccessor).len;
         var last_value: [resource_count]?f32 = .{null} ** resource_count;
-        var last_op: [resource_count]?cards.Comparator = .{null} ** resource_count;
+        var last_op: [resource_count]?actions.Comparator = .{null} ** resource_count;
 
         for (condition_definitions) |def| {
             switch (def.computation) {
@@ -391,7 +391,7 @@ test "getDefinitionFor returns correct definition" {
     switch (def.?.computation) {
         .resource_threshold => |rt| {
             try testing.expectEqual(ResourceAccessor.blood, rt.resource);
-            try testing.expectEqual(cards.Comparator.lt, rt.op);
+            try testing.expectEqual(actions.Comparator.lt, rt.op);
             try testing.expectApproxEqAbs(@as(f32, 0.4), rt.value, 0.001);
         },
         else => return error.UnexpectedComputationType,
@@ -399,13 +399,13 @@ test "getDefinitionFor returns correct definition" {
 }
 
 test "Comparator.compare works correctly" {
-    try testing.expect(cards.Comparator.lt.compare(0.3, 0.4));
-    try testing.expect(!cards.Comparator.lt.compare(0.5, 0.4));
-    try testing.expect(cards.Comparator.gte.compare(0.85, 0.85));
-    try testing.expect(cards.Comparator.gte.compare(0.9, 0.85));
-    try testing.expect(!cards.Comparator.gte.compare(0.8, 0.85));
-    try testing.expect(cards.Comparator.eq.compare(0.5, 0.5));
-    try testing.expect(!cards.Comparator.eq.compare(0.5, 0.6));
+    try testing.expect(actions.Comparator.lt.compare(0.3, 0.4));
+    try testing.expect(!actions.Comparator.lt.compare(0.5, 0.4));
+    try testing.expect(actions.Comparator.gte.compare(0.85, 0.85));
+    try testing.expect(actions.Comparator.gte.compare(0.9, 0.85));
+    try testing.expect(!actions.Comparator.gte.compare(0.8, 0.85));
+    try testing.expect(actions.Comparator.eq.compare(0.5, 0.5));
+    try testing.expect(!actions.Comparator.eq.compare(0.5, 0.6));
 }
 
 test "ConditionBitSet can hold all conditions" {

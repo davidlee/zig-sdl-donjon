@@ -5,15 +5,15 @@
 
 const std = @import("std");
 const lib = @import("infra");
-const card_list = @import("../card_list.zig");
-const cards = @import("../cards.zig");
+const card_list = @import("../action_list.zig");
+const actions = @import("../actions.zig");
 const combat = @import("../combat.zig");
 const damage = @import("../damage.zig");
 const events = @import("../events.zig");
 const w = @import("../world.zig");
 
 const entity = lib.entity;
-const Zone = cards.Zone;
+const Zone = actions.Zone;
 
 const commit = @import("effects/commit.zig");
 

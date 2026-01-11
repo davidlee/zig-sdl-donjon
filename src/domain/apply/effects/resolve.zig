@@ -4,7 +4,7 @@
 //! condition expiration ticking.
 
 const lib = @import("infra");
-const cards = @import("../../cards.zig");
+const actions = @import("../../actions.zig");
 const combat = @import("../../combat.zig");
 const condition = @import("../../condition.zig");
 const damage = @import("../../damage.zig");
@@ -18,7 +18,7 @@ const EventSystem = events.EventSystem;
 
 /// Apply a single resolve-phase effect to an agent.
 fn applyResolveEffect(
-    effect: cards.Effect,
+    effect: actions.Effect,
     agent: *Agent,
     is_player: bool,
     world: *World,
@@ -67,7 +67,7 @@ fn applyResolveEffect(
 
 /// Execute on_resolve rules for a single card.
 fn executeCardResolveRules(
-    card: *const cards.Instance,
+    card: *const actions.Instance,
     actor: *Agent,
     is_player: bool,
     world: *World,
