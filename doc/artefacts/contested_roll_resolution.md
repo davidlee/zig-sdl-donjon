@@ -25,9 +25,13 @@ All contests (attack/defense, movement) use the same structure:
 ```
 raw_score = base + Σ(factors)
 score = raw_score × condition_mult(agent)
-final = score + ((roll + calibration) × variance × stance_weight)
+stance_mult = stance_weight + (1 - stance_effectiveness)
+final = (score + ((roll + calibration) × variance)) × stance_mult
 margin = aggressor_final - defender_final
 ```
+
+Stance multiplies the *entire* output (score + variance), not just variance. This makes
+stance commitment trade total capability, not just luck influence.
 
 ### Roll Mechanics
 
@@ -207,26 +211,39 @@ Condition list non-exhaustive - extend as conditions are added.
 
 ## Stance Integration
 
-Stance weights (from triangle UI) feed directly into contest variance:
+Stance weights (from triangle UI) multiply total contest output:
 
 ```
-attack_final = attack_score + ((roll + calibration) × variance × stance.attack)
-defense_final = defense_score + ((roll + calibration) × variance × stance.defense)
-movement_final = movement_score + ((roll + calibration) × variance × stance.movement)
+attack_mult = stance.attack + (1 - stance_effectiveness)
+defense_mult = stance.defense + (1 - stance_effectiveness)
+movement_mult = stance.movement + (1 - stance_effectiveness)
+
+attack_final = (attack_score + ((roll + calibration) × variance)) × attack_mult
+defense_final = (defense_score + ((roll + calibration) × variance)) × defense_mult
+movement_final = (movement_score + ((roll + calibration) × variance)) × movement_mult
 ```
 
-### Effect of Stance Commitment
+### Stance Effectiveness
 
-| Stance | attack | defense | movement | Effect |
-|--------|--------|---------|----------|--------|
-| Balanced | 0.33 | 0.33 | 0.33 | Moderate variance all contests |
-| Pure attack | 1.0 | 0.0 | 0.0 | High attack variance, defense deterministic |
-| Pure defense | 0.0 | 1.0 | 0.0 | Defense swingy, attack deterministic |
-| Pure movement | 0.0 | 0.0 | 1.0 | Movement swingy, combat deterministic |
+`stance_effectiveness` controls how much stance commitment matters:
 
-High stance weight = more variance = more luck influence = higher ceiling and lower floor.
+| `stance_effectiveness` | 0 investment mult | 1.0 investment mult | Effect |
+|------------------------|-------------------|---------------------|--------|
+| 1.0 | 0.0 | 1.0 | Stance dominates: uncommitted = helpless |
+| 0.5 | 0.5 | 1.5 | Moderate: commitment is significant |
+| 0.0 | 1.0 | 2.0 | Stance irrelevant: only adds bonus |
 
-Low stance weight = deterministic = outcome dominated by raw score.
+### Effect of Stance Commitment (with stance_effectiveness = 0.5)
+
+| Stance | attack | defense | attack mult | defense mult |
+|--------|--------|---------|-------------|--------------|
+| Balanced | 0.33 | 0.33 | 0.83 | 0.83 |
+| Pure attack | 1.0 | 0.0 | 1.5 | 0.5 |
+| Pure defense | 0.0 | 1.0 | 0.5 | 1.5 |
+
+High stance weight = high multiplier = more total capability (score and luck).
+
+Low stance weight = low multiplier = reduced capability, partially offset by baseline.
 
 ### AI Stance Selection
 
@@ -292,6 +309,12 @@ All tuning constants for `tuning.zig`, grouped by subsystem:
 | `contested_roll_variance` | f32 | 1.0 |
 | `contested_roll_calibration` | f32 | 0.0 |
 | `contested_roll_mode` | enum | `.independent_pair` |
+
+### Stance
+
+| Constant | Type | Default |
+|----------|------|---------|
+| `stance_effectiveness` | f32 | 0.5 |
 
 ### Score Bases
 
