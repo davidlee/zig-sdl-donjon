@@ -206,6 +206,7 @@ pub const UX = struct {
                 .sprite => |sprite| try self.renderSprite(sprite),
                 .filled_rect => |fr| try self.renderFilledRect(fr),
                 .filled_triangle => |ft| try self.renderFilledTriangle(ft),
+                .circle_outline => |co| try self.renderCircleOutline(co),
                 .card => |card| try self.renderCard(card),
                 .text => |text| try self.renderText(text),
                 .log_pane => |pane| try self.renderLogPane(pane),
@@ -240,6 +241,7 @@ pub const UX = struct {
                 .sprite => |sprite| try self.renderSprite(sprite),
                 .filled_rect => |fr| try self.renderFilledRect(fr),
                 .filled_triangle => |ft| try self.renderFilledTriangle(ft),
+                .circle_outline => |co| try self.renderCircleOutline(co),
                 .card => |card| try self.renderCard(card),
                 .text => |text| try self.renderText(text),
                 .log_pane => |pane| try self.renderLogPane(pane),
@@ -317,6 +319,50 @@ pub const UX = struct {
             .{ .position = ft.points[1], .color = color, .tex_coord = .{ .x = 0, .y = 0 } },
             .{ .position = ft.points[2], .color = color, .tex_coord = .{ .x = 0, .y = 0 } },
         };
+        try self.renderer.renderGeometry(null, &vertices, null);
+    }
+
+    fn renderCircleOutline(self: *UX, co: view.CircleOutline) !void {
+        // Approximate circle with line segments
+        const segments: usize = 64;
+        const color = s.pixels.FColor{
+            .r = @as(f32, @floatFromInt(co.color.r)) / 255.0,
+            .g = @as(f32, @floatFromInt(co.color.g)) / 255.0,
+            .b = @as(f32, @floatFromInt(co.color.b)) / 255.0,
+            .a = @as(f32, @floatFromInt(co.color.a)) / 255.0,
+        };
+
+        // Build triangle strip for thick line (2 triangles per segment)
+        var vertices: [segments * 6]s.render.Vertex = undefined;
+        const two_pi = std.math.pi * 2.0;
+        const half_thick = co.thickness / 2.0;
+
+        for (0..segments) |i| {
+            const angle1 = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(segments)) * two_pi;
+            const angle2 = @as(f32, @floatFromInt(i + 1)) / @as(f32, @floatFromInt(segments)) * two_pi;
+
+            const cos1 = @cos(angle1);
+            const sin1 = @sin(angle1);
+            const cos2 = @cos(angle2);
+            const sin2 = @sin(angle2);
+
+            // Inner and outer points for segment
+            const inner1 = view.Point{ .x = co.center.x + (co.radius - half_thick) * cos1, .y = co.center.y + (co.radius - half_thick) * sin1 };
+            const outer1 = view.Point{ .x = co.center.x + (co.radius + half_thick) * cos1, .y = co.center.y + (co.radius + half_thick) * sin1 };
+            const inner2 = view.Point{ .x = co.center.x + (co.radius - half_thick) * cos2, .y = co.center.y + (co.radius - half_thick) * sin2 };
+            const outer2 = view.Point{ .x = co.center.x + (co.radius + half_thick) * cos2, .y = co.center.y + (co.radius + half_thick) * sin2 };
+
+            const base = i * 6;
+            // Triangle 1: inner1, outer1, inner2
+            vertices[base + 0] = .{ .position = inner1, .color = color, .tex_coord = .{ .x = 0, .y = 0 } };
+            vertices[base + 1] = .{ .position = outer1, .color = color, .tex_coord = .{ .x = 0, .y = 0 } };
+            vertices[base + 2] = .{ .position = inner2, .color = color, .tex_coord = .{ .x = 0, .y = 0 } };
+            // Triangle 2: inner2, outer1, outer2
+            vertices[base + 3] = .{ .position = inner2, .color = color, .tex_coord = .{ .x = 0, .y = 0 } };
+            vertices[base + 4] = .{ .position = outer1, .color = color, .tex_coord = .{ .x = 0, .y = 0 } };
+            vertices[base + 5] = .{ .position = outer2, .color = color, .tex_coord = .{ .x = 0, .y = 0 } };
+        }
+
         try self.renderer.renderGeometry(null, &vertices, null);
     }
 

@@ -41,6 +41,7 @@ pub const Renderable = union(enum) {
     text: Text,
     filled_rect: FilledRect,
     filled_triangle: FilledTriangle,
+    circle_outline: CircleOutline,
     card: Card,
     log_pane: LogPane,
     stance_weights: StanceWeights,
@@ -89,6 +90,13 @@ pub const FilledRect = struct {
 pub const FilledTriangle = struct {
     points: [3]Point,
     color: Color,
+};
+
+pub const CircleOutline = struct {
+    center: Point,
+    radius: f32,
+    color: Color,
+    thickness: f32 = 2,
 };
 
 /// Stance weight display - graphics layer formats the values

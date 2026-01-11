@@ -235,6 +235,14 @@ pub const View = struct {
             .color = .{ .r = 255, .g = 255, .b = 255, .a = 255 },
         } });
 
+        // Draw circumscribed circle (behind triangle)
+        try list.append(alloc, .{ .circle_outline = .{
+            .center = self.triangle.center,
+            .radius = self.triangle.radius,
+            .color = .{ .r = 60, .g = 60, .b = 65, .a = 255 },
+            .thickness = 2,
+        } });
+
         // Draw filled triangle - color from stance weights (ATK=R, MOV=G, DEF=B)
         // Base 20 + weight*80 gives 20-100 range per channel (muted but visible tint)
         const base: f32 = 20;
