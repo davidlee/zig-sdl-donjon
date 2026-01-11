@@ -369,6 +369,12 @@ pub const EventProcessor = struct {
                     try self.injectDudCardIfMapped(e.agent_id, e.condition, e.actor);
                 },
 
+                // Detailed contested roll logging for tuning
+                .contested_roll_resolved => |e| {
+                    const contested = @import("../resolution/contested.zig");
+                    contested.formatForConsole(e);
+                },
+
                 else => |data| std.debug.print("event processed: {}\n", .{data}),
             }
             return true;

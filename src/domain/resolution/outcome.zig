@@ -191,6 +191,19 @@ fn resolveOutcomeContested(
     const contested = @import("contested.zig");
     const result = try contested.resolveContested(w, attack, defense);
 
+    // Emit detailed contested roll event for logging/tuning
+    try w.events.push(.{ .contested_roll_resolved = .{
+        .attacker_id = attack.attacker.id,
+        .defender_id = attack.defender.id,
+        .technique_id = attack.technique.id,
+        .weapon_name = attack.weapon_template.name,
+        .attack = result.attack,
+        .defense = result.defense,
+        .margin = result.margin,
+        .outcome_type = result.outcome_type,
+        .damage_mult = result.damage_mult,
+    } });
+
     // Map contested outcome to legacy Outcome enum
     const legacy_outcome: Outcome = switch (result.outcome_type) {
         .critical_hit, .solid_hit, .partial_hit => .hit,
@@ -202,14 +215,16 @@ fn resolveOutcomeContested(
         } else .miss,
     };
 
-    // Approximate hit chance from scores for logging compatibility
-    const total_score = result.attack_score + result.defense_score;
-    const approx_hit_chance = if (total_score > 0) result.attack_score / total_score else 0.5;
+    // Approximate hit chance from raw scores for logging compatibility
+    const attack_raw = result.attack.raw();
+    const defense_raw = result.defense.raw();
+    const total_score = attack_raw + defense_raw;
+    const approx_hit_chance = if (total_score > 0) attack_raw / total_score else 0.5;
 
     return RollResult{
         .outcome = legacy_outcome,
         .hit_chance = approx_hit_chance,
-        .roll = result.attack_roll,
+        .roll = result.attack.roll,
         .margin = result.margin,
         .attacker_modifier = 0, // deprecated in contested mode
         .defender_modifier = 0,
@@ -353,19 +368,21 @@ pub fn resolveTechniqueVsDefense(
         } });
     }
 
-    // Emit technique_resolved event with full roll details
-    try w.events.push(.{ .technique_resolved = .{
-        .attacker_id = attack.attacker.id,
-        .defender_id = attack.defender.id,
-        .technique_id = attack.technique.id,
-        .weapon_name = attack.weapon_template.name,
-        .outcome = roll_result.outcome,
-        .hit_chance = roll_result.hit_chance,
-        .roll = roll_result.roll,
-        .margin = roll_result.margin,
-        .attacker_modifier = roll_result.attacker_modifier,
-        .defender_modifier = roll_result.defender_modifier,
-    } });
+    // Emit technique_resolved event (skipped in contested mode - uses contested_roll_resolved instead)
+    if (contested_roll_mode == .single) {
+        try w.events.push(.{ .technique_resolved = .{
+            .attacker_id = attack.attacker.id,
+            .defender_id = attack.defender.id,
+            .technique_id = attack.technique.id,
+            .weapon_name = attack.weapon_template.name,
+            .outcome = roll_result.outcome,
+            .hit_chance = roll_result.hit_chance,
+            .roll = roll_result.roll,
+            .margin = roll_result.margin,
+            .attacker_modifier = roll_result.attacker_modifier,
+            .defender_modifier = roll_result.defender_modifier,
+        } });
+    }
 
     return ResolutionResult{
         .outcome = roll_result.outcome,
@@ -405,7 +422,7 @@ fn makeTestAgent(
     );
 }
 
-test "resolveTechniqueVsDefense emits technique_resolved event" {
+test "resolveTechniqueVsDefense emits resolution event" {
     const alloc = std.testing.allocator;
 
     var w = try makeTestWorld(alloc);
@@ -449,22 +466,33 @@ test "resolveTechniqueVsDefense emits technique_resolved event" {
     // Swap buffers to make events readable
     w.events.swap_buffers();
 
-    // Check that technique_resolved event was emitted
-    var found_technique_resolved = false;
+    // Check that appropriate resolution event was emitted
+    // In contested mode: contested_roll_resolved, in single mode: technique_resolved
+    var found_resolution_event = false;
     while (w.events.pop()) |event| {
         switch (event) {
             .technique_resolved => |data| {
+                // Only expected in single roll mode
+                try std.testing.expectEqual(contested_roll_mode, .single);
                 try std.testing.expectEqual(attacker.id, data.attacker_id);
                 try std.testing.expectEqual(defender.id, data.defender_id);
                 try std.testing.expectEqual(TechniqueID.thrust, data.technique_id);
                 try std.testing.expectEqual(result.outcome, data.outcome);
-                found_technique_resolved = true;
+                found_resolution_event = true;
+            },
+            .contested_roll_resolved => |data| {
+                // Expected in contested (independent_pair) mode
+                try std.testing.expectEqual(contested_roll_mode, .independent_pair);
+                try std.testing.expectEqual(attacker.id, data.attacker_id);
+                try std.testing.expectEqual(defender.id, data.defender_id);
+                try std.testing.expectEqual(TechniqueID.thrust, data.technique_id);
+                found_resolution_event = true;
             },
             else => {},
         }
     }
 
-    try std.testing.expect(found_technique_resolved);
+    try std.testing.expect(found_resolution_event);
 }
 
 test "resolveTechniqueVsDefense emits advantage_changed events on hit" {

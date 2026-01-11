@@ -6,6 +6,7 @@ const resolution_mod = @import("resolution/mod.zig");
 
 pub const context = resolution_mod.context;
 pub const advantage = resolution_mod.advantage;
+pub const contested = resolution_mod.contested;
 pub const damage = resolution_mod.damage;
 pub const height = resolution_mod.height;
 pub const outcome = resolution_mod.outcome;

@@ -97,7 +97,7 @@ test "Attack at close range resolves normally" {
     try harness.resolveTick();
 
     // Should emit technique_resolved, not attack_out_of_range
-    try harness.expectEvent(.technique_resolved);
+    try harness.expectResolutionEvent();
     try harness.expectNoEvent(.attack_out_of_range);
 }
 
@@ -149,7 +149,7 @@ test "Attack at dagger range with sabre weapon hits" {
     try harness.resolveTick();
 
     // Sabre reach >= dagger range, so should resolve
-    try harness.expectEvent(.technique_resolved);
+    try harness.expectResolutionEvent();
     try harness.expectNoEvent(.attack_out_of_range);
 }
 

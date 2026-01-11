@@ -66,6 +66,8 @@ fn writeEventJson(buf: []u8, frame: u64, event: events.Event) usize {
 
         .technique_resolved => |d| w.print(",\"attacker\":{d},\"defender\":{d},\"technique\":\"{s}\",\"outcome\":\"{s}\",\"hit_chance\":{d:.2},\"roll\":{d:.2}}}\n", .{ d.attacker_id.index, d.defender_id.index, @tagName(d.technique_id), @tagName(d.outcome), d.hit_chance, d.roll }) catch return 0,
 
+        .contested_roll_resolved => |d| w.print(",\"attacker\":{d},\"defender\":{d},\"technique\":\"{s}\",\"outcome\":\"{s}\",\"margin\":{d:.3},\"dmg_mult\":{d:.2},\"atk_raw\":{d:.3},\"def_raw\":{d:.3}}}\n", .{ d.attacker_id.index, d.defender_id.index, @tagName(d.technique_id), @tagName(d.outcome_type), d.margin, d.damage_mult, d.attack.raw(), d.defense.raw() }) catch return 0,
+
         .combat_packet_resolved => |d| w.print(",\"attacker\":{d},\"defender\":{d},\"technique\":\"{s}\",\"init_geo\":{d:.2},\"init_en\":{d:.1},\"init_rig\":{d:.2},\"post_geo\":{d:.2},\"post_en\":{d:.1},\"deflected\":{},\"wound\":{?d}}}\n", .{ d.attacker_id.index, d.defender_id.index, @tagName(d.technique_id), d.initial_geometry, d.initial_energy, d.initial_rigidity, d.post_armour_geometry, d.post_armour_energy, d.armour_deflected, d.wound_severity }) catch return 0,
 
         .manoeuvre_contest_resolved => |d| w.print(",\"aggressor\":{d},\"defender\":{d},\"outcome\":\"{s}\"}}\n", .{ d.aggressor_id.index, d.defender_id.index, @tagName(d.outcome) }) catch return 0,

@@ -20,24 +20,68 @@ const Agent = combat.Agent;
 const World = world.World;
 
 // ============================================================================
+// Score Breakdowns
+// ============================================================================
+
+/// Breakdown of attack score components for event instrumentation.
+pub const AttackBreakdown = struct {
+    base: f32,
+    technique: f32, // negative = difficulty penalty
+    weapon: f32,
+    stakes: f32,
+    engagement: f32,
+    balance: f32,
+    condition_mult: f32,
+    stance_mult: f32,
+    roll: f32,
+
+    /// Sum of additive components before multipliers.
+    pub fn raw(self: AttackBreakdown) f32 {
+        return self.base + self.technique + self.weapon +
+            self.stakes + self.engagement + self.balance;
+    }
+
+    /// Final attack value after applying roll and multipliers.
+    pub fn final(self: AttackBreakdown) f32 {
+        const roll_adjusted = (self.roll + outcome.contested_roll_calibration) * outcome.contested_roll_variance;
+        return (self.raw() * self.condition_mult + roll_adjusted) * self.stance_mult;
+    }
+};
+
+/// Breakdown of defense score components for event instrumentation.
+pub const DefenseBreakdown = struct {
+    base: f32,
+    technique: f32,
+    weapon_parry: f32, // raw weapon parry value
+    parry_scaling: f32, // 1.0 active, 0.5 passive, 0.25 attacking
+    balance: f32,
+    condition_mult: f32,
+    stance_mult: f32,
+    roll: f32,
+
+    /// Sum of additive components before multipliers.
+    pub fn raw(self: DefenseBreakdown) f32 {
+        return self.base + self.technique +
+            (self.weapon_parry * self.parry_scaling) + self.balance;
+    }
+
+    /// Final defense value after applying roll and multipliers.
+    pub fn final(self: DefenseBreakdown) f32 {
+        const roll_adjusted = (self.roll + outcome.contested_roll_calibration) * outcome.contested_roll_variance;
+        return (self.raw() * self.condition_mult + roll_adjusted) * self.stance_mult;
+    }
+};
+
+// ============================================================================
 // Contested Roll Result
 // ============================================================================
 
-/// Result of a contested roll resolution.
+/// Result of a contested roll resolution with full breakdown for logging.
 pub const ContestedResult = struct {
-    /// Final outcome category.
-    outcome_type: OutcomeType,
-    /// Raw margin (attack_final - defense_final).
+    attack: AttackBreakdown,
+    defense: DefenseBreakdown,
     margin: f32,
-    /// Attack score before roll.
-    attack_score: f32,
-    /// Defense score before roll.
-    defense_score: f32,
-    /// Attack roll value (0-1).
-    attack_roll: f32,
-    /// Defense roll value (0-1, same as attack_roll in single mode).
-    defense_roll: f32,
-    /// Damage multiplier based on outcome tier.
+    outcome_type: OutcomeType,
     damage_mult: f32,
 
     pub const OutcomeType = enum {
@@ -48,43 +92,50 @@ pub const ContestedResult = struct {
     };
 };
 
-/// Calculate raw attack score from context factors.
-/// Does not include stance multiplier or roll - those are applied in resolveContested.
-pub fn calculateAttackScore(attack: AttackContext) f32 {
-    var score: f32 = outcome.attack_score_base;
-
+/// Calculate attack score breakdown from context factors.
+/// Returns partial breakdown - condition_mult, stance_mult, roll filled in by resolveContested.
+pub fn calculateAttackScore(attack: AttackContext) AttackBreakdown {
     // Technique difficulty (higher = harder to land)
-    score -= attack.technique.difficulty * outcome.technique_difficulty_mult;
+    const technique_contrib = -attack.technique.difficulty * outcome.technique_difficulty_mult;
 
     // Weapon accuracy
-    if (outcome.getWeaponOffensive(attack.weapon_template, attack.technique)) |weapon_off| {
-        score += weapon_off.accuracy * outcome.weapon_accuracy_mult;
-    }
+    const weapon_contrib = if (outcome.getWeaponOffensive(attack.weapon_template, attack.technique)) |weapon_off|
+        weapon_off.accuracy * outcome.weapon_accuracy_mult
+    else
+        0;
 
     // Stakes
-    score += attack.stakes.hitChanceBonus();
+    const stakes_contrib = attack.stakes.hitChanceBonus();
 
     // Engagement advantage
     const engagement_bonus = (attack.engagement.playerAdvantage() - 0.5) * outcome.engagement_advantage_mult;
-    score += if (attack.attacker.director == .player) engagement_bonus else -engagement_bonus;
+    const engagement_contrib = if (attack.attacker.director == .player) engagement_bonus else -engagement_bonus;
 
     // Attacker balance
-    score += (attack.attacker.balance - 0.5) * outcome.attacker_balance_mult;
+    const balance_contrib = (attack.attacker.balance - 0.5) * outcome.attacker_balance_mult;
 
-    return score;
+    return .{
+        .base = outcome.attack_score_base,
+        .technique = technique_contrib,
+        .weapon = weapon_contrib,
+        .stakes = stakes_contrib,
+        .engagement = engagement_contrib,
+        .balance = balance_contrib,
+        // Filled in by resolveContested:
+        .condition_mult = 1.0,
+        .stance_mult = 1.0,
+        .roll = 0,
+    };
 }
 
-/// Calculate raw defense score from context factors.
-/// Does not include stance multiplier or roll - those are applied in resolveContested.
-pub fn calculateDefenseScore(defense: DefenseContext) f32 {
-    var score: f32 = outcome.defense_score_base;
-
+/// Calculate defense score breakdown from context factors.
+/// Returns partial breakdown - condition_mult, stance_mult, roll filled in by resolveContested.
+pub fn calculateDefenseScore(defense: DefenseContext) DefenseBreakdown {
     // Active defense technique bonus (parry/block/deflect effectiveness)
-    if (defense.technique) |tech| {
-        // Use the technique's defense multipliers as a bonus
-        // Higher parry_mult means more effective defense
-        score += (tech.parry_mult - 1.0) * 0.2; // scale down raw mult
-    }
+    const technique_contrib = if (defense.technique) |tech|
+        (tech.parry_mult - 1.0) * 0.2 // scale down raw mult
+    else
+        0;
 
     // Weapon parry contribution (scaled by context)
     const parry_scaling: f32 = if (defense.technique != null)
@@ -94,12 +145,22 @@ pub fn calculateDefenseScore(defense: DefenseContext) f32 {
     else
         outcome.passive_weapon_defense_mult; // passive = moderate
 
-    score += defense.weapon_template.defence.parry * parry_scaling * outcome.weapon_parry_mult;
+    const weapon_parry = defense.weapon_template.defence.parry * outcome.weapon_parry_mult;
 
     // Defender balance (low balance = easier to hit = lower defense)
-    score -= (1.0 - defense.defender.balance) * outcome.defender_imbalance_mult;
+    const balance_contrib = -(1.0 - defense.defender.balance) * outcome.defender_imbalance_mult;
 
-    return score;
+    return .{
+        .base = outcome.defense_score_base,
+        .technique = technique_contrib,
+        .weapon_parry = weapon_parry,
+        .parry_scaling = parry_scaling,
+        .balance = balance_contrib,
+        // Filled in by resolveContested:
+        .condition_mult = 1.0,
+        .stance_mult = 1.0,
+        .roll = 0,
+    };
 }
 
 /// Returns multiplicative modifier for combat effectiveness based on agent conditions.
@@ -120,37 +181,36 @@ pub fn conditionCombatMult(agent: *const Agent) f32 {
 }
 
 /// Resolve a contested roll between attacker and defender.
-/// Returns outcome with margin and damage multiplier.
+/// Returns outcome with full breakdown for logging.
 pub fn resolveContested(
     w: *World,
     attack: AttackContext,
     defense: DefenseContext,
 ) !ContestedResult {
-    // Calculate base scores
-    const raw_attack = calculateAttackScore(attack);
-    const raw_defense = calculateDefenseScore(defense);
+    // Get base score breakdowns
+    var attack_breakdown = calculateAttackScore(attack);
+    var defense_breakdown = calculateDefenseScore(defense);
 
-    // Apply condition multipliers
-    const attack_score = raw_attack * conditionCombatMult(attack.attacker);
-    const defense_score = raw_defense * conditionCombatMult(defense.defender);
+    // Fill in condition multipliers
+    attack_breakdown.condition_mult = conditionCombatMult(attack.attacker);
+    defense_breakdown.condition_mult = conditionCombatMult(defense.defender);
 
     // Draw rolls
-    const attack_roll = try w.drawRandom(.combat);
-    const defense_roll = switch (outcome.contested_roll_mode) {
-        .single => attack_roll, // same roll for both
+    attack_breakdown.roll = try w.drawRandom(.combat);
+    defense_breakdown.roll = switch (outcome.contested_roll_mode) {
+        .single => attack_breakdown.roll, // same roll for both
         .independent_pair => try w.drawRandom(.combat),
     };
 
     // Calculate stance multipliers
     // Formula: stance_weight + (1.0 - stance_effectiveness)
     // At stance_effectiveness=0.5: weight=0.33 gives mult=0.83, weight=1.0 gives mult=1.5
-    const attack_stance_mult = attack.attacker_stance.attack + (1.0 - outcome.stance_effectiveness);
-    const defense_stance_mult = defense.defender_stance.defense + (1.0 - outcome.stance_effectiveness);
+    attack_breakdown.stance_mult = attack.attacker_stance.attack + (1.0 - outcome.stance_effectiveness);
+    defense_breakdown.stance_mult = defense.defender_stance.defense + (1.0 - outcome.stance_effectiveness);
 
-    // Apply formula: final = (score + (roll + calibration) * variance) * stance_mult
-    const attack_final = (attack_score + (attack_roll + outcome.contested_roll_calibration) * outcome.contested_roll_variance) * attack_stance_mult;
-    const defense_final = (defense_score + (defense_roll + outcome.contested_roll_calibration) * outcome.contested_roll_variance) * defense_stance_mult;
-
+    // Calculate final values and margin
+    const attack_final = attack_breakdown.final();
+    const defense_final = defense_breakdown.final();
     const margin = attack_final - defense_final;
 
     // Determine outcome tier and damage mult
@@ -164,14 +224,67 @@ pub fn resolveContested(
         .{ ContestedResult.OutcomeType.miss, 0.0 };
 
     return .{
-        .outcome_type = result_outcome,
+        .attack = attack_breakdown,
+        .defense = defense_breakdown,
         .margin = margin,
-        .attack_score = attack_score,
-        .defense_score = defense_score,
-        .attack_roll = attack_roll,
-        .defense_roll = defense_roll,
+        .outcome_type = result_outcome,
         .damage_mult = damage_mult,
     };
+}
+
+// ============================================================================
+// Console Formatter
+// ============================================================================
+
+/// Format a contested roll event for detailed console output (tuning/debugging).
+pub fn formatForConsole(e: anytype) void {
+    const atk = e.attack;
+    const def = e.defense;
+
+    std.debug.print(
+        \\
+        \\── Contested Roll ─────────────────────────
+        \\  {s} vs defender ({s})
+        \\
+        \\  ATTACK  [{d:.2}]
+        \\    base {d:.2} | tech {d:.2} | weapon {d:.2}
+        \\    stakes {d:.2} | engage {d:.2} | balance {d:.2}
+        \\    cond x{d:.2} | stance x{d:.2} | roll {d:.2}
+        \\
+        \\  DEFENSE [{d:.2}]
+        \\    base {d:.2} | tech {d:.2} | parry {d:.2} (x{d:.2})
+        \\    balance {d:.2}
+        \\    cond x{d:.2} | stance x{d:.2} | roll {d:.2}
+        \\
+        \\  MARGIN {d:.2} -> {s} (x{d:.2} dmg)
+        \\───────────────────────────────────────────
+        \\
+    , .{
+        @tagName(e.technique_id),
+        e.weapon_name,
+        atk.final(),
+        atk.base,
+        atk.technique,
+        atk.weapon,
+        atk.stakes,
+        atk.engagement,
+        atk.balance,
+        atk.condition_mult,
+        atk.stance_mult,
+        atk.roll,
+        def.final(),
+        def.base,
+        def.technique,
+        def.weapon_parry * def.parry_scaling,
+        def.parry_scaling,
+        def.balance,
+        def.condition_mult,
+        def.stance_mult,
+        def.roll,
+        e.margin,
+        @tagName(e.outcome_type),
+        e.damage_mult,
+    });
 }
 
 // ============================================================================
@@ -234,11 +347,11 @@ test "resolveContested produces valid outcome" {
 
     const result = try resolveContested(w, attack_ctx, defense_ctx);
 
-    // Verify result is valid
-    try std.testing.expect(result.attack_score > 0);
-    try std.testing.expect(result.defense_score > 0);
-    try std.testing.expect(result.attack_roll >= 0 and result.attack_roll <= 1);
-    try std.testing.expect(result.defense_roll >= 0 and result.defense_roll <= 1);
+    // Verify result breakdown is valid
+    try std.testing.expect(result.attack.raw() > 0);
+    try std.testing.expect(result.defense.raw() > 0);
+    try std.testing.expect(result.attack.roll >= 0 and result.attack.roll <= 1);
+    try std.testing.expect(result.defense.roll >= 0 and result.defense.roll <= 1);
 
     // Verify damage_mult matches outcome tier
     switch (result.outcome_type) {
@@ -288,5 +401,5 @@ test "stance affects contested outcome" {
     // stance multipliers should favor attacker
     // attack_mult = 1.0 + 0.5 = 1.5, defense_mult = 0.33 + 0.5 = 0.83
     // This just verifies the calculation happens without error
-    try std.testing.expect(result.attack_roll >= 0);
+    try std.testing.expect(result.attack.roll >= 0);
 }

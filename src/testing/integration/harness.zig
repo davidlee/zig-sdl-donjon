@@ -415,7 +415,8 @@ pub const Harness = struct {
         self.world.events.next_events.clearRetainingCapacity();
     }
 
-    /// Get weapon name from the most recent technique_resolved event.
+    /// Get weapon name from the most recent resolution event.
+    /// Checks both technique_resolved and contested_roll_resolved.
     /// Returns null if no such event exists.
     pub fn getResolvedWeaponName(self: *Harness) ?[]const u8 {
         // Search backwards to find most recent
@@ -423,11 +424,22 @@ pub const Harness = struct {
         var i = items.len;
         while (i > 0) {
             i -= 1;
-            if (items[i] == .technique_resolved) {
-                return items[i].technique_resolved.weapon_name;
+            switch (items[i]) {
+                .technique_resolved => |e| return e.weapon_name,
+                .contested_roll_resolved => |e| return e.weapon_name,
+                else => {},
             }
         }
         return null;
+    }
+
+    /// Assert that a resolution event (technique_resolved or contested_roll_resolved) exists.
+    pub fn expectResolutionEvent(self: *Harness) !void {
+        if (self.hasEvent(.technique_resolved) or self.hasEvent(.contested_roll_resolved)) {
+            return;
+        }
+        std.debug.print("Expected resolution event (technique_resolved or contested_roll_resolved), but not found\n", .{});
+        return error.ExpectedEventNotFound;
     }
 
     // ========================================================================

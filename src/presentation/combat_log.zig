@@ -183,6 +183,33 @@ pub fn format(event: Event, world: *const World, alloc: std.mem.Allocator) !?Ent
             );
         },
 
+        .contested_roll_resolved => |e| blk: {
+            const outcome_str = switch (e.outcome_type) {
+                .critical_hit => "CRIT",
+                .solid_hit => "hit",
+                .partial_hit => "graze",
+                .miss => "miss",
+            };
+
+            const is_hit = e.outcome_type != .miss;
+            const color = if (is_hit)
+                (if (world.player.id.eql(e.attacker_id)) colors.player_action else colors.enemy_action)
+            else
+                (if (world.player.id.eql(e.attacker_id)) colors.enemy_action else colors.player_action);
+
+            break :blk try singleSpan(
+                alloc,
+                try std.fmt.allocPrint(alloc, "{s} {s} {s}: {s} ({d:.2})", .{
+                    agentName(e.attacker_id, world),
+                    @tagName(e.technique_id),
+                    agentName(e.defender_id, world),
+                    outcome_str,
+                    e.margin,
+                }),
+                color,
+            );
+        },
+
         .advantage_changed => |e| {
             const delta = e.new_value - e.old_value;
             const sign: []const u8 = if (delta >= 0) "+" else "";

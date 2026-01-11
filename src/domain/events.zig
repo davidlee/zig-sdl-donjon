@@ -137,6 +137,20 @@ pub const Event = union(enum) {
         defender_modifier: f32, // total defense adjustment from defender conditions
     },
 
+    /// Contested roll resolution with full breakdown for logging/tuning.
+    /// Replaces technique_resolved when contested_roll_mode is enabled.
+    contested_roll_resolved: struct {
+        attacker_id: entity.ID,
+        defender_id: entity.ID,
+        technique_id: cards.TechniqueID,
+        weapon_name: []const u8,
+        attack: resolution.contested.AttackBreakdown,
+        defense: resolution.contested.DefenseBreakdown,
+        margin: f32,
+        outcome_type: resolution.contested.ContestedResult.OutcomeType,
+        damage_mult: f32,
+    },
+
     /// Emitted after a damage packet passes through armour and body layers.
     /// Consolidates packet lifecycle for audit/analysis (Phase 1 instrumentation).
     combat_packet_resolved: struct {

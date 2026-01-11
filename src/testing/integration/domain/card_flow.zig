@@ -339,8 +339,8 @@ test "Tick resolution emits technique_resolved event" {
 
     try harness.resolveTick();
 
-    // Verify technique was resolved
-    try harness.expectEvent(.technique_resolved);
+    // Verify technique was resolved (either technique_resolved or contested_roll_resolved)
+    try harness.expectResolutionEvent();
 }
 
 // ============================================================================
