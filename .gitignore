@@ -9,3 +9,4 @@ strace.log
 
 
 events.log.json
+.worktrees/
