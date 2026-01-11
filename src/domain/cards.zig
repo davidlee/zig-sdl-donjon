@@ -102,15 +102,21 @@ pub const TagSet = packed struct {
     finesse: bool = false, // dexterous techniques
     involuntary: bool = false, // status/dud cards (cannot be voluntarily discarded)
 
+    // Card subtypes (replaces Kind enum for modifier detection)
+    modifier: bool = false, // modifies another action during commit phase
+
+    // Padding to align to u32 for bitcast operations (19 bits -> 32 bits)
+    _padding: u13 = 0,
+
     pub fn hasTag(self: *const TagSet, required: TagSet) bool {
-        const me: u18 = @bitCast(self.*);
-        const req: u18 = @bitCast(required);
+        const me: u32 = @bitCast(self.*);
+        const req: u32 = @bitCast(required);
         return (me & req) == req; // all required bits present
     }
 
     pub fn hasAnyTag(self: *const TagSet, mask: TagSet) bool {
-        const me: u18 = @bitCast(self.*);
-        const bm: u18 = @bitCast(mask);
+        const me: u32 = @bitCast(self.*);
+        const bm: u32 = @bitCast(mask);
         return (me & bm) != 0; // at least one bit matches
     }
 
