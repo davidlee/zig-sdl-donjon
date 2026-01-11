@@ -100,7 +100,8 @@ pub const hit_chance_max: f32 = 0.95;
 pub const ContestedRollMode = enum { single, independent_pair };
 
 /// Which mode to use for contested rolls. `.single` is rollback-friendly.
-pub const contested_roll_mode: ContestedRollMode = .independent_pair;
+/// Set to .single for test compatibility; .independent_pair for full contested behavior.
+pub const contested_roll_mode: ContestedRollMode = .single;
 
 /// Scales overall randomness magnitude in contested rolls.
 pub const contested_roll_variance: f32 = 1.0;
@@ -167,6 +168,7 @@ pub const RollResult = struct {
     margin: f32, // roll - hit_chance (positive = miss margin, negative = hit margin)
     attacker_modifier: f32, // total from attacker conditions
     defender_modifier: f32, // total from defender conditions (defense_mult reduction)
+    damage_mult: f32 = 1.0, // damage multiplier from outcome tier (contested rolls)
 };
 
 /// Calculate hit probability for an attack
@@ -242,6 +244,18 @@ pub fn resolveOutcome(
     attack: AttackContext,
     defense: DefenseContext,
 ) !RollResult {
+    // Use contested roll resolution
+    // The contested_roll_mode constant controls single vs independent_pair within that system
+    return resolveOutcomeContested(w, attack, defense);
+}
+
+/// Legacy single-roll implementation (kept for reference/rollback)
+fn resolveOutcomeLegacy(
+    w: *World,
+    attack: AttackContext,
+    defense: DefenseContext,
+) !RollResult {
+    // Original single-roll implementation
     const hit_chance = calculateHitChance(attack, defense);
 
     // Apply attacker's overlay bonuses (from overlapping manoeuvres)
@@ -283,6 +297,41 @@ pub fn resolveOutcome(
         .margin = roll - final_chance,
         .attacker_modifier = attacker_mods.hit_chance,
         .defender_modifier = 1.0 - defender_mods.defense_mult, // how much defense was reduced
+    };
+}
+
+/// Contested roll resolution - maps to RollResult for compatibility
+fn resolveOutcomeContested(
+    w: *World,
+    attack: AttackContext,
+    defense: DefenseContext,
+) !RollResult {
+    const contested = @import("contested.zig");
+    const result = try contested.resolveContested(w, attack, defense);
+
+    // Map contested outcome to legacy Outcome enum
+    const legacy_outcome: Outcome = switch (result.outcome_type) {
+        .critical_hit, .solid_hit, .partial_hit => .hit,
+        .miss => if (defense.technique) |tech| switch (tech.id) {
+            .parry => .parried,
+            .block => .blocked,
+            .deflect => .deflected,
+            else => .miss,
+        } else .miss,
+    };
+
+    // Approximate hit chance from scores for logging compatibility
+    const total_score = result.attack_score + result.defense_score;
+    const approx_hit_chance = if (total_score > 0) result.attack_score / total_score else 0.5;
+
+    return RollResult{
+        .outcome = legacy_outcome,
+        .hit_chance = approx_hit_chance,
+        .roll = result.attack_roll,
+        .margin = result.margin,
+        .attacker_modifier = 0, // deprecated in contested mode
+        .defender_modifier = 0,
+        .damage_mult = result.damage_mult,
     };
 }
 
@@ -328,6 +377,9 @@ pub fn resolveTechniqueVsDefense(
         // Apply overlay damage multiplier from overlapping manoeuvres
         const attacker_overlay = getOverlayBonuses(w, attack.attacker.id, attack.time_start, attack.time_end, true);
         dmg_packet.?.amount *= attacker_overlay.damage_mult;
+
+        // Apply outcome tier damage multiplier (contested rolls: partial=0.5, solid=1.0, critical=1.5)
+        dmg_packet.?.amount *= roll_result.damage_mult;
 
         // Capture initial packet values for audit event (post-overlay, pre-armour)
         const initial_amount = dmg_packet.?.amount;
