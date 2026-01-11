@@ -25,7 +25,6 @@ pub const TechniqueAdvantage = advantage.TechniqueAdvantage;
 // Re-export commonly used functions
 pub const resolveTechniqueVsDefense = outcome.resolveTechniqueVsDefense;
 pub const resolveOutcome = outcome.resolveOutcome;
-pub const calculateHitChance = outcome.calculateHitChance;
 pub const getOverlayBonuses = context.getOverlayBonuses;
 pub const getAdvantageEffect = advantage.getAdvantageEffect;
 pub const applyAdvantageWithEvents = advantage.applyAdvantageWithEvents;

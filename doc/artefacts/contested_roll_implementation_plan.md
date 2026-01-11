@@ -760,13 +760,16 @@ git commit -m "feat: contested roll resolution complete"
 
 Implementation complete. All 10 tasks finished. Tests pass.
 
-Key commits:
-- feat: add contested roll tuning constants
-- feat: add stance fields to AttackContext/DefenseContext
-- wip: contested roll module skeleton with calculateAttackScore
-- feat: implement calculateDefenseScore
-- feat: implement conditionCombatMult
-- feat: implement resolveContested core function
-- feat: wire stance into resolution contexts
-- feat: integrate contested rolls with damage_mult
-- test: add contested roll integration tests
+| SHA | Description |
+|-----|-------------|
+| `b6ffdc2` | feat: add contested roll tuning constants |
+| `5de5927` | feat: add stance fields to AttackContext/DefenseContext |
+| `2b17343` | wip: contested roll module skeleton with calculateAttackScore |
+| `03d2aee` | feat: implement calculateDefenseScore |
+| `5e5f1ef` | feat: implement conditionCombatMult |
+| `d0128fd` | feat: implement resolveContested core function |
+| `0c93a55` | feat: wire stance into resolution contexts |
+| `de69c2a` | feat: integrate contested rolls with damage_mult |
+| `f9b9960` | test: add contested roll integration tests |
+| `9bae60e` | doc: mark contested roll implementation complete |
+| `db6d100` | refactor: remove dead code from legacy hit chance system |

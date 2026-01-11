@@ -24,7 +24,6 @@ pub const TechniqueAdvantage = resolution_mod.TechniqueAdvantage;
 // Re-export commonly used functions
 pub const resolveTechniqueVsDefense = resolution_mod.resolveTechniqueVsDefense;
 pub const resolveOutcome = resolution_mod.resolveOutcome;
-pub const calculateHitChance = resolution_mod.calculateHitChance;
 pub const getOverlayBonuses = resolution_mod.getOverlayBonuses;
 pub const getAdvantageEffect = resolution_mod.getAdvantageEffect;
 pub const applyAdvantageWithEvents = resolution_mod.applyAdvantageWithEvents;

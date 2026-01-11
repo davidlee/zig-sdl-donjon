@@ -37,7 +37,9 @@
       "Bash(just new-card:*)",
       "Bash(just:*)",
       "Skill(preflight)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ]
   }
 }

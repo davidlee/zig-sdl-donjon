@@ -171,73 +171,6 @@ pub const RollResult = struct {
     damage_mult: f32 = 1.0, // damage multiplier from outcome tier (contested rolls)
 };
 
-/// Calculate hit probability for an attack
-pub fn calculateHitChance(attack: AttackContext, defense: DefenseContext) f32 {
-    var chance: f32 = base_hit_chance;
-
-    // Technique difficulty (higher = harder to land)
-    chance -= attack.technique.difficulty * technique_difficulty_mult;
-
-    // Weapon accuracy modifier
-    if (getWeaponOffensive(attack.weapon_template, attack.technique)) |weapon_off| {
-        chance += weapon_off.accuracy * weapon_accuracy_mult;
-    }
-
-    // Stakes modifier
-    chance += attack.stakes.hitChanceBonus();
-
-    // Engagement advantage (pressure, control, position)
-    const engagement_bonus = (attack.engagement.playerAdvantage() - base_hit_chance) * engagement_advantage_mult;
-    chance += if (attack.attacker.director == .player) engagement_bonus else -engagement_bonus;
-
-    // Attacker balance
-    chance += (attack.attacker.balance - base_hit_chance) * attacker_balance_mult;
-
-    // Condition modifiers
-    const attacker_mods = CombatModifiers.forAttacker(attack);
-    const defender_mods = CombatModifiers.forDefender(defense);
-    chance += attacker_mods.hit_chance;
-
-    // Defense modifiers
-    if (defense.technique) |def_tech| {
-        // Active defense technique modifies attacker's chance
-        var def_mult = switch (def_tech.id) {
-            .parry => attack.technique.parry_mult,
-            .block => attack.technique.deflect_mult, // using deflect as proxy for now
-            .deflect => attack.technique.deflect_mult,
-            else => 1.0,
-        };
-        // Defender conditions reduce defense effectiveness
-        def_mult *= defender_mods.defense_mult;
-        chance *= def_mult;
-
-        // Height coverage: if guard covers the attack's target zone
-        if (def_tech.guard_height) |gh| {
-            if (gh == attack.technique.target_height) {
-                // Guard directly covers attack zone
-                chance -= guard_direct_cover_penalty;
-            } else if (def_tech.covers_adjacent and gh.adjacent(attack.technique.target_height)) {
-                // Guard partially covers adjacent zone
-                chance -= guard_adjacent_cover_penalty;
-            } else {
-                // Attacking an opening (unguarded zone)
-                chance += guard_opening_bonus;
-            }
-        }
-
-        // Defender weapon defensive modifiers
-        chance -= defense.weapon_template.defence.parry * weapon_parry_mult;
-    }
-
-    // Defender balance (low balance = easier to hit)
-    chance += (1.0 - defense.defender.balance) * defender_imbalance_mult;
-
-    // Defender condition dodge penalty (passive evasion)
-    chance -= defender_mods.dodge_mod;
-
-    return std.math.clamp(chance, hit_chance_min, hit_chance_max);
-}
-
 /// Determine outcome of attack vs defense
 pub fn resolveOutcome(
     w: *World,
@@ -247,57 +180,6 @@ pub fn resolveOutcome(
     // Use contested roll resolution
     // The contested_roll_mode constant controls single vs independent_pair within that system
     return resolveOutcomeContested(w, attack, defense);
-}
-
-/// Legacy single-roll implementation (kept for reference/rollback)
-fn resolveOutcomeLegacy(
-    w: *World,
-    attack: AttackContext,
-    defense: DefenseContext,
-) !RollResult {
-    // Original single-roll implementation
-    const hit_chance = calculateHitChance(attack, defense);
-
-    // Apply attacker's overlay bonuses (from overlapping manoeuvres)
-    const attacker_overlay = getOverlayBonuses(w, attack.attacker.id, attack.time_start, attack.time_end, true);
-
-    // Apply defender's overlay bonuses (from overlapping manoeuvres)
-    const defender_overlay = getOverlayBonuses(w, defense.defender.id, defense.time_start, defense.time_end, false);
-
-    // defense_bonus reduces hit chance (defender's movement makes them harder to hit)
-    const final_chance = std.math.clamp(
-        hit_chance + attacker_overlay.to_hit_bonus - defender_overlay.defense_bonus,
-        hit_chance_min,
-        hit_chance_max,
-    );
-
-    const roll = try w.drawRandom(.combat);
-
-    // Capture condition modifiers for logging
-    const attacker_mods = CombatModifiers.forAttacker(attack);
-    const defender_mods = CombatModifiers.forDefender(defense);
-
-    const outcome: Outcome = if (roll > final_chance) blk: {
-        // Attack failed - determine how based on defense
-        if (defense.technique) |def_tech| {
-            break :blk switch (def_tech.id) {
-                .parry => .parried,
-                .block => .blocked,
-                .deflect => .deflected,
-                else => .miss,
-            };
-        }
-        break :blk .miss;
-    } else .hit;
-
-    return RollResult{
-        .outcome = outcome,
-        .hit_chance = final_chance,
-        .roll = roll,
-        .margin = roll - final_chance,
-        .attacker_modifier = attacker_mods.hit_chance,
-        .defender_modifier = 1.0 - defender_mods.defense_mult, // how much defense was reduced
-    };
 }
 
 /// Contested roll resolution - maps to RollResult for compatibility
@@ -521,10 +403,6 @@ fn makeTestAgent(
         &species.DWARF,
         stats.Block.splat(5),
     );
-}
-
-test "calculateHitChance base case" {
-    // Would need mock agents/engagement - placeholder for now
 }
 
 test "resolveTechniqueVsDefense emits technique_resolved event" {
