@@ -38,7 +38,40 @@ pub fn calculateAttackScore(attack: AttackContext) f32 {
     return score;
 }
 
+/// Calculate raw defense score from context factors.
+/// Does not include stance multiplier or roll - those are applied in resolveContested.
+pub fn calculateDefenseScore(defense: DefenseContext) f32 {
+    var score: f32 = outcome.defense_score_base;
+
+    // Active defense technique bonus (parry/block/deflect effectiveness)
+    if (defense.technique) |tech| {
+        // Use the technique's defense multipliers as a bonus
+        // Higher parry_mult means more effective defense
+        score += (tech.parry_mult - 1.0) * 0.2; // scale down raw mult
+    }
+
+    // Weapon parry contribution (scaled by context)
+    const parry_scaling: f32 = if (defense.technique != null)
+        1.0 // active defense = full weapon parry
+    else if (defense.defender_is_attacking)
+        outcome.offensive_committed_defense_mult // attacking = reduced
+    else
+        outcome.passive_weapon_defense_mult; // passive = moderate
+
+    score += defense.weapon_template.defence.parry * parry_scaling * outcome.weapon_parry_mult;
+
+    // Defender balance (low balance = easier to hit = lower defense)
+    score -= (1.0 - defense.defender.balance) * outcome.defender_imbalance_mult;
+
+    return score;
+}
+
 test "calculateAttackScore base case" {
     // Needs proper test fixtures (makeTestWorld, makeTestAgent)
+    // Full coverage via integration tests in Task 9
+}
+
+test "calculateDefenseScore base case" {
+    // Needs proper test fixtures
     // Full coverage via integration tests in Task 9
 }
