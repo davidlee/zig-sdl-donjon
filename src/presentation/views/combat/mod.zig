@@ -7,6 +7,8 @@ pub const hit = @import("hit.zig");
 pub const play = @import("play.zig");
 pub const avatar = @import("avatar.zig");
 pub const stance = @import("stance.zig");
+pub const card_zone = @import("card_zone.zig");
+pub const carousel = @import("carousel.zig");
 
 // Convenience re-exports for combat-specific types
 pub const View = view.View;
@@ -21,3 +23,7 @@ pub const Enemy = avatar.Enemy;
 pub const Opposition = avatar.Opposition;
 pub const StanceView = stance.View;
 pub const StanceTriangle = stance.Triangle;
+pub const CardZoneView = card_zone.CardZoneView;
+pub const CarouselView = carousel.CarouselView;
+pub const getLayout = card_zone.getLayout;
+pub const getLayoutOffset = card_zone.getLayoutOffset;
