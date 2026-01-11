@@ -93,6 +93,59 @@ pub const hit_chance_min: f32 = 0.05;
 pub const hit_chance_max: f32 = 0.95;
 
 // ============================================================================
+// Contested Roll Constants
+// ============================================================================
+
+/// Roll mode: single roll (linear distribution) or independent pair (triangular).
+pub const ContestedRollMode = enum { single, independent_pair };
+
+/// Which mode to use for contested rolls. `.single` is rollback-friendly.
+pub const contested_roll_mode: ContestedRollMode = .independent_pair;
+
+/// Scales overall randomness magnitude in contested rolls.
+pub const contested_roll_variance: f32 = 1.0;
+
+/// Shifts roll center. 0.0 = uncentered (roll adds positive bias), -0.5 = centered.
+pub const contested_roll_calibration: f32 = 0.0;
+
+/// How much stance commitment affects capability (0.0 = irrelevant, 1.0 = dominant).
+/// At 0.5: 0 investment = 0.5 multiplier, 1.0 investment = 1.5 multiplier.
+pub const stance_effectiveness: f32 = 0.5;
+
+// --- Score Bases ---
+
+/// Baseline attack score before factors.
+pub const attack_score_base: f32 = 0.5;
+
+/// Baseline defense score before factors.
+pub const defense_score_base: f32 = 0.5;
+
+// --- Defense Scaling ---
+
+/// Weapon parry contribution when no active defense technique (holding sword passively).
+pub const passive_weapon_defense_mult: f32 = 0.5;
+
+/// Weapon parry contribution when defender is also attacking (sword busy).
+pub const offensive_committed_defense_mult: f32 = 0.25;
+
+/// Attack score penalty when attacker is also defending in same slice.
+pub const simultaneous_defense_attack_penalty: f32 = 0.1;
+
+// --- Outcome Thresholds ---
+
+/// Margin threshold for critical hit.
+pub const hit_margin_critical: f32 = 0.4;
+
+/// Margin threshold for solid hit (full damage).
+pub const hit_margin_solid: f32 = 0.2;
+
+/// Damage multiplier for partial hits (margin >= 0 but < solid).
+pub const partial_hit_damage_mult: f32 = 0.5;
+
+/// Damage multiplier for critical hits.
+pub const critical_hit_damage_mult: f32 = 1.5;
+
+// ============================================================================
 // Outcome Determination
 // ============================================================================
 

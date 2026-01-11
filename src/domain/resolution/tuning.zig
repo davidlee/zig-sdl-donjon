@@ -87,3 +87,22 @@ pub const blinded_dodge_penalty = context.blinded_dodge_penalty;
 // --- Mobility (Wounded Legs) ---
 
 pub const mobility_dodge_penalty_max = context.mobility_dodge_penalty_max;
+
+// ============================================================================
+// Contested Roll Constants (from outcome.zig)
+// ============================================================================
+
+pub const ContestedRollMode = outcome.ContestedRollMode;
+pub const contested_roll_mode = outcome.contested_roll_mode;
+pub const contested_roll_variance = outcome.contested_roll_variance;
+pub const contested_roll_calibration = outcome.contested_roll_calibration;
+pub const stance_effectiveness = outcome.stance_effectiveness;
+pub const attack_score_base = outcome.attack_score_base;
+pub const defense_score_base = outcome.defense_score_base;
+pub const passive_weapon_defense_mult = outcome.passive_weapon_defense_mult;
+pub const offensive_committed_defense_mult = outcome.offensive_committed_defense_mult;
+pub const simultaneous_defense_attack_penalty = outcome.simultaneous_defense_attack_penalty;
+pub const hit_margin_critical = outcome.hit_margin_critical;
+pub const hit_margin_solid = outcome.hit_margin_solid;
+pub const partial_hit_damage_mult = outcome.partial_hit_damage_mult;
+pub const critical_hit_damage_mult = outcome.critical_hit_damage_mult;
