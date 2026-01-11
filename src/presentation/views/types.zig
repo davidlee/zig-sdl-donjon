@@ -42,6 +42,7 @@ pub const Renderable = union(enum) {
     filled_rect: FilledRect,
     filled_triangle: FilledTriangle,
     circle_outline: CircleOutline,
+    rect_outline: RectOutline,
     card: Card,
     log_pane: LogPane,
     stance_weights: StanceWeights,
@@ -95,6 +96,12 @@ pub const FilledTriangle = struct {
 pub const CircleOutline = struct {
     center: Point,
     radius: f32,
+    color: Color,
+    thickness: f32 = 2,
+};
+
+pub const RectOutline = struct {
+    rect: Rect,
     color: Color,
     thickness: f32 = 2,
 };

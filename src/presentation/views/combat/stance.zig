@@ -235,12 +235,37 @@ pub const View = struct {
             .color = .{ .r = 255, .g = 255, .b = 255, .a = 255 },
         } });
 
+        // Draw outer square frame (circumscribes circle)
+        const side = self.triangle.radius * 2;
+        try list.append(alloc, .{ .rect_outline = .{
+            .rect = .{
+                .x = self.triangle.center.x - self.triangle.radius,
+                .y = self.triangle.center.y - self.triangle.radius,
+                .w = side,
+                .h = side,
+            },
+            .color = .{ .r = 50, .g = 50, .b = 55, .a = 255 },
+            .thickness = 2,
+        } });
+
         // Draw circumscribed circle (behind triangle)
         try list.append(alloc, .{ .circle_outline = .{
             .center = self.triangle.center,
             .radius = self.triangle.radius,
             .color = .{ .r = 60, .g = 60, .b = 65, .a = 255 },
             .thickness = 2,
+        } });
+
+        // Black outline masks circle overflow at corners
+        try list.append(alloc, .{ .rect_outline = .{
+            .rect = .{
+                .x = self.triangle.center.x - self.triangle.radius - 1,
+                .y = self.triangle.center.y - self.triangle.radius - 1,
+                .w = side + 2,
+                .h = side + 2,
+            },
+            .color = .{ .r = 0, .g = 0, .b = 0, .a = 255 },
+            .thickness = 1,
         } });
 
         // Draw filled triangle - color from stance weights (ATK=R, MOV=G, DEF=B)

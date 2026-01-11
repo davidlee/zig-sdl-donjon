@@ -207,6 +207,7 @@ pub const UX = struct {
                 .filled_rect => |fr| try self.renderFilledRect(fr),
                 .filled_triangle => |ft| try self.renderFilledTriangle(ft),
                 .circle_outline => |co| try self.renderCircleOutline(co),
+                .rect_outline => |ro| try self.renderRectOutline(ro),
                 .card => |card| try self.renderCard(card),
                 .text => |text| try self.renderText(text),
                 .log_pane => |pane| try self.renderLogPane(pane),
@@ -242,6 +243,7 @@ pub const UX = struct {
                 .filled_rect => |fr| try self.renderFilledRect(fr),
                 .filled_triangle => |ft| try self.renderFilledTriangle(ft),
                 .circle_outline => |co| try self.renderCircleOutline(co),
+                .rect_outline => |ro| try self.renderRectOutline(ro),
                 .card => |card| try self.renderCard(card),
                 .text => |text| try self.renderText(text),
                 .log_pane => |pane| try self.renderLogPane(pane),
@@ -364,6 +366,22 @@ pub const UX = struct {
         }
 
         try self.renderer.renderGeometry(null, &vertices, null);
+    }
+
+    fn renderRectOutline(self: *UX, ro: view.RectOutline) !void {
+        // Draw 4 filled rects for each edge
+        const t = ro.thickness;
+        const r = ro.rect;
+        try self.renderer.setDrawColor(ro.color);
+
+        // Top edge
+        try self.renderer.renderFillRect(.{ .x = r.x, .y = r.y, .w = r.w, .h = t });
+        // Bottom edge
+        try self.renderer.renderFillRect(.{ .x = r.x, .y = r.y + r.h - t, .w = r.w, .h = t });
+        // Left edge
+        try self.renderer.renderFillRect(.{ .x = r.x, .y = r.y + t, .w = t, .h = r.h - 2 * t });
+        // Right edge
+        try self.renderer.renderFillRect(.{ .x = r.x + r.w - t, .y = r.y + t, .w = t, .h = r.h - 2 * t });
     }
 
     fn renderText(self: *UX, text: view.Text) !void {

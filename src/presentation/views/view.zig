@@ -33,6 +33,7 @@ pub const Text = types.Text;
 pub const FilledRect = types.FilledRect;
 pub const FilledTriangle = types.FilledTriangle;
 pub const CircleOutline = types.CircleOutline;
+pub const RectOutline = types.RectOutline;
 pub const StanceWeights = types.StanceWeights;
 
 // Re-export view state types (from types.zig)
