@@ -11,11 +11,14 @@ const damage = @import("../damage.zig");
 const weapon = @import("../weapon.zig");
 const world = @import("../world.zig");
 
+const plays = @import("../combat/plays.zig");
+
 const Agent = combat.Agent;
 const Engagement = combat.Engagement;
 const FlankingStatus = combat.FlankingStatus;
 const Technique = cards.Technique;
 const Stakes = cards.Stakes;
+const Stance = plays.Stance;
 const World = world.World;
 
 // ============================================================================
@@ -46,6 +49,8 @@ pub const AttackContext = struct {
     time_end: f32 = 1.0,
     // Attention penalty when attacking non-primary target (derived from AttentionState)
     attention_penalty: f32 = 0,
+    /// Attacker's stance weights for this turn.
+    attacker_stance: Stance = Stance.balanced,
 };
 
 pub const DefenseContext = struct {
@@ -57,6 +62,10 @@ pub const DefenseContext = struct {
     // Timing for overlay bonus calculation
     time_start: f32 = 0,
     time_end: f32 = 1.0,
+    /// Defender's stance weights for this turn.
+    defender_stance: Stance = Stance.balanced,
+    /// Whether defender is attacking in the same time slice (affects weapon defense).
+    defender_is_attacking: bool = false,
 };
 
 // ============================================================================
