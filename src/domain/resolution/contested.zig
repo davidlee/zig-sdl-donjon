@@ -10,10 +10,43 @@ const plays = @import("../combat/plays.zig");
 const combat = @import("../combat.zig");
 const damage = @import("../damage.zig");
 
+const world = @import("../world.zig");
+const random = @import("../random.zig");
+
 const AttackContext = context.AttackContext;
 const DefenseContext = context.DefenseContext;
 const Stance = plays.Stance;
 const Agent = combat.Agent;
+const World = world.World;
+
+// ============================================================================
+// Contested Roll Result
+// ============================================================================
+
+/// Result of a contested roll resolution.
+pub const ContestedResult = struct {
+    /// Final outcome category.
+    outcome_type: OutcomeType,
+    /// Raw margin (attack_final - defense_final).
+    margin: f32,
+    /// Attack score before roll.
+    attack_score: f32,
+    /// Defense score before roll.
+    defense_score: f32,
+    /// Attack roll value (0-1).
+    attack_roll: f32,
+    /// Defense roll value (0-1, same as attack_roll in single mode).
+    defense_roll: f32,
+    /// Damage multiplier based on outcome tier.
+    damage_mult: f32,
+
+    pub const OutcomeType = enum {
+        critical_hit,
+        solid_hit,
+        partial_hit,
+        miss,
+    };
+};
 
 /// Calculate raw attack score from context factors.
 /// Does not include stance multiplier or roll - those are applied in resolveContested.
@@ -84,6 +117,61 @@ pub fn conditionCombatMult(agent: *const Agent) f32 {
     // TODO: Add positive condition bonuses when condition system is expanded
 
     return mult;
+}
+
+/// Resolve a contested roll between attacker and defender.
+/// Returns outcome with margin and damage multiplier.
+pub fn resolveContested(
+    w: *World,
+    attack: AttackContext,
+    defense: DefenseContext,
+) !ContestedResult {
+    // Calculate base scores
+    const raw_attack = calculateAttackScore(attack);
+    const raw_defense = calculateDefenseScore(defense);
+
+    // Apply condition multipliers
+    const attack_score = raw_attack * conditionCombatMult(attack.attacker);
+    const defense_score = raw_defense * conditionCombatMult(defense.defender);
+
+    // Draw rolls
+    const attack_roll = try w.drawRandom(.combat);
+    const defense_roll = switch (outcome.contested_roll_mode) {
+        .single => attack_roll, // same roll for both
+        .independent_pair => try w.drawRandom(.combat),
+    };
+
+    // Calculate stance multipliers
+    // Formula: stance_weight + (1.0 - stance_effectiveness)
+    // At stance_effectiveness=0.5: weight=0.33 gives mult=0.83, weight=1.0 gives mult=1.5
+    const attack_stance_mult = attack.attacker_stance.attack + (1.0 - outcome.stance_effectiveness);
+    const defense_stance_mult = defense.defender_stance.defense + (1.0 - outcome.stance_effectiveness);
+
+    // Apply formula: final = (score + (roll + calibration) * variance) * stance_mult
+    const attack_final = (attack_score + (attack_roll + outcome.contested_roll_calibration) * outcome.contested_roll_variance) * attack_stance_mult;
+    const defense_final = (defense_score + (defense_roll + outcome.contested_roll_calibration) * outcome.contested_roll_variance) * defense_stance_mult;
+
+    const margin = attack_final - defense_final;
+
+    // Determine outcome tier and damage mult
+    const result_outcome, const damage_mult = if (margin >= outcome.hit_margin_critical)
+        .{ ContestedResult.OutcomeType.critical_hit, outcome.critical_hit_damage_mult }
+    else if (margin >= outcome.hit_margin_solid)
+        .{ ContestedResult.OutcomeType.solid_hit, 1.0 }
+    else if (margin >= 0)
+        .{ ContestedResult.OutcomeType.partial_hit, outcome.partial_hit_damage_mult }
+    else
+        .{ ContestedResult.OutcomeType.miss, 0.0 };
+
+    return .{
+        .outcome_type = result_outcome,
+        .margin = margin,
+        .attack_score = attack_score,
+        .defense_score = defense_score,
+        .attack_roll = attack_roll,
+        .defense_roll = defense_roll,
+        .damage_mult = damage_mult,
+    };
 }
 
 test "calculateAttackScore base case" {
