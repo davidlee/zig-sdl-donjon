@@ -7,10 +7,13 @@ const std = @import("std");
 const outcome = @import("outcome.zig");
 const context = @import("context.zig");
 const plays = @import("../combat/plays.zig");
+const combat = @import("../combat.zig");
+const damage = @import("../damage.zig");
 
 const AttackContext = context.AttackContext;
 const DefenseContext = context.DefenseContext;
 const Stance = plays.Stance;
+const Agent = combat.Agent;
 
 /// Calculate raw attack score from context factors.
 /// Does not include stance multiplier or roll - those are applied in resolveContested.
@@ -66,12 +69,34 @@ pub fn calculateDefenseScore(defense: DefenseContext) f32 {
     return score;
 }
 
+/// Returns multiplicative modifier for combat effectiveness based on agent conditions.
+/// Values < 1.0 reduce effectiveness, > 1.0 enhance.
+/// Used identically for attack and defense score calculation.
+pub fn conditionCombatMult(agent: *const Agent) f32 {
+    var mult: f32 = 1.0;
+
+    // Negative conditions reduce effectiveness
+    if (agent.hasCondition(.winded)) mult *= 0.8;
+    if (agent.hasCondition(.stunned)) mult *= 0.5;
+    // Note: off_balance/unbalanced is handled via balance stat, not here
+
+    // Positive conditions would enhance (e.g., focused, adrenaline_surge)
+    // TODO: Add positive condition bonuses when condition system is expanded
+
+    return mult;
+}
+
 test "calculateAttackScore base case" {
     // Needs proper test fixtures (makeTestWorld, makeTestAgent)
     // Full coverage via integration tests in Task 9
 }
 
 test "calculateDefenseScore base case" {
+    // Needs proper test fixtures
+    // Full coverage via integration tests in Task 9
+}
+
+test "conditionCombatMult base case" {
     // Needs proper test fixtures
     // Full coverage via integration tests in Task 9
 }
