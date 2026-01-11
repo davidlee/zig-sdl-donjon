@@ -523,7 +523,7 @@ const m_high = Template{
     .description = "strike high - more damage, harder to land",
     .rarity = .common,
     .cost = .{ .stamina = 0, .time = 0 },
-    .tags = .{ .offensive = true, .phase_commit = true },
+    .tags = .{ .offensive = true, .phase_commit = true, .modifier = true },
     .icon = .y,
     .rules = &.{.{
         .trigger = .on_commit,
@@ -546,7 +546,7 @@ const m_low = Template{
     .description = "strike low - faster, less damage",
     .rarity = .common,
     .cost = .{ .stamina = 0, .time = 0 },
-    .tags = .{ .offensive = true, .phase_commit = true },
+    .tags = .{ .offensive = true, .phase_commit = true, .modifier = true },
     .icon = .u,
     .rules = &.{.{
         .trigger = .on_commit,
@@ -571,7 +571,7 @@ const m_feint = Template{
     .description = "feign commitment - no damage, gain initiative",
     .rarity = .uncommon,
     .cost = .{ .stamina = 0, .time = 0, .focus = 1 },
-    .tags = .{ .offensive = true, .phase_commit = true },
+    .tags = .{ .offensive = true, .phase_commit = true, .modifier = true },
     .icon = .f,
     .rules = &.{.{
         .trigger = .on_commit,
