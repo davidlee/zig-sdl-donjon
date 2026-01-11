@@ -703,8 +703,8 @@ we have more/richer options for draw cards. Leave as open question.
 1. [x] (T049) Fix `positioning.zig` to use `world.drawRandom(.combat)` instead of raw `rng`
 2. [x] (T049) Audit codebase for magic numbers needing extraction
 3. [x] (T049) Audit codebase for random stream bypasses
-4. Add `stance_selection` TurnPhase + provide mechanism for AI to randomly choose stance
-5. Implement stance triangle UI
+4. [x] (T050) Add `stance_selection` TurnPhase + provide mechanism for AI to randomly choose stance
+5. [x] (T050) Implement stance triangle UI
 6. Wire stance weights into contested roll formula
 7. Prototype in tests: do baseline scenarios produce expected win rates?
 8. Design partial hit damage scaling
