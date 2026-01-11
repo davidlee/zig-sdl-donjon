@@ -8,6 +8,7 @@ pub const advantage = @import("advantage.zig");
 pub const damage = @import("damage.zig");
 pub const height = @import("height.zig");
 pub const outcome = @import("outcome.zig");
+pub const tuning = @import("tuning.zig");
 
 // Re-export commonly used types at top level
 pub const Outcome = outcome.Outcome;

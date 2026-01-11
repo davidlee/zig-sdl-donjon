@@ -49,6 +49,11 @@ const standing_still_penalty: f32 = 0.3;
 /// Score differential must exceed this to avoid stalemate.
 const stalemate_threshold: f32 = 0.1;
 
+/// Magnitude of random variance in manoeuvre contests.
+/// Higher values increase upset potential; lower values make contests more deterministic.
+/// Variance is applied as: (roll - 0.5) * magnitude, giving range [-magnitude/2, +magnitude/2].
+pub const manoeuvre_variance_magnitude: f32 = 0.2;
+
 /// Compute combined footwork_mult from agent's active conditions.
 /// Iterates conditions without engagement context (footwork is pre-engagement).
 fn footworkMultForAgent(agent: *const combat.Agent) f32 {
@@ -84,14 +89,16 @@ pub fn calculateManoeuvreScore(
 
 /// Resolve a positioning conflict between aggressor and defender.
 /// Returns outcome based on score differential with randomness.
+/// Resolve a positioning conflict between aggressor and defender.
+/// Returns outcome based on score differential with randomness.
 pub fn resolveManoeuvreConflict(
+    world: *World,
     aggressor: *const combat.Agent,
     defender: *const combat.Agent,
     aggressor_move: ManoeuvreType,
     defender_move: ManoeuvreType,
     engagement: *const combat.Engagement,
-    rng: std.Random,
-) ContestResult {
+) !ContestResult {
     // Compute footwork penalties from conditions (e.g., hypovolemic_shock reduces footwork)
     const aggressor_footwork = footworkMultForAgent(aggressor);
     const defender_footwork = footworkMultForAgent(defender);
@@ -116,8 +123,9 @@ pub fn resolveManoeuvreConflict(
 
     const differential = aggressor_score - defender_score;
 
-    // Add randomness: roll 0..0.2 variance centered on differential
-    const variance = (rng.float(f32) - 0.5) * 0.2;
+    // Add randomness: roll 0..variance_magnitude centered on differential
+    const roll = try world.drawRandom(.combat);
+    const variance = (roll - 0.5) * manoeuvre_variance_magnitude;
     const adjusted_diff = differential + variance;
 
     const outcome: ManoeuvreOutcome = if (adjusted_diff > stalemate_threshold)
@@ -191,8 +199,6 @@ fn getPrimaryWeaponReach(agent: *const combat.Agent) combat.Reach {
 /// Called after executeManoeuvreEffects to apply contest bonuses.
 pub fn resolvePositioningContests(world: *World) !void {
     const enc = world.encounter orelse return;
-    const rng_source = world.getRandomSource(.combat);
-    const rng = rng_source.stream.random();
 
     // For each player-enemy engagement
     for (enc.enemies.items) |enemy| {
@@ -205,13 +211,13 @@ pub fn resolvePositioningContests(world: *World) !void {
         if (player_footwork == .hold and enemy_footwork == .hold) continue;
 
         // Resolve contest (player is "aggressor" by convention)
-        const result = resolveManoeuvreConflict(
+        const result = try resolveManoeuvreConflict(
+            world,
             world.player,
             enemy,
             player_footwork,
             enemy_footwork,
             engagement,
-            rng,
         );
 
         // Emit contest event
@@ -350,6 +356,28 @@ const TestAgent = struct {
     }
 };
 
+/// Test world wrapper with scripted random provider for deterministic tests.
+const TestWorld = struct {
+    world: *World,
+    scripted: *random.ScriptedRandomProvider,
+
+    fn init(alloc: std.mem.Allocator, values: []const f32) !TestWorld {
+        const scripted = try alloc.create(random.ScriptedRandomProvider);
+        scripted.* = .{ .values = values };
+
+        const world = try World.init(alloc);
+        world.random_provider = scripted.provider();
+
+        return .{ .world = world, .scripted = scripted };
+    }
+
+    fn deinit(self: TestWorld) void {
+        const alloc = self.world.alloc;
+        self.world.deinit();
+        alloc.destroy(self.scripted);
+    }
+};
+
 fn makeTestAgent(alloc: std.mem.Allocator, speed: f32) !TestAgent {
     const agents = try alloc.create(SlotMap(*combat.Agent));
     agents.* = try SlotMap(*combat.Agent).init(alloc, .agent);
@@ -409,16 +437,19 @@ test "resolveManoeuvreConflict: hold auto-loses to advance" {
     const defender = try makeTestAgent(alloc, 5.0);
     defer defender.deinit();
 
-    const engagement = combat.Engagement{};
-    var prng = std.Random.DefaultPrng.init(12345);
+    // Auto-win case doesn't use RNG, but we still need a world
+    const tw = try TestWorld.init(alloc, &.{0.5});
+    defer tw.deinit();
 
-    const outcome = resolveManoeuvreConflict(
+    const engagement = combat.Engagement{};
+
+    const outcome = try resolveManoeuvreConflict(
+        tw.world,
         aggressor.agent,
         defender.agent,
         .advance,
         .hold,
         &engagement,
-        prng.random(),
     );
 
     try testing.expectEqual(ManoeuvreOutcome.aggressor_succeeds, outcome.outcome);
@@ -431,16 +462,19 @@ test "resolveManoeuvreConflict: aggressor hold loses to defender advance" {
     const defender = try makeTestAgent(alloc, 5.0);
     defer defender.deinit();
 
-    const engagement = combat.Engagement{};
-    var prng = std.Random.DefaultPrng.init(12345);
+    // Auto-win case doesn't use RNG, but we still need a world
+    const tw = try TestWorld.init(alloc, &.{0.5});
+    defer tw.deinit();
 
-    const outcome = resolveManoeuvreConflict(
+    const engagement = combat.Engagement{};
+
+    const outcome = try resolveManoeuvreConflict(
+        tw.world,
         aggressor.agent,
         defender.agent,
         .hold,
         .advance,
         &engagement,
-        prng.random(),
     );
 
     try testing.expectEqual(ManoeuvreOutcome.defender_succeeds, outcome.outcome);
@@ -453,16 +487,19 @@ test "resolveManoeuvreConflict: both hold results in stalemate" {
     const defender = try makeTestAgent(alloc, 5.0);
     defer defender.deinit();
 
-    const engagement = combat.Engagement{};
-    var prng = std.Random.DefaultPrng.init(12345);
+    // Stalemate case doesn't use RNG, but we still need a world
+    const tw = try TestWorld.init(alloc, &.{0.5});
+    defer tw.deinit();
 
-    const outcome = resolveManoeuvreConflict(
+    const engagement = combat.Engagement{};
+
+    const outcome = try resolveManoeuvreConflict(
+        tw.world,
         aggressor.agent,
         defender.agent,
         .hold,
         .hold,
         &engagement,
-        prng.random(),
     );
 
     try testing.expectEqual(ManoeuvreOutcome.stalemate, outcome.outcome);
@@ -475,19 +512,26 @@ test "resolveManoeuvreConflict: faster agent tends to win" {
     const slow_agent = try makeTestAgent(alloc, 3.0);
     defer slow_agent.deinit();
 
+    // 20 random values spread across the range for realistic variance
+    const random_values = [_]f32{
+        0.23, 0.87, 0.45, 0.12, 0.68, 0.91, 0.34, 0.56, 0.78, 0.02,
+        0.41, 0.63, 0.19, 0.85, 0.37, 0.72, 0.08, 0.94, 0.51, 0.29,
+    };
+    const tw = try TestWorld.init(alloc, &random_values);
+    defer tw.deinit();
+
     const engagement = combat.Engagement{};
-    var prng = std.Random.DefaultPrng.init(42);
 
     // Run multiple trials - faster agent should win majority
     var fast_wins: u32 = 0;
     for (0..20) |_| {
-        const outcome = resolveManoeuvreConflict(
+        const outcome = try resolveManoeuvreConflict(
+            tw.world,
             fast_agent.agent,
             slow_agent.agent,
             .advance,
             .retreat,
             &engagement,
-            prng.random(),
         );
         if (outcome.outcome == .aggressor_succeeds) fast_wins += 1;
     }

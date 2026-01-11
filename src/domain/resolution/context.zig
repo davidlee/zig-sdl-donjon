@@ -60,6 +60,78 @@ pub const DefenseContext = struct {
 };
 
 // ============================================================================
+// Condition-based Combat Modifier Constants
+// ============================================================================
+
+// --- Blinded attacker penalties (by attack mode) ---
+
+/// Hit penalty when blinded and using a thrust attack.
+/// Precision strikes suffer most without sight.
+pub const blinded_thrust_penalty: f32 = -0.30;
+
+/// Hit penalty when blinded and using a swing attack.
+/// Wide arcs partially compensate for lack of sight.
+pub const blinded_swing_penalty: f32 = -0.20;
+
+/// Hit penalty when blinded and using a ranged attack.
+/// Ranged attacks rely heavily on visual targeting.
+pub const blinded_ranged_penalty: f32 = -0.45;
+
+/// Hit penalty when blinded using other attack modes.
+/// Baseline penalty for defensive or unconventional attacks.
+pub const blinded_other_penalty: f32 = -0.15;
+
+// --- Winded attacker penalty ---
+
+/// Damage multiplier when winded and using committed/reckless stakes.
+/// Power attacks drain more from exhausted combatants.
+pub const winded_power_attack_damage_mult: f32 = 0.85;
+
+// --- Grasp strength penalties (wounded weapon hand) ---
+
+/// Maximum hit penalty at zero grasp strength.
+/// Inability to grip weapon reduces accuracy.
+pub const grasp_hit_penalty_max: f32 = -0.25;
+
+/// Minimum damage multiplier at zero grasp strength.
+/// Weak grip reduces striking power.
+pub const grasp_damage_mult_min: f32 = 0.5;
+
+// --- Defender stationary/flanking penalties ---
+
+/// Dodge penalty when defender is stationary (no footwork).
+/// Standing still makes you predictable and easier to hit.
+pub const stationary_dodge_penalty: f32 = -0.10;
+
+/// Dodge penalty when partially flanked.
+/// One enemy has angle advantage on you.
+pub const partial_flanking_dodge_penalty: f32 = -0.10;
+
+/// Dodge penalty when surrounded.
+/// Multiple enemies or severe angle disadvantage.
+pub const surrounded_dodge_penalty: f32 = -0.20;
+
+/// Defense multiplier when surrounded.
+/// Can't defend effectively against multiple angles.
+pub const surrounded_defense_mult: f32 = 0.85;
+
+// --- Blinded defender penalties ---
+
+/// Defense multiplier when blinded.
+/// Can't see attacks to properly defend.
+pub const blinded_defense_mult: f32 = 0.6;
+
+/// Dodge penalty when blinded.
+/// Can't see attacks to evade them.
+pub const blinded_dodge_penalty: f32 = -0.20;
+
+// --- Mobility penalty (wounded legs) ---
+
+/// Maximum dodge penalty at zero mobility.
+/// Wounded legs severely impair evasion.
+pub const mobility_dodge_penalty_max: f32 = -0.30;
+
+// ============================================================================
 // Condition-based Combat Modifiers
 // ============================================================================
 
@@ -82,16 +154,16 @@ pub const CombatModifiers = struct {
                 .blinded => {
                     // Precision matters more when you can't see
                     mods.hit_chance += switch (attack.technique.attack_mode) {
-                        .thrust => -0.30, // precision strike
-                        .swing => -0.20, // arc compensates somewhat
-                        .ranged => -0.45, // ranged attacks rely heavily on sight
-                        .none => -0.15, // defensive/other
+                        .thrust => blinded_thrust_penalty,
+                        .swing => blinded_swing_penalty,
+                        .ranged => blinded_ranged_penalty,
+                        .none => blinded_other_penalty,
                     };
                 },
                 .winded => {
                     // Power attacks suffer more
                     if (attack.stakes == .committed or attack.stakes == .reckless) {
-                        mods.damage_mult *= 0.85;
+                        mods.damage_mult *= winded_power_attack_damage_mult;
                     }
                 },
                 else => {
@@ -112,8 +184,8 @@ pub const CombatModifiers = struct {
         if (attack.attacker.body.graspingPartBySide(attack.attacker.dominant_side)) |hand_idx| {
             const grasp = attack.attacker.body.graspStrength(hand_idx);
             if (grasp < 1.0) {
-                mods.hit_chance += (1.0 - grasp) * -0.25; // up to -25% hit
-                mods.damage_mult *= 0.5 + (grasp * 0.5); // 50-100% damage
+                mods.hit_chance += (1.0 - grasp) * grasp_hit_penalty_max;
+                mods.damage_mult *= grasp_damage_mult_min + (grasp * grasp_damage_mult_min);
             }
         }
 
@@ -127,19 +199,16 @@ pub const CombatModifiers = struct {
 
         // Combat state modifiers (computed from positioning, not conditions)
         if (defense.computed.is_stationary) {
-            // Stationary defender is easier to hit (+10% for attacker)
-            mods.dodge_mod -= 0.10;
+            mods.dodge_mod += stationary_dodge_penalty;
         }
 
         switch (defense.computed.flanking) {
             .partial => {
-                // Partial flanking: one enemy with angle advantage
-                mods.dodge_mod -= 0.10;
+                mods.dodge_mod += partial_flanking_dodge_penalty;
             },
             .surrounded => {
-                // Surrounded: 3+ enemies or 2+ with angle advantage
-                mods.dodge_mod -= 0.20;
-                mods.defense_mult *= 0.85;
+                mods.dodge_mod += surrounded_dodge_penalty;
+                mods.defense_mult *= surrounded_defense_mult;
             },
             .none => {},
         }
@@ -149,9 +218,9 @@ pub const CombatModifiers = struct {
             // Context-dependent conditions handled specially
             switch (cond.condition) {
                 .blinded => {
-                    // Can't see attacks coming (not attack-mode dependent on defense)
-                    mods.defense_mult *= 0.6;
-                    mods.dodge_mod -= 0.20;
+                    // Can't see attacks coming
+                    mods.defense_mult *= blinded_defense_mult;
+                    mods.dodge_mod += blinded_dodge_penalty;
                 },
                 else => {
                     // Table lookup for simple conditions
@@ -167,7 +236,7 @@ pub const CombatModifiers = struct {
         // Mobility penalty: wounded legs reduce dodge capability
         const mobility = defense.defender.body.mobilityScore();
         if (mobility < 1.0) {
-            mods.dodge_mod += (1.0 - mobility) * -0.30; // up to -30% dodge
+            mods.dodge_mod += (1.0 - mobility) * mobility_dodge_penalty_max;
         }
 
         return mods;

@@ -41,6 +41,58 @@ const Stakes = cards.Stakes;
 const World = world.World;
 
 // ============================================================================
+// Hit Chance Tuning Constants
+// ============================================================================
+
+/// Base hit probability before any modifiers.
+/// At 0.5, evenly matched combatants have coin-flip odds.
+pub const base_hit_chance: f32 = 0.5;
+
+/// How much each point of technique difficulty reduces hit chance.
+/// Higher values make complex techniques harder to land.
+pub const technique_difficulty_mult: f32 = 0.1;
+
+/// How much weapon accuracy rating affects hit chance.
+/// Accurate weapons (positive accuracy) are easier to land.
+pub const weapon_accuracy_mult: f32 = 0.1;
+
+/// How much engagement advantage (pressure/control/position) affects hit chance.
+/// Higher values amplify the importance of tactical positioning.
+pub const engagement_advantage_mult: f32 = 0.3;
+
+/// How much attacker's balance affects hit chance.
+/// Unbalanced attackers (balance < 0.5) are less accurate.
+pub const attacker_balance_mult: f32 = 0.2;
+
+/// How much defender's low balance makes them easier to hit.
+/// Unbalanced defenders (balance < 1.0) are vulnerable.
+pub const defender_imbalance_mult: f32 = 0.15;
+
+/// Hit penalty when defender's guard directly covers the attack zone.
+/// Large penalty for attacking into a prepared defense.
+pub const guard_direct_cover_penalty: f32 = 0.15;
+
+/// Hit penalty when defender's guard partially covers an adjacent zone.
+/// Smaller penalty - guard can still react to nearby attacks.
+pub const guard_adjacent_cover_penalty: f32 = 0.08;
+
+/// Hit bonus when attacking an unguarded zone (opening).
+/// Small bonus for exploiting gaps in defense.
+pub const guard_opening_bonus: f32 = 0.05;
+
+/// How much defender's weapon parry rating reduces hit chance.
+/// Defensive weapons make attacks harder to land.
+pub const weapon_parry_mult: f32 = 0.1;
+
+/// Minimum possible hit chance after all modifiers.
+/// Ensures even overwhelming defense can't guarantee safety.
+pub const hit_chance_min: f32 = 0.05;
+
+/// Maximum possible hit chance after all modifiers.
+/// Ensures even overwhelming advantage can't guarantee hits.
+pub const hit_chance_max: f32 = 0.95;
+
+// ============================================================================
 // Outcome Determination
 // ============================================================================
 
@@ -66,25 +118,25 @@ pub const RollResult = struct {
 
 /// Calculate hit probability for an attack
 pub fn calculateHitChance(attack: AttackContext, defense: DefenseContext) f32 {
-    var chance: f32 = 0.5; // Base 50%
+    var chance: f32 = base_hit_chance;
 
     // Technique difficulty (higher = harder to land)
-    chance -= attack.technique.difficulty * 0.1;
+    chance -= attack.technique.difficulty * technique_difficulty_mult;
 
     // Weapon accuracy modifier
     if (getWeaponOffensive(attack.weapon_template, attack.technique)) |weapon_off| {
-        chance += weapon_off.accuracy * 0.1;
+        chance += weapon_off.accuracy * weapon_accuracy_mult;
     }
 
     // Stakes modifier
     chance += attack.stakes.hitChanceBonus();
 
     // Engagement advantage (pressure, control, position)
-    const engagement_bonus = (attack.engagement.playerAdvantage() - 0.5) * 0.3;
+    const engagement_bonus = (attack.engagement.playerAdvantage() - base_hit_chance) * engagement_advantage_mult;
     chance += if (attack.attacker.director == .player) engagement_bonus else -engagement_bonus;
 
     // Attacker balance
-    chance += (attack.attacker.balance - 0.5) * 0.2;
+    chance += (attack.attacker.balance - base_hit_chance) * attacker_balance_mult;
 
     // Condition modifiers
     const attacker_mods = CombatModifiers.forAttacker(attack);
@@ -107,28 +159,28 @@ pub fn calculateHitChance(attack: AttackContext, defense: DefenseContext) f32 {
         // Height coverage: if guard covers the attack's target zone
         if (def_tech.guard_height) |gh| {
             if (gh == attack.technique.target_height) {
-                // Guard directly covers attack zone - significant penalty
-                chance -= 0.15;
+                // Guard directly covers attack zone
+                chance -= guard_direct_cover_penalty;
             } else if (def_tech.covers_adjacent and gh.adjacent(attack.technique.target_height)) {
                 // Guard partially covers adjacent zone
-                chance -= 0.08;
+                chance -= guard_adjacent_cover_penalty;
             } else {
-                // Attacking an opening (unguarded zone) - slight bonus
-                chance += 0.05;
+                // Attacking an opening (unguarded zone)
+                chance += guard_opening_bonus;
             }
         }
 
         // Defender weapon defensive modifiers
-        chance -= defense.weapon_template.defence.parry * 0.1;
+        chance -= defense.weapon_template.defence.parry * weapon_parry_mult;
     }
 
     // Defender balance (low balance = easier to hit)
-    chance += (1.0 - defense.defender.balance) * 0.15;
+    chance += (1.0 - defense.defender.balance) * defender_imbalance_mult;
 
     // Defender condition dodge penalty (passive evasion)
     chance -= defender_mods.dodge_mod;
 
-    return std.math.clamp(chance, 0.05, 0.95);
+    return std.math.clamp(chance, hit_chance_min, hit_chance_max);
 }
 
 /// Determine outcome of attack vs defense
@@ -148,8 +200,8 @@ pub fn resolveOutcome(
     // defense_bonus reduces hit chance (defender's movement makes them harder to hit)
     const final_chance = std.math.clamp(
         hit_chance + attacker_overlay.to_hit_bonus - defender_overlay.defense_bonus,
-        0.05,
-        0.95,
+        hit_chance_min,
+        hit_chance_max,
     );
 
     const roll = try w.drawRandom(.combat);
