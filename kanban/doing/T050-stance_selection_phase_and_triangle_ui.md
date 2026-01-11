@@ -110,15 +110,15 @@ Start with random uniform; refine later.
 - [x] Add confirm_stance command + handler
 - [x] Tests for barycentric math
 
-### UI Rendering (in progress)
+### UI Rendering (complete)
 - [x] Integrate stance view into combat view (renderables + handleInput)
 - [x] Add viewport field to ViewState, coordinator sets before dispatch
 - [x] Add StanceWeights renderable (graphics layer formats text)
 - [x] Confirm button with hover/active states + click handler
 - [x] Add filled triangle rendering via SDL_RenderGeometry
-- [ ] Remove placeholder outline lines (appendLine calls in stance.zig)
-- [ ] Experiment: color triangle fill using RGB from stance weights (ATK=R, MOV=G, DEF=B)
-- [ ] Integration test for phase flow
+- [x] Remove placeholder outline lines (appendLine calls in stance.zig)
+- [x] Experiment: color triangle fill using RGB from stance weights (ATK=R, MOV=G, DEF=B)
+- [x] Integration test for phase flow
 
 ## Test / Verification Strategy
 
@@ -301,3 +301,20 @@ renderer.renderGeometry(null, &[3]s.render.Vertex{
 **Remaining:**
 - [ ] Implement triangle renderable via renderGeometry (~20 lines)
 - [ ] Integration test for phase flow
+
+### 2026-01-11: UI rendering complete
+
+**Files modified:**
+- `src/presentation/views/combat/stance.zig` — removed `appendLine` placeholder, added dynamic triangle fill color from stance weights
+- `src/testing/integration/harness.zig` — added `confirmStance()` and `beginStanceSelection()` helpers
+- `src/testing/integration/domain/stance_phase.zig` — NEW: integration tests for stance phase flow
+- `src/testing/integration/domain/mod.zig` — added stance_phase module
+
+**Changes:**
+1. Removed placeholder outline lines (`appendLine` calls and function)
+2. Triangle fill color now computed from stance weights: ATK→R, MOV→G, DEF→B (base 20 + weight*80)
+3. Added 3 integration tests: encounter starts in stance_selection, confirm transitions phases, weights stored in turn state
+
+**Bugfix:** Fixed flickering when mouse outside triangle. `toBarycentric` was returning null for edge-clamped points due to floating point precision. Added epsilon tolerance (1e-5) to bounds check and renormalization to ensure valid weights.
+
+**Status:** All tasks complete. Ready for user acceptance testing.

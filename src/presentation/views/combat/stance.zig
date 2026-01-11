@@ -69,11 +69,18 @@ pub const Triangle = struct {
         const defense = (d00 * d21 - d01 * d20) / denom;
         const attack = 1.0 - movement - defense;
 
-        // Check if inside triangle (all coords in [0,1])
-        if (attack < 0 or defense < 0 or movement < 0) return null;
-        if (attack > 1 or defense > 1 or movement > 1) return null;
+        // Check if inside triangle with small epsilon for floating point tolerance
+        // (clamped edge points may have tiny negative values due to precision)
+        const eps: f32 = 1e-5;
+        if (attack < -eps or defense < -eps or movement < -eps) return null;
+        if (attack > 1 + eps or defense > 1 + eps or movement > 1 + eps) return null;
 
-        return .{ .attack = attack, .defense = defense, .movement = movement };
+        // Clamp to valid range and renormalize
+        const a = std.math.clamp(attack, 0, 1);
+        const d = std.math.clamp(defense, 0, 1);
+        const m = std.math.clamp(movement, 0, 1);
+        const sum = a + d + m;
+        return .{ .attack = a / sum, .defense = d / sum, .movement = m / sum };
     }
 
     /// Clamp a point to the nearest point inside/on the triangle.
@@ -216,6 +223,10 @@ pub const View = struct {
         const cs = vs.combat orelse CombatUIState{};
         const verts = self.triangle.vertices();
 
+        // Compute cursor position and stance weights early (needed for fill color)
+        const cursor_pos = cs.stance_cursor.position orelse self.triangle.center;
+        const stance = self.triangle.toBarycentric(cursor_pos) orelse Stance.balanced;
+
         // Title
         try list.append(alloc, .{ .text = .{
             .content = "Select Stance",
@@ -224,18 +235,20 @@ pub const View = struct {
             .color = .{ .r = 255, .g = 255, .b = 255, .a = 255 },
         } });
 
-        // Draw filled triangle
+        // Draw filled triangle - color from stance weights (ATK=R, MOV=G, DEF=B)
+        // Base 20 + weight*80 gives 20-100 range per channel (muted but visible tint)
+        const base: f32 = 20;
+        const range: f32 = 80;
+        const fill_color = s.pixels.Color{
+            .r = @intFromFloat(base + stance.attack * range),
+            .g = @intFromFloat(base + stance.movement * range),
+            .b = @intFromFloat(base + stance.defense * range),
+            .a = 255,
+        };
         try list.append(alloc, .{ .filled_triangle = .{
             .points = verts,
-            .color = .{ .r = 30, .g = 30, .b = 35, .a = 255 },
+            .color = fill_color,
         } });
-
-        // Draw triangle outline
-        const line_width: f32 = 3;
-        const line_color = s.pixels.Color{ .r = 180, .g = 180, .b = 180, .a = 255 };
-        try self.appendLine(alloc, list, verts[0], verts[1], line_width, line_color);
-        try self.appendLine(alloc, list, verts[1], verts[2], line_width, line_color);
-        try self.appendLine(alloc, list, verts[2], verts[0], line_width, line_color);
 
         // Draw vertex labels
         const label_offset: f32 = 20;
@@ -259,7 +272,6 @@ pub const View = struct {
         } });
 
         // Draw cursor
-        const cursor_pos = cs.stance_cursor.position orelse self.triangle.center;
         const cursor_size: f32 = if (cs.stance_cursor.locked) 12 else 10;
         const cursor_color = if (cs.stance_cursor.locked)
             s.pixels.Color{ .r = 255, .g = 255, .b = 255, .a = 255 }
@@ -279,7 +291,6 @@ pub const View = struct {
         });
 
         // Draw weight percentages
-        const stance = self.triangle.toBarycentric(cursor_pos) orelse Stance.balanced;
         try list.append(alloc, .{ .stance_weights = .{
             .attack = stance.attack,
             .defense = stance.defense,
@@ -315,39 +326,6 @@ pub const View = struct {
             .font_size = .normal,
             .color = text_color,
         } });
-    }
-
-    fn appendLine(self: *const View, alloc: std.mem.Allocator, list: *std.ArrayList(Renderable), from: Point, to: Point, width: f32, color: s.pixels.Color) !void {
-        _ = self;
-        // Approximate line with a thin rotated rectangle
-        // For simplicity, draw a filled rect aligned to the line
-        const dx = to.x - from.x;
-        const dy = to.y - from.y;
-        const len = @sqrt(dx * dx + dy * dy);
-
-        if (len < 1) return;
-
-        // Draw as a rect from midpoint
-        // This is a simplified approach - proper line drawing would need rotation
-        const mid_x = (from.x + to.x) / 2;
-        const mid_y = (from.y + to.y) / 2;
-
-        // Use the longer dimension for the rect
-        if (@abs(dx) > @abs(dy)) {
-            try list.append(alloc, .{
-                .filled_rect = .{
-                    .rect = .{ .x = @min(from.x, to.x), .y = mid_y - width / 2, .w = @abs(dx), .h = width },
-                    .color = color,
-                },
-            });
-        } else {
-            try list.append(alloc, .{
-                .filled_rect = .{
-                    .rect = .{ .x = mid_x - width / 2, .y = @min(from.y, to.y), .w = width, .h = @abs(dy) },
-                    .color = color,
-                },
-            });
-        }
     }
 };
 

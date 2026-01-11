@@ -187,6 +187,24 @@ pub const Harness = struct {
         }
     }
 
+    /// Confirm stance selection with given weights. Must be in stance_selection phase.
+    pub fn confirmStance(self: *Harness, attack: f32, defense: f32, movement: f32) !void {
+        try self.world.commandHandler.confirmStance(.{
+            .attack = attack,
+            .defense = defense,
+            .movement = movement,
+        });
+    }
+
+    /// Start encounter and stay in stance_selection phase (don't bypass).
+    /// Use this when testing stance phase flow specifically.
+    pub fn beginStanceSelection(self: *Harness) !void {
+        // Start encounter if not already
+        if (self.world.turnPhase() == null) {
+            try self.world.transitionTo(.in_encounter);
+        }
+    }
+
     // -------------------------------------------------------------------------
     // Play Control
     // -------------------------------------------------------------------------

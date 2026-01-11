@@ -1269,8 +1269,11 @@ pub const View = struct {
 
         var list = try std.ArrayList(Renderable).initCapacity(alloc, 32);
 
-        // Stance selection phase uses dedicated view
+        // Stance selection phase uses dedicated view + enemy sprites for context
         if (self.inPhase(.stance_selection)) {
+            // Render enemies (engagement distance is important context for stance choice)
+            try self.opposition.appendRenderables(alloc, &list, self.world.encounter, null, null);
+
             const center = Point{ .x = vs.viewport.w / 2, .y = vs.viewport.h / 2 };
             const stance_view = StanceView.init(center, 240);
             try stance_view.appendRenderables(alloc, &list, vs);
