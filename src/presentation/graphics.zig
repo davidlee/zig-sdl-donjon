@@ -79,6 +79,7 @@ pub const UX = struct {
     const sprites = [_]SpriteEntry{
         .{ .filename = "assets/halberdier.png", .id = .player_halberdier },
         .{ .filename = "assets/fredrick-snail.png", .id = .fredrick_snail },
+        .{ .filename = "assets/eye_dragon.png", .id = .eye_dragon },
         .{ .filename = "assets/mob-thief.png", .id = .thief },
         .{ .filename = "assets/end-turn.png", .id = .end_turn },
         // Rune icons (48x48)

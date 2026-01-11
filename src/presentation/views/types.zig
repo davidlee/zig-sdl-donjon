@@ -23,6 +23,7 @@ pub const AssetId = enum {
     splash_tagline,
     player_halberdier,
     fredrick_snail,
+    eye_dragon,
     thief,
     end_turn,
     // Rune icons for modifier cards

@@ -59,7 +59,7 @@ pub const Enemy = struct {
                 .w = 48,
                 .h = 48,
             },
-            .asset_id = AssetId.thief,
+            .asset_id = AssetId.eye_dragon,
             .id = id,
             .index = index,
         };
