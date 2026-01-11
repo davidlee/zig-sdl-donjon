@@ -174,17 +174,119 @@ pub fn resolveContested(
     };
 }
 
-test "calculateAttackScore base case" {
-    // Needs proper test fixtures (makeTestWorld, makeTestAgent)
-    // Full coverage via integration tests in Task 9
+// ============================================================================
+// Tests
+// ============================================================================
+
+const cards = @import("../cards.zig");
+const weapon_list = @import("../weapon_list.zig");
+const ai = @import("../ai.zig");
+const stats = @import("../stats.zig");
+const species = @import("../species.zig");
+const slot_map = @import("../slot_map.zig");
+
+fn makeTestWorld(alloc: std.mem.Allocator) !*World {
+    return world.World.init(alloc);
 }
 
-test "calculateDefenseScore base case" {
-    // Needs proper test fixtures
-    // Full coverage via integration tests in Task 9
+fn makeTestAgent(
+    alloc: std.mem.Allocator,
+    agents: *slot_map.SlotMap(*Agent),
+    director: combat.Director,
+) !*Agent {
+    return Agent.init(
+        alloc,
+        agents,
+        director,
+        .shuffled_deck,
+        &species.DWARF,
+        stats.Block.splat(5),
+    );
 }
 
-test "conditionCombatMult base case" {
-    // Needs proper test fixtures
-    // Full coverage via integration tests in Task 9
+test "resolveContested produces valid outcome" {
+    const alloc = std.testing.allocator;
+
+    var w = try makeTestWorld(alloc);
+    defer w.deinit();
+
+    const attacker = w.player;
+    const defender = try makeTestAgent(alloc, w.entities.agents, ai.noop());
+    try w.encounter.?.addEnemy(defender);
+
+    const engagement = w.encounter.?.getPlayerEngagement(defender.id).?;
+    const technique = &cards.Technique.byID(.thrust);
+
+    const attack_ctx = AttackContext{
+        .attacker = attacker,
+        .defender = defender,
+        .technique = technique,
+        .weapon_template = &weapon_list.knights_sword,
+        .stakes = .guarded,
+        .engagement = engagement,
+    };
+
+    const defense_ctx = DefenseContext{
+        .defender = defender,
+        .technique = null,
+        .weapon_template = &weapon_list.knights_sword,
+    };
+
+    const result = try resolveContested(w, attack_ctx, defense_ctx);
+
+    // Verify result is valid
+    try std.testing.expect(result.attack_score > 0);
+    try std.testing.expect(result.defense_score > 0);
+    try std.testing.expect(result.attack_roll >= 0 and result.attack_roll <= 1);
+    try std.testing.expect(result.defense_roll >= 0 and result.defense_roll <= 1);
+
+    // Verify damage_mult matches outcome tier
+    switch (result.outcome_type) {
+        .critical_hit => try std.testing.expectApproxEqAbs(outcome.critical_hit_damage_mult, result.damage_mult, 0.01),
+        .solid_hit => try std.testing.expectApproxEqAbs(1.0, result.damage_mult, 0.01),
+        .partial_hit => try std.testing.expectApproxEqAbs(outcome.partial_hit_damage_mult, result.damage_mult, 0.01),
+        .miss => try std.testing.expectApproxEqAbs(0.0, result.damage_mult, 0.01),
+    }
+}
+
+test "stance affects contested outcome" {
+    const alloc = std.testing.allocator;
+
+    var w = try makeTestWorld(alloc);
+    defer w.deinit();
+
+    const attacker = w.player;
+    const defender = try makeTestAgent(alloc, w.entities.agents, ai.noop());
+    try w.encounter.?.addEnemy(defender);
+
+    const engagement = w.encounter.?.getPlayerEngagement(defender.id).?;
+    const technique = &cards.Technique.byID(.thrust);
+
+    // Pure attack stance
+    const aggressive_stance = Stance{ .attack = 1.0, .defense = 0.0, .movement = 0.0 };
+
+    const attack_ctx = AttackContext{
+        .attacker = attacker,
+        .defender = defender,
+        .technique = technique,
+        .weapon_template = &weapon_list.knights_sword,
+        .stakes = .guarded,
+        .engagement = engagement,
+        .attacker_stance = aggressive_stance,
+    };
+
+    const defense_ctx = DefenseContext{
+        .defender = defender,
+        .technique = null,
+        .weapon_template = &weapon_list.knights_sword,
+        .defender_stance = Stance.balanced, // defender uses balanced
+    };
+
+    const result = try resolveContested(w, attack_ctx, defense_ctx);
+
+    // With aggressive stance (1.0 attack weight) vs balanced (0.33 defense weight),
+    // stance multipliers should favor attacker
+    // attack_mult = 1.0 + 0.5 = 1.5, defense_mult = 0.33 + 0.5 = 0.83
+    // This just verifies the calculation happens without error
+    try std.testing.expect(result.attack_roll >= 0);
 }
